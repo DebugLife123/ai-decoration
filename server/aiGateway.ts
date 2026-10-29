@@ -102,12 +102,19 @@ async function floorPlanFlow(config: GatewayConfig, request: GenerateRequest) {
 
 export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
   const config: GatewayConfig = { baseUrl: env.AI_BASE_URL || 'https://codex2api.com', apiKey: env.CODEX2API_API_KEY || env.AI_API_KEY || '', visionModel: env.AI_VISION_MODEL || env.AI_MODEL || 'gpt-4o-mini', imageModel: env.AI_IMAGE_MODEL || env.IMAGE_MODEL || 'gpt-image-1' };
-  return { name: 'ai-decoration-gateway', configureServer(server) {
-    server.middlewares.use('/api/ai/generate', async (req, res, next) => {
+  const gatewayMiddleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
       if (req.method !== 'POST') return next();
       if (!config.apiKey) return sendJson(res, 500, { error: '未检测到 CODEX2API_API_KEY 或 AI_API_KEY。' });
       try { const request = await readBody(req); const result = request.mode === 'photo' ? await photoFlow(config, request) : await floorPlanFlow(config, request); sendJson(res, 200, result); }
       catch (error) { sendJson(res, 502, { error: error instanceof Error ? error.message : 'AI 请求失败，请稍后重试。' }); }
-    });
-  } };
+    };
+  return {
+    name: 'ai-decoration-gateway',
+    configureServer(server) {
+      server.middlewares.use('/api/ai/generate', gatewayMiddleware);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use('/api/ai/generate', gatewayMiddleware);
+    },
+  };
 }
