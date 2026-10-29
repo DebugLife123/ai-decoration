@@ -14,5 +14,8 @@ export default defineConfig(() => {
   for (const key of aiEnvKeys) {
     if (typeof fileEnv[key] === 'string') loadedEnv[key] = fileEnv[key]
   }
-  return { plugins: [react(), createAiGatewayPlugin(loadedEnv)] }
+  return {
+    plugins: [react(), createAiGatewayPlugin(loadedEnv)],
+    preview: { allowedHosts: ['www.openai2api.com'] },
+  }
 })
