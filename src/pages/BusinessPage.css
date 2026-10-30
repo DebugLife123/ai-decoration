@@ -125,7 +125,8 @@
 .selected-files span { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 6px 8px; color: var(--color-text-secondary); background: var(--color-bg-warm); border-radius: 7px; font-size: 11px; }
 .selected-files svg { width: 13px; height: 13px; color: var(--color-primary); }
 .muted-copy { color: var(--color-text-muted) !important; background: transparent !important; padding-left: 0 !important; }
-.form-error { color: var(--color-error); font-size: 12px; }
+.form-error { color: var(--color-error); font-size: 12px; line-height: 1.45; }
+.form-success { color: var(--color-success); font-size: 12px; line-height: 1.45; }
 .cert-status-panel { align-self: stretch; padding: 22px; background: #f8f6ff; border: 1px solid #e8e0ff; border-radius: 13px; }
 .cert-state { display: flex; align-items: center; gap: 8px; margin: 18px 0 8px; color: var(--color-text-muted); font-family: var(--font-display); font-size: 24px; font-weight: 700; }
 .cert-state.pending { color: var(--color-warning); }

@@ -65,6 +65,7 @@ const defaultProfile: CompanyProfile = { name: '', city: '', services: '', intro
 const defaultCertification: Certification = {
   companyName: '', contact: '', serviceAreas: '', documents: [], status: 'draft',
 };
+const minValidDate = new Date().toISOString().slice(0, 10);
 
 function readStored<T>(key: string, fallback: T): T {
   return readLocalValue(key, fallback);
@@ -135,6 +136,8 @@ export default function BusinessPage() {
   const [materialForm, setMaterialForm] = useState(emptyMaterial);
   const [workerForm, setWorkerForm] = useState(emptyWorker);
   const [certError, setCertError] = useState('');
+  const [materialFeedback, setMaterialFeedback] = useState('');
+  const [workerFeedback, setWorkerFeedback] = useState('');
 
   const completion = useMemo(() => {
     return [Boolean(profile.name), cases.length > 0, materials.length > 0, workers.length > 0, certification.status === 'pending'].filter(Boolean).length;
@@ -160,24 +163,32 @@ export default function BusinessPage() {
 
   const addMaterial = (event: FormEvent) => {
     event.preventDefault();
-    if (!materialForm.name.trim() || !materialForm.price.trim()) return;
+    const price = Number(materialForm.price);
+    if (!materialForm.name.trim()) { setMaterialFeedback('请填写材料名称。'); return; }
+    if (!Number.isFinite(price) || price <= 0) { setMaterialFeedback('价格必须是大于 0 的数字。'); return; }
+    if (!materialForm.region.trim()) { setMaterialFeedback('请填写适用地区。'); return; }
+    if (!materialForm.validUntil || materialForm.validUntil < new Date().toISOString().slice(0, 10)) { setMaterialFeedback('请填写今天或之后的报价有效期。'); return; }
     setMaterials((items) => editingMaterialId
       ? items.map((item) => item.id === editingMaterialId ? { ...item, ...materialForm, updatedAt: now() } : item)
       : [{ ...materialForm, id: crypto.randomUUID(), updatedAt: now() }, ...items]);
+    setMaterialFeedback('本机草稿已保存，尚未同步到平台。');
     setMaterialForm(emptyMaterial);
     setEditingMaterialId('');
-    setShowMaterialForm(false);
   };
 
   const addWorker = (event: FormEvent) => {
     event.preventDefault();
-    if (!workerForm.type.trim() || !workerForm.price.trim()) return;
+    const price = Number(workerForm.price);
+    if (!workerForm.type.trim()) { setWorkerFeedback('请填写工种名称。'); return; }
+    if (!Number.isFinite(price) || price <= 0) { setWorkerFeedback('单价必须是大于 0 的数字。'); return; }
+    if (!workerForm.region.trim()) { setWorkerFeedback('请填写服务地区。'); return; }
+    if (!workerForm.validUntil || workerForm.validUntil < new Date().toISOString().slice(0, 10)) { setWorkerFeedback('请填写今天或之后的报价有效期。'); return; }
     setWorkers((items) => editingWorkerId
       ? items.map((item) => item.id === editingWorkerId ? { ...item, ...workerForm, updatedAt: now() } : item)
       : [{ ...workerForm, id: crypto.randomUUID(), updatedAt: now() }, ...items]);
+    setWorkerFeedback('本机草稿已保存，尚未同步到平台。');
     setWorkerForm(emptyWorker);
     setEditingWorkerId('');
-    setShowWorkerForm(false);
   };
 
   const submitCertification = (event: FormEvent) => {
@@ -258,14 +269,14 @@ export default function BusinessPage() {
         </motion.div>}
 
         {activeTab === 'materials' && <motion.div className="business-panel-stack" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-          <SectionHeading eyebrow="MATERIAL PRICING" title="材料报价" detail="每条报价都要带地区和有效期，方便后续给 AI-03 提供可追溯数据。" action={<button className="primary-button" onClick={() => { setShowMaterialForm((value) => !value); setEditingMaterialId(''); setMaterialForm(emptyMaterial); }}><Icon name="plus" />{showMaterialForm ? '收起表单' : '新增报价'}</button>} />
-          {showMaterialForm && <form className="entry-form" onSubmit={addMaterial}><div className="form-grid form-grid-4"><Field label="材料名称"><input required value={materialForm.name} onChange={(event) => setMaterialForm({ ...materialForm, name: event.target.value })} placeholder="例如：木地板" /></Field><Field label="规格"><input value={materialForm.spec} onChange={(event) => setMaterialForm({ ...materialForm, spec: event.target.value })} placeholder="例如：910×127×15mm" /></Field><Field label="单位"><input value={materialForm.unit} onChange={(event) => setMaterialForm({ ...materialForm, unit: event.target.value })} placeholder="例如：㎡" /></Field><Field label="价格（元）"><input required type="number" min="0" value={materialForm.price} onChange={(event) => setMaterialForm({ ...materialForm, price: event.target.value })} placeholder="0" /></Field><Field label="分类"><input value={materialForm.category} onChange={(event) => setMaterialForm({ ...materialForm, category: event.target.value })} placeholder="例如：地板" /></Field><Field label="适用地区"><input value={materialForm.region} onChange={(event) => setMaterialForm({ ...materialForm, region: event.target.value })} placeholder="例如：上海" /></Field><Field label="有效期至" hint="缺失有效期时，后续推荐应提示数据不完整"><input type="date" value={materialForm.validUntil} onChange={(event) => setMaterialForm({ ...materialForm, validUntil: event.target.value })} /></Field></div><div className="form-actions"><button className="primary-button" type="submit"><Icon name="check" />{editingMaterialId ? '保存修改' : '保存报价'}</button></div></form>}
+          <SectionHeading eyebrow="MATERIAL PRICING" title="材料报价" detail="每条报价都要带地区和有效期，方便后续给 AI-03 提供可追溯数据。" action={<button className="primary-button" onClick={() => { setShowMaterialForm((value) => !value); setEditingMaterialId(''); setMaterialForm(emptyMaterial); setMaterialFeedback(''); }}><Icon name="plus" />{showMaterialForm ? '收起表单' : '新增报价'}</button>} />
+          {showMaterialForm && <form className="entry-form" onSubmit={addMaterial}><div className="form-grid form-grid-4"><Field label="材料名称"><input required value={materialForm.name} onChange={(event) => { setMaterialFeedback(''); setMaterialForm({ ...materialForm, name: event.target.value }); }} placeholder="例如：木地板" /></Field><Field label="规格"><input value={materialForm.spec} onChange={(event) => setMaterialForm({ ...materialForm, spec: event.target.value })} placeholder="例如：910×127×15mm" /></Field><Field label="单位"><input value={materialForm.unit} onChange={(event) => setMaterialForm({ ...materialForm, unit: event.target.value })} placeholder="例如：㎡" /></Field><Field label="价格（元）"><input required type="number" min="0.01" step="0.01" value={materialForm.price} onChange={(event) => { setMaterialFeedback(''); setMaterialForm({ ...materialForm, price: event.target.value }); }} placeholder="例如：299" /></Field><Field label="分类"><input value={materialForm.category} onChange={(event) => setMaterialForm({ ...materialForm, category: event.target.value })} placeholder="例如：地板" /></Field><Field label="适用地区"><input required value={materialForm.region} onChange={(event) => { setMaterialFeedback(''); setMaterialForm({ ...materialForm, region: event.target.value }); }} placeholder="例如：上海" /></Field><Field label="有效期至" hint="必填，不能早于今天"><input required type="date" min={minValidDate} value={materialForm.validUntil} onChange={(event) => { setMaterialFeedback(''); setMaterialForm({ ...materialForm, validUntil: event.target.value }); }} /></Field></div><div className="form-actions"><button className="primary-button" type="submit"><Icon name="check" />{editingMaterialId ? '保存修改' : '保存报价'}</button>{materialFeedback && <span className={materialFeedback.includes('已保存') ? 'form-success' : 'form-error'}>{materialFeedback}</span>}</div></form>}
           {materials.length === 0 ? <EmptyState title="还没有材料报价" detail="先录入一条材料价格，验证地区、单位和有效期字段。" action={() => setShowMaterialForm(true)} /> : <div className="record-list">{materials.map((item) => <RecordRow key={item.id} title={item.name} meta={`${item.spec || '规格未填'} · ${item.unit || '单位未填'} · ${item.category || '未分类'}`} status={`¥${item.price}`} detail={`${item.region || '地区未填'} · 有效期 ${dateLabel(item.validUntil)}`} updatedAt={dateLabel(item.updatedAt)} onEdit={() => { setMaterialForm({ name: item.name, spec: item.spec, unit: item.unit, price: item.price, category: item.category, region: item.region, validUntil: item.validUntil }); setEditingMaterialId(item.id); setShowMaterialForm(true); }} onDelete={() => setMaterials((items) => items.filter((entry) => entry.id !== item.id))} />)}</div>}
         </motion.div>}
 
         {activeTab === 'workers' && <motion.div className="business-panel-stack" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-          <SectionHeading eyebrow="LABOR PRICING" title="人工报价" detail="工种、单位、地区和有效期都由你手动录入，暂不连接真实报价源。" action={<button className="primary-button" onClick={() => { setShowWorkerForm((value) => !value); setEditingWorkerId(''); setWorkerForm(emptyWorker); }}><Icon name="plus" />{showWorkerForm ? '收起表单' : '新增工种'}</button>} />
-          {showWorkerForm && <form className="entry-form" onSubmit={addWorker}><div className="form-grid form-grid-4"><Field label="工种"><input required value={workerForm.type} onChange={(event) => setWorkerForm({ ...workerForm, type: event.target.value })} placeholder="例如：水电工" /></Field><Field label="计价单位"><input value={workerForm.unit} onChange={(event) => setWorkerForm({ ...workerForm, unit: event.target.value })} placeholder="例如：工日/㎡" /></Field><Field label="单价（元）"><input required type="number" min="0" value={workerForm.price} onChange={(event) => setWorkerForm({ ...workerForm, price: event.target.value })} placeholder="0" /></Field><Field label="服务地区"><input value={workerForm.region} onChange={(event) => setWorkerForm({ ...workerForm, region: event.target.value })} placeholder="例如：上海" /></Field><Field label="有效期至"><input type="date" value={workerForm.validUntil} onChange={(event) => setWorkerForm({ ...workerForm, validUntil: event.target.value })} /></Field></div><div className="form-actions"><button className="primary-button" type="submit"><Icon name="check" />{editingWorkerId ? '保存修改' : '保存报价'}</button></div></form>}
+          <SectionHeading eyebrow="LABOR PRICING" title="人工报价" detail="工种、单位、地区和有效期都由你手动录入，暂不连接真实报价源。" action={<button className="primary-button" onClick={() => { setShowWorkerForm((value) => !value); setEditingWorkerId(''); setWorkerForm(emptyWorker); setWorkerFeedback(''); }}><Icon name="plus" />{showWorkerForm ? '收起表单' : '新增工种'}</button>} />
+          {showWorkerForm && <form className="entry-form" onSubmit={addWorker}><div className="form-grid form-grid-4"><Field label="工种"><input required value={workerForm.type} onChange={(event) => { setWorkerFeedback(''); setWorkerForm({ ...workerForm, type: event.target.value }); }} placeholder="例如：水电工" /></Field><Field label="计价单位"><input value={workerForm.unit} onChange={(event) => setWorkerForm({ ...workerForm, unit: event.target.value })} placeholder="例如：工日/㎡" /></Field><Field label="单价（元）"><input required type="number" min="0.01" step="0.01" value={workerForm.price} onChange={(event) => { setWorkerFeedback(''); setWorkerForm({ ...workerForm, price: event.target.value }); }} placeholder="例如：450" /></Field><Field label="服务地区"><input required value={workerForm.region} onChange={(event) => { setWorkerFeedback(''); setWorkerForm({ ...workerForm, region: event.target.value }); }} placeholder="例如：上海" /></Field><Field label="有效期至" hint="必填，不能早于今天"><input required type="date" min={minValidDate} value={workerForm.validUntil} onChange={(event) => { setWorkerFeedback(''); setWorkerForm({ ...workerForm, validUntil: event.target.value }); }} /></Field></div><div className="form-actions"><button className="primary-button" type="submit"><Icon name="check" />{editingWorkerId ? '保存修改' : '保存报价'}</button>{workerFeedback && <span className={workerFeedback.includes('已保存') ? 'form-success' : 'form-error'}>{workerFeedback}</span>}</div></form>}
           {workers.length === 0 ? <EmptyState title="还没有人工报价" detail="先录入一个工种，验证地区和有效期缺失时的展示方式。" action={() => setShowWorkerForm(true)} /> : <div className="record-list">{workers.map((item) => <RecordRow key={item.id} title={item.type} meta={`${item.unit || '单位未填'} · ¥${item.price}`} status={item.region || '地区未填'} detail={`有效期 ${dateLabel(item.validUntil)}`} updatedAt={dateLabel(item.updatedAt)} onEdit={() => { setWorkerForm({ type: item.type, unit: item.unit, price: item.price, region: item.region, validUntil: item.validUntil }); setEditingWorkerId(item.id); setShowWorkerForm(true); }} onDelete={() => setWorkers((items) => items.filter((entry) => entry.id !== item.id))} />)}</div>}
         </motion.div>}
 
