@@ -101,6 +101,7 @@ function savedProjects(): Project[] {
       ...item,
       spaceType: typeof item.spaceType === 'string' ? item.spaceType : '未分类空间',
       style: item.style || 'modern',
+      budget: typeof item.budget === 'number' && Number.isFinite(item.budget) ? item.budget : undefined,
       createdAt: item.createdAt || new Date().toISOString(),
       updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
       status: ['draft', 'generating', 'completed', 'failed'].includes(item.status) ? item.status : 'draft',

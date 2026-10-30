@@ -62,6 +62,7 @@ export default function WorkspacePage() {
   const [floorPlan, setFloorPlan] = useState<string | null>(existingProject?.floorPlanUrl || null);
   const [prompt, setPrompt] = useState(initialVersion?.prompt ?? draftState.prompt ?? '');
   const [projectName, setProjectName] = useState(existingProject?.name || '我的装修方案');
+  const [budgetInput, setBudgetInput] = useState(existingProject?.budget?.toString() || '');
   const [result, setResult] = useState<GenerationResult | null>(initialResult);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
@@ -103,6 +104,8 @@ export default function WorkspacePage() {
     setError('');
     if (mode === 'photo' && !photo) { setError('请先上传现场毛坯照片。'); return; }
     if (mode === 'floorplan' && !floorPlan) { setError('请先上传户型图。'); return; }
+    const budget = budgetInput.trim() ? Number(budgetInput) : undefined;
+    if (budget !== undefined && (!Number.isFinite(budget) || budget < 0)) { setError('预算请输入不小于 0 的数字。'); return; }
     const startedAt = new Date().toISOString();
     const activeProjectId = existingProject?.id || crypto.randomUUID();
     const task: GenerationTask = {
@@ -118,7 +121,7 @@ export default function WorkspacePage() {
       name: projectName.trim() || '我的装修方案',
       spaceType: mode === 'photo' ? '现场照片' : '全屋',
       style: workspaceStyle,
-      budget: existingProject?.budget,
+      budget,
       area: existingProject?.area,
       city: existingProject?.city,
       createdAt: existingProject?.createdAt || startedAt,
@@ -134,7 +137,7 @@ export default function WorkspacePage() {
     saveProject(projectDraft);
     setIsGenerating(true);
     try {
-      const nextResult = await generateDesign({ mode, style: workspaceStyle, prompt, photo: photo || undefined, photos, floorPlan: floorPlan || undefined });
+      const nextResult = await generateDesign({ mode, style: workspaceStyle, prompt, budget, photo: photo || undefined, photos, floorPlan: floorPlan || undefined });
       setResult(nextResult);
       const versionCreatedAt = new Date().toISOString();
       const version: DesignVersion = nextResult.type === 'photo'
@@ -205,7 +208,7 @@ export default function WorkspacePage() {
 
            <section className="control-section"><div className="section-title"><span>02 / 选择空间气质</span><small>先选一种，生成后可再次尝试</small></div><div className="style-options">{styleOptions.map((style) => <button key={style.key} className={`style-option ${workspaceStyle === style.key ? 'selected' : ''}`} onClick={() => setWorkspaceStyle(style.key)}><span className="style-palette">{style.palette.map((color) => <i key={color} style={{ background: color }} />)}</span><span><strong>{style.name}</strong><small>{style.note}</small></span>{workspaceStyle === style.key && <b>✓</b>}</button>)}</div></section>
 
-          <section className="control-section"><div className="section-title"><span>03 / 补充你的想法</span><small>可选</small></div><textarea className="workspace-textarea" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={mode === 'photo' ? '比如：保留原来的窗户，增加一面电视墙，整体明亮一点…' : '比如：一家三口，需要更多收纳，希望客餐厅更通透…'} rows={4} /><input className="project-name-input" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="给这次方案取个名字" /></section>
+          <section className="control-section"><div className="section-title"><span>03 / 补充你的想法</span><small>可选</small></div><textarea className="workspace-textarea" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={mode === 'photo' ? '比如：保留原来的窗户，增加一面电视墙，整体明亮一点…' : '比如：一家三口，需要更多收纳，希望客餐厅更通透…'} rows={4} /><div className="workspace-meta-fields"><input className="project-name-input" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="给这次方案取个名字" /><label className="budget-field"><span>预算（万元）</span><input type="number" min="0" step="0.1" value={budgetInput} onChange={(event) => setBudgetInput(event.target.value)} placeholder="例如 20" /></label></div></section>
           {error && <div className="workspace-error">{error}</div>}
           <button className="workspace-generate" onClick={() => void handleGenerate()} disabled={isGenerating}>{isGenerating ? <><span className="spinner" />正在分析并生成…</> : <><Icon name="spark" />生成{mode === 'photo' ? '现场效果图' : '全屋汇报方案'}<Icon name="arrow" /></>}</button>
           <p className="privacy-note">图片会通过本机代理发送到已配置的 AI 服务，密钥不会暴露给浏览器。</p>
