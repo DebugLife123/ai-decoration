@@ -3,11 +3,12 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../stores/appStore';
 import './Navbar.css';
 
-type IconName = 'home' | 'workspace' | 'templates' | 'materials' | 'business' | 'help' | 'settings';
+type IconName = 'home' | 'workspace' | 'projects' | 'templates' | 'materials' | 'business' | 'help' | 'settings';
 
 const iconPaths: Record<IconName, string> = {
   home: 'M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5M9.5 21v-6h5v6',
   workspace: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
+  projects: 'm12 3 8 4-8 4-8-4 8-4ZM4 12l8 4 8-4M4 17l8 4 8-4',
   templates: 'M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-13ZM8 3v18M8 8h12M8 13h12',
   materials: 'M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11ZM7 16l3-3 2 2 3-4 3 5',
   business: 'M4 20V8h16v12M2 20h20M7 8V5h10v3M8 12h2M14 12h2M8 16h2M14 16h2',
@@ -27,6 +28,7 @@ const consumerNavGroups = [
   { label: '创作空间', items: [
     { path: '/', label: '灵感首页', icon: 'home' as IconName },
     { path: '/workspace', label: '设计工作台', icon: 'workspace' as IconName },
+    { path: '/projects', label: '我的项目', icon: 'projects' as IconName },
     { path: '/#templates', label: '方案模板', icon: 'templates' as IconName },
   ] },
   { label: '资源中心', items: [{ path: '/#materials', label: '材料灵感', icon: 'materials' as IconName }] },

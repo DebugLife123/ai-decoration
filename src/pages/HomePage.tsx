@@ -90,7 +90,7 @@ export default function HomePage() {
         <div className="topbar-actions">
           <Link className="business-entry" to="/business"><Icon name="layers" /> 团队与材料</Link>
           <button className="help-entry" onClick={() => setNotice('这里将提供新手引导与设计帮助。')}>使用指南</button>
-          <Link className="top-workspace" to="/workspace">我的方案 <Icon name="arrow" /></Link>
+          <Link className="top-workspace" to="/projects">我的方案 <Icon name="arrow" /></Link>
         </div>
       </header>
 

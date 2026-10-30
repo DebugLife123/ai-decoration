@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../stores/appStore';
-import type { DesignStyle, Project } from '../stores/appStore';
+import type { DesignStyle, DesignVersion, GenerationTask, Project } from '../stores/appStore';
 import { generateDesign, type DesignMode, type GenerationResult } from '../services/aiClient';
 import './WorkspacePage.css';
 
@@ -14,8 +14,6 @@ const styleOptions: StyleOption[] = [
   { key: 'european', name: '轻奢欧式', palette: ['#c9ced0', '#b29b7d', '#3b4248'], note: '石材、金属、克制质感' },
   { key: 'wabi', name: '自然侘寂', palette: ['#c2b29d', '#897661', '#e4d9cc'], note: '肌理、安静、自然' },
 ];
-
-const styleName = (key: DesignStyle) => styleOptions.find((style) => style.key === key)?.name || key;
 
 function readImage(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -39,14 +37,27 @@ function Icon({ name }: { name: 'upload' | 'spark' | 'arrow' | 'close' | 'home' 
 }
 
 export default function WorkspacePage() {
-  const { selectedStyle, setSelectedStyle, projects, addProject } = useAppStore();
-  const [mode, setMode] = useState<DesignMode>('photo');
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [photos, setPhotos] = useState<string[]>([]);
-  const [floorPlan, setFloorPlan] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState('');
-  const [projectName, setProjectName] = useState('我的装修方案');
-  const [result, setResult] = useState<GenerationResult | null>(null);
+  const { selectedStyle, setSelectedStyle, projects, saveProject } = useAppStore();
+  const [searchParams] = useSearchParams();
+  const projectId = searchParams.get('projectId');
+  const versionId = searchParams.get('versionId');
+  const existingProject = projects.find((project) => project.id === projectId);
+  const initialVersion = existingProject?.versions.find((item) => item.id === versionId) || existingProject?.versions.at(-1);
+  const initialResult: GenerationResult | null = !initialVersion ? null : initialVersion.mode === 'photo'
+    ? { type: 'photo', imageUrl: initialVersion.coverImageUrl, analysis: initialVersion.analysis }
+    : {
+      type: 'floorplan',
+      cover: initialVersion.coverImageUrl,
+      analysis: initialVersion.analysis,
+      rooms: initialVersion.images.filter((image) => image.title !== '方案总览').map((image) => ({ name: image.title, description: image.description || '', imageUrl: image.imageUrl })),
+    };
+  const [mode, setMode] = useState<DesignMode>(initialVersion?.mode || 'photo');
+  const [photo, setPhoto] = useState<string | null>(existingProject?.photoUrls[0] || null);
+  const [photos, setPhotos] = useState<string[]>(existingProject?.photoUrls || []);
+  const [floorPlan, setFloorPlan] = useState<string | null>(existingProject?.floorPlanUrl || null);
+  const [prompt, setPrompt] = useState(initialVersion?.prompt || '');
+  const [projectName, setProjectName] = useState(existingProject?.name || '我的装修方案');
+  const [result, setResult] = useState<GenerationResult | null>(initialResult);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -87,24 +98,89 @@ export default function WorkspacePage() {
     setError('');
     if (mode === 'photo' && !photo) { setError('请先上传现场毛坯照片。'); return; }
     if (mode === 'floorplan' && !floorPlan) { setError('请先上传户型图。'); return; }
+    const startedAt = new Date().toISOString();
+    const activeProjectId = existingProject?.id || crypto.randomUUID();
+    const task: GenerationTask = {
+      id: crypto.randomUUID(),
+      mode,
+      style: selectedStyle,
+      prompt,
+      status: 'generating',
+      startedAt,
+    };
+    const projectDraft: Project = {
+      id: activeProjectId,
+      name: projectName.trim() || '我的装修方案',
+      spaceType: mode === 'photo' ? '现场照片' : '全屋',
+      style: selectedStyle,
+      budget: existingProject?.budget,
+      area: existingProject?.area,
+      city: existingProject?.city,
+      createdAt: existingProject?.createdAt || startedAt,
+      updatedAt: startedAt,
+      status: 'generating',
+      thumbnail: existingProject?.thumbnail,
+      floorPlanUrl: floorPlan || existingProject?.floorPlanUrl,
+      photoUrls: photos.length ? photos : existingProject?.photoUrls || [],
+      versions: existingProject?.versions || [],
+      tasks: [...(existingProject?.tasks || []), task],
+    };
+    saveProject(projectDraft);
     setIsGenerating(true);
     try {
       const nextResult = await generateDesign({ mode, style: selectedStyle, prompt, photo: photo || undefined, photos, floorPlan: floorPlan || undefined });
       setResult(nextResult);
-      const generatedResults = nextResult.type === 'photo'
-        ? [{ id: `${Date.now()}`, style: selectedStyle, imageUrl: nextResult.imageUrl, prompt: prompt || `${styleName(selectedStyle)}效果图`, createdAt: new Date().toISOString() }]
-        : nextResult.rooms.map((room, index) => ({ id: `${Date.now()}-${index}`, style: selectedStyle, imageUrl: room.imageUrl, prompt: `${room.name} · ${prompt || styleName(selectedStyle)}`, createdAt: new Date().toISOString() }));
-      const project: Project = { id: Date.now().toString(), name: projectName || '我的装修方案', spaceType: mode === 'photo' ? '现场照片' : '全屋', style: selectedStyle, budget: 0, area: 0, city: '', createdAt: new Date().toISOString(), status: 'completed', floorPlanUrl: floorPlan || undefined, photoUrls: photos, thumbnail: nextResult.type === 'photo' ? nextResult.imageUrl : nextResult.cover, generatedResults };
-      addProject(project);
+      const versionCreatedAt = new Date().toISOString();
+      const version: DesignVersion = nextResult.type === 'photo'
+        ? {
+          id: crypto.randomUUID(),
+          mode,
+          style: selectedStyle,
+          prompt,
+          createdAt: versionCreatedAt,
+          analysis: nextResult.analysis,
+          coverImageUrl: nextResult.imageUrl,
+          images: [{ id: crypto.randomUUID(), title: '现场效果图', imageUrl: nextResult.imageUrl }],
+        }
+        : {
+          id: crypto.randomUUID(),
+          mode,
+          style: selectedStyle,
+          prompt,
+          createdAt: versionCreatedAt,
+          analysis: nextResult.analysis,
+          coverImageUrl: nextResult.cover,
+          images: [
+            { id: crypto.randomUUID(), title: '方案总览', imageUrl: nextResult.cover },
+            ...nextResult.rooms.map((room) => ({ id: crypto.randomUUID(), title: room.name, imageUrl: room.imageUrl, description: room.description })),
+          ],
+        };
+      const completedAt = new Date().toISOString();
+      saveProject({
+        ...projectDraft,
+        thumbnail: version.coverImageUrl,
+        versions: [...projectDraft.versions, version],
+        tasks: projectDraft.tasks.map((item) => item.id === task.id ? { ...item, status: 'completed', completedAt } : item),
+        status: 'completed',
+        updatedAt: completedAt,
+      });
     } catch (generationError) {
-      setError(generationError instanceof Error ? generationError.message : '生成失败，请稍后再试。');
+      const message = generationError instanceof Error ? generationError.message : '生成失败，请稍后再试。';
+      setError(message);
+      const completedAt = new Date().toISOString();
+      saveProject({
+        ...projectDraft,
+        tasks: projectDraft.tasks.map((item) => item.id === task.id ? { ...item, status: 'failed', completedAt, error: message } : item),
+        status: 'failed',
+        updatedAt: completedAt,
+      });
     } finally { setIsGenerating(false); }
   };
 
   return (
     <div className="workspace">
       <aside className="workspace-sidebar">
-        <div className="workspace-sidebar-top"><div><span className="workspace-eyebrow">CREATE YOUR HOME</span><h1>设计工作台</h1></div><span className="project-count">{projects.length} 个方案</span></div>
+        <div className="workspace-sidebar-top"><div><span className="workspace-eyebrow">CREATE YOUR HOME</span><h1>设计工作台</h1><Link className="projects-shortcut" to="/projects">我的项目 <Icon name="arrow" /></Link></div><span className="project-count">{projects.length} 个项目</span></div>
         <div className="mode-switcher" role="tablist">
           <button className={mode === 'photo' ? 'active' : ''} onClick={() => { setMode('photo'); setResult(null); setError(''); }} role="tab">现场照片效果图</button>
           <button className={mode === 'floorplan' ? 'active' : ''} onClick={() => { setMode('floorplan'); setResult(null); setError(''); }} role="tab">户型图全屋方案</button>

@@ -8,23 +8,46 @@ export interface Project {
   name: string;
   spaceType: string;
   style: DesignStyle;
-  budget: number;
-  area: number;
-  city: string;
+  budget?: number;
+  area?: number;
+  city?: string;
   createdAt: string;
-  status: 'draft' | 'generating' | 'completed';
+  updatedAt: string;
+  status: 'draft' | 'generating' | 'completed' | 'failed';
   thumbnail?: string;
   floorPlanUrl?: string;
   photoUrls: string[];
-  generatedResults: GeneratedResult[];
+  versions: DesignVersion[];
+  tasks: GenerationTask[];
 }
 
-export interface GeneratedResult {
+export interface DesignImage {
   id: string;
-  style: DesignStyle;
+  title: string;
   imageUrl: string;
+  description?: string;
+}
+
+export interface DesignVersion {
+  id: string;
+  mode: 'photo' | 'floorplan';
+  style: DesignStyle;
   prompt: string;
   createdAt: string;
+  analysis: string;
+  coverImageUrl: string;
+  images: DesignImage[];
+}
+
+export interface GenerationTask {
+  id: string;
+  mode: 'photo' | 'floorplan';
+  style: DesignStyle;
+  prompt: string;
+  status: 'generating' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt?: string;
+  error?: string;
 }
 
 interface AppState {
@@ -33,7 +56,9 @@ interface AppState {
   currentProject: Project | null;
   setCurrentProject: (p: Project | null) => void;
   projects: Project[];
-  addProject: (p: Project) => void;
+  storageWarning: string;
+  saveProject: (p: Project) => void;
+  removeProject: (id: string) => void;
   selectedStyle: DesignStyle;
   setSelectedStyle: (s: DesignStyle) => void;
   isGenerating: boolean;
@@ -50,7 +75,40 @@ function savedRole(): UserRole {
   }
 }
 
-export const useAppStore = create<AppState>((set) => ({
+function savedProjects(): Project[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const value = window.localStorage.getItem('decoration-projects-v1');
+    const parsed = value ? JSON.parse(value) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is Project => Boolean(
+      item && typeof item === 'object' && typeof item.id === 'string' && typeof item.name === 'string',
+    )).map((item) => ({
+      ...item,
+      spaceType: typeof item.spaceType === 'string' ? item.spaceType : '未分类空间',
+      style: item.style || 'modern',
+      createdAt: item.createdAt || new Date().toISOString(),
+      updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
+      status: ['draft', 'generating', 'completed', 'failed'].includes(item.status) ? item.status : 'draft',
+      photoUrls: Array.isArray(item.photoUrls) ? item.photoUrls : [],
+      versions: Array.isArray(item.versions) ? item.versions : [],
+      tasks: Array.isArray(item.tasks) ? item.tasks : [],
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function persistProjects(projects: Project[]) {
+  try {
+    window.localStorage.setItem('decoration-projects-v1', JSON.stringify(projects));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const useAppStore = create<AppState>((set, get) => ({
   role: savedRole(),
   setRole: (role) => {
     try {
@@ -62,8 +120,21 @@ export const useAppStore = create<AppState>((set) => ({
   },
   currentProject: null,
   setCurrentProject: (currentProject) => set({ currentProject }),
-  projects: [],
-  addProject: (p) => set((s) => ({ projects: [...s.projects, p] })),
+  projects: savedProjects(),
+  storageWarning: '',
+  saveProject: (project) => {
+    const projects = get().projects;
+    const nextProjects = projects.some((item) => item.id === project.id)
+      ? projects.map((item) => item.id === project.id ? project : item)
+      : [project, ...projects];
+    const persisted = persistProjects(nextProjects);
+    set({ projects: nextProjects, currentProject: project, storageWarning: persisted ? '' : '本次内容已暂存于当前页面，但浏览器存储空间不足，刷新后可能无法恢复。' });
+  },
+  removeProject: (id) => {
+    const nextProjects = get().projects.filter((item) => item.id !== id);
+    const persisted = persistProjects(nextProjects);
+    set({ projects: nextProjects, currentProject: get().currentProject?.id === id ? null : get().currentProject, storageWarning: persisted ? '' : '项目已从当前页面移除，但浏览器存储空间不足，刷新后可能恢复。' });
+  },
   selectedStyle: 'modern',
   setSelectedStyle: (selectedStyle) => set({ selectedStyle }),
   isGenerating: false,
