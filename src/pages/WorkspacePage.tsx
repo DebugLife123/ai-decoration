@@ -51,10 +51,14 @@ export default function WorkspacePage() {
   const [searchParams] = useSearchParams();
   const projectId = searchParams.get('projectId');
   const versionId = searchParams.get('versionId');
+  const taskId = searchParams.get('taskId');
   const existingProject = projects.find((project) => project.id === projectId);
   const draftState = (location.state || {}) as WorkspaceDraftState;
+  const retryTask = existingProject?.tasks.find((task) => task.id === taskId);
   const initialVersion = existingProject?.versions.find((item) => item.id === versionId) || existingProject?.versions.at(-1);
-  const initialStyle = initialVersion?.style || existingProject?.style || draftState.style || selectedStyle;
+  const initialStyle = (versionId ? existingProject?.versions.find((item) => item.id === versionId)?.style : undefined)
+    || retryTask?.style || initialVersion?.style || existingProject?.style || draftState.style || selectedStyle;
+  const activeVersion = versionId ? existingProject?.versions.find((item) => item.id === versionId) : initialVersion;
   const initialResult: GenerationResult | null = !initialVersion ? null : initialVersion.mode === 'photo'
     ? { type: 'photo', imageUrl: initialVersion.coverImageUrl, analysis: initialVersion.analysis }
     : {
@@ -64,14 +68,14 @@ export default function WorkspacePage() {
       rooms: initialVersion.images.filter((image) => image.title !== '方案总览').map((image) => ({ name: image.title, description: image.description || '', imageUrl: image.imageUrl })),
     };
   const [workspaceStyle, setWorkspaceStyle] = useState<DesignStyle>(initialStyle);
-  const [mode, setMode] = useState<DesignMode>(initialVersion?.mode || 'photo');
+  const [mode, setMode] = useState<DesignMode>(retryTask?.mode || activeVersion?.mode || 'photo');
   const [photo, setPhoto] = useState<string | null>(existingProject?.photoUrls[0] || null);
   const [photos, setPhotos] = useState<string[]>(existingProject?.photoUrls || []);
   const [floorPlan, setFloorPlan] = useState<string | null>(existingProject?.floorPlanUrl || null);
-  const [prompt, setPrompt] = useState(initialVersion?.prompt ?? draftState.prompt ?? '');
+  const [prompt, setPrompt] = useState(retryTask?.prompt ?? activeVersion?.prompt ?? draftState.prompt ?? '');
   const [projectName, setProjectName] = useState(existingProject?.name || '我的装修方案');
   const [budgetInput, setBudgetInput] = useState(existingProject?.budget?.toString() || '');
-  const [result, setResult] = useState<GenerationResult | null>(initialResult);
+  const [result, setResult] = useState<GenerationResult | null>(retryTask ? null : initialResult);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
   const photoInputRef = useRef<HTMLInputElement>(null);

@@ -81,6 +81,10 @@
 .version-open { width: 26px; height: 26px; display: grid; place-items: center; flex: 0 0 auto; color: var(--color-primary); border-radius: 6px; }
 .version-open:hover { background: #f1edff; }
 .task-row { min-height: 56px; }
+.task-row.failed { flex-wrap: wrap; }
+.task-error { overflow-wrap: anywhere; color: var(--color-error); font-size: 11px; line-height: 1.45; }
+.task-retry { flex: 0 0 auto; padding: 6px 9px; color: var(--color-primary); background: #f3efff; border-radius: 6px; font-size: 10px; font-weight: 700; }
+.task-retry:hover { color: #fff; background: var(--color-primary); }
 .task-dot { width: 8px; height: 8px; flex: 0 0 auto; background: var(--color-text-muted); border-radius: 50%; }
 .task-dot.completed { background: var(--color-success); }
 .task-dot.generating { background: var(--color-primary); box-shadow: 0 0 0 4px #eee9ff; }
