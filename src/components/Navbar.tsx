@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../stores/appStore';
 import './Navbar.css';
 
@@ -23,28 +23,32 @@ function NavIcon({ name }: { name: IconName }) {
   );
 }
 
-const navGroups = [
-  {
-    label: '创作空间',
-    items: [
-      { path: '/', label: '灵感首页', icon: 'home' as IconName },
-      { path: '/workspace', label: '设计工作台', icon: 'workspace' as IconName },
-      { path: '/#templates', label: '方案模板', icon: 'templates' as IconName },
-    ],
-  },
-  {
-    label: '资源中心',
-    items: [
-      { path: '/#materials', label: '材料灵感', icon: 'materials' as IconName },
-      { path: '/business', label: '企业服务', icon: 'business' as IconName },
-    ],
-  },
+const consumerNavGroups = [
+  { label: '创作空间', items: [
+    { path: '/', label: '灵感首页', icon: 'home' as IconName },
+    { path: '/workspace', label: '设计工作台', icon: 'workspace' as IconName },
+    { path: '/#templates', label: '方案模板', icon: 'templates' as IconName },
+  ] },
+  { label: '资源中心', items: [{ path: '/#materials', label: '材料灵感', icon: 'materials' as IconName }] },
+];
+
+const businessNavGroups = [
+  { label: '企业工作区', items: [{ path: '/business', label: '企业业务', icon: 'business' as IconName }] },
 ];
 
 export default function Navbar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { role, setRole } = useAppStore();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isBusiness = role === 'business';
+  const navGroups = isBusiness ? businessNavGroups : consumerNavGroups;
+
+  const switchRole = (nextRole: 'consumer' | 'business') => {
+    setRole(nextRole);
+    setMobileOpen(false);
+    navigate(nextRole === 'business' ? '/business' : '/');
+  };
 
   return (
     <>
@@ -64,9 +68,9 @@ export default function Navbar() {
             </span>
           </Link>
 
-          <div className="workspace-switcher">
-            <span className="workspace-avatar">W</span>
-            <span><strong>个人工作区</strong><small>Personal workspace</small></span>
+          <div className={`workspace-switcher ${isBusiness ? 'business-mode' : ''}`}>
+            <span className="workspace-avatar">{isBusiness ? 'B' : 'W'}</span>
+            <span><strong>{isBusiness ? '企业工作区' : '个人工作区'}</strong><small>{isBusiness ? 'Business workspace' : 'Personal workspace'}</small></span>
             <span className="switcher-caret">⌄</span>
           </div>
 
@@ -95,11 +99,11 @@ export default function Navbar() {
           </nav>
 
           <div className="navbar-bottom">
-            <div className="role-switcher" aria-label="身份切换">
-              <button className={role === 'consumer' ? 'active' : ''} onClick={() => setRole('consumer')}>用户端</button>
-              <button className={role === 'business' ? 'active' : ''} onClick={() => setRole('business')}>企业端</button>
+            <div className="role-switcher" aria-label="端选择">
+              <button className={role === 'consumer' ? 'active' : ''} onClick={() => switchRole('consumer')}>用户端</button>
+              <button className={role === 'business' ? 'active' : ''} onClick={() => switchRole('business')}>企业端</button>
             </div>
-            <Link to="/business" className="nav-help" onClick={() => setMobileOpen(false)}>
+            <Link to={isBusiness ? '/business' : '/'} className="nav-help" onClick={() => setMobileOpen(false)}>
               <NavIcon name="help" />
               <span>帮助与反馈</span>
             </Link>
