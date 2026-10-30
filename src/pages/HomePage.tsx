@@ -150,7 +150,7 @@ export default function HomePage() {
             ))}
           </div>
           {notice && <div className="demo-notice"><span>i</span>{notice}<button onClick={() => setNotice('')} aria-label="关闭提示"><Icon name="close" /></button></div>}
-          {ideaVisible && <div className="idea-preview"><span className="idea-icon"><Icon name="spark" /></span><div><strong>你的设计简报已准备好</strong><p>{activeStyle.name} · {files.length > 0 ? `已添加 ${files.length} 张素材` : '文字灵感'} · {prompt || '等待补充空间描述'}</p></div><Link to="/workspace">继续到工作台 <Icon name="arrow" /></Link></div>}
+          {ideaVisible && <div className="idea-preview"><span className="idea-icon"><Icon name="spark" /></span><div><strong>你的设计简报已准备好</strong><p>{activeStyle.name} · {files.length > 0 ? `已添加 ${files.length} 张素材` : '文字灵感'} · {prompt || '等待补充空间描述'}</p></div><Link to="/workspace" state={{ prompt, style: selectedStyle }}>继续到工作台 <Icon name="arrow" /></Link></div>}
         </section>
 
         <section className="entry-links" aria-label="设计入口">

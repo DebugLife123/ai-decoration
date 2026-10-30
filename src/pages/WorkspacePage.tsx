@@ -1,11 +1,12 @@
 import { useCallback, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../stores/appStore';
 import type { DesignStyle, DesignVersion, GenerationTask, Project } from '../stores/appStore';
 import { generateDesign, type DesignMode, type GenerationResult } from '../services/aiClient';
 import './WorkspacePage.css';
 
 type StyleOption = { key: DesignStyle; name: string; palette: string[]; note: string };
+type WorkspaceDraftState = { prompt?: string; style?: DesignStyle };
 const styleOptions: StyleOption[] = [
   { key: 'modern', name: '现代简约', palette: ['#d9d8d1', '#69727a', '#f1f0ea'], note: '留白、干净、轻盈' },
   { key: 'minimal', name: '北欧原木', palette: ['#e4d8c6', '#b79c73', '#8b9b7c'], note: '原木、亚麻、自然光' },
@@ -37,12 +38,15 @@ function Icon({ name }: { name: 'upload' | 'spark' | 'arrow' | 'close' | 'home' 
 }
 
 export default function WorkspacePage() {
-  const { selectedStyle, setSelectedStyle, projects, saveProject } = useAppStore();
+  const { selectedStyle, projects, saveProject } = useAppStore();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const projectId = searchParams.get('projectId');
   const versionId = searchParams.get('versionId');
   const existingProject = projects.find((project) => project.id === projectId);
+  const draftState = (location.state || {}) as WorkspaceDraftState;
   const initialVersion = existingProject?.versions.find((item) => item.id === versionId) || existingProject?.versions.at(-1);
+  const initialStyle = initialVersion?.style || existingProject?.style || draftState.style || selectedStyle;
   const initialResult: GenerationResult | null = !initialVersion ? null : initialVersion.mode === 'photo'
     ? { type: 'photo', imageUrl: initialVersion.coverImageUrl, analysis: initialVersion.analysis }
     : {
@@ -51,18 +55,19 @@ export default function WorkspacePage() {
       analysis: initialVersion.analysis,
       rooms: initialVersion.images.filter((image) => image.title !== '方案总览').map((image) => ({ name: image.title, description: image.description || '', imageUrl: image.imageUrl })),
     };
+  const [workspaceStyle, setWorkspaceStyle] = useState<DesignStyle>(initialStyle);
   const [mode, setMode] = useState<DesignMode>(initialVersion?.mode || 'photo');
   const [photo, setPhoto] = useState<string | null>(existingProject?.photoUrls[0] || null);
   const [photos, setPhotos] = useState<string[]>(existingProject?.photoUrls || []);
   const [floorPlan, setFloorPlan] = useState<string | null>(existingProject?.floorPlanUrl || null);
-  const [prompt, setPrompt] = useState(initialVersion?.prompt || '');
+  const [prompt, setPrompt] = useState(initialVersion?.prompt ?? draftState.prompt ?? '');
   const [projectName, setProjectName] = useState(existingProject?.name || '我的装修方案');
   const [result, setResult] = useState<GenerationResult | null>(initialResult);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
   const photoInputRef = useRef<HTMLInputElement>(null);
   const floorPlanInputRef = useRef<HTMLInputElement>(null);
-  const activeStyle = styleOptions.find((style) => style.key === selectedStyle) || styleOptions[0];
+  const activeStyle = styleOptions.find((style) => style.key === workspaceStyle) || styleOptions[0];
 
   const addPhotoFiles = useCallback(async (files: FileList | File[]) => {
     const images = Array.from(files).filter((file) => file.type.startsWith('image/')).slice(0, 4);
@@ -103,7 +108,7 @@ export default function WorkspacePage() {
     const task: GenerationTask = {
       id: crypto.randomUUID(),
       mode,
-      style: selectedStyle,
+      style: workspaceStyle,
       prompt,
       status: 'generating',
       startedAt,
@@ -112,7 +117,7 @@ export default function WorkspacePage() {
       id: activeProjectId,
       name: projectName.trim() || '我的装修方案',
       spaceType: mode === 'photo' ? '现场照片' : '全屋',
-      style: selectedStyle,
+      style: workspaceStyle,
       budget: existingProject?.budget,
       area: existingProject?.area,
       city: existingProject?.city,
@@ -128,14 +133,14 @@ export default function WorkspacePage() {
     saveProject(projectDraft);
     setIsGenerating(true);
     try {
-      const nextResult = await generateDesign({ mode, style: selectedStyle, prompt, photo: photo || undefined, photos, floorPlan: floorPlan || undefined });
+      const nextResult = await generateDesign({ mode, style: workspaceStyle, prompt, photo: photo || undefined, photos, floorPlan: floorPlan || undefined });
       setResult(nextResult);
       const versionCreatedAt = new Date().toISOString();
       const version: DesignVersion = nextResult.type === 'photo'
         ? {
           id: crypto.randomUUID(),
           mode,
-          style: selectedStyle,
+          style: workspaceStyle,
           prompt,
           createdAt: versionCreatedAt,
           analysis: nextResult.analysis,
@@ -145,7 +150,7 @@ export default function WorkspacePage() {
         : {
           id: crypto.randomUUID(),
           mode,
-          style: selectedStyle,
+          style: workspaceStyle,
           prompt,
           createdAt: versionCreatedAt,
           analysis: nextResult.analysis,
@@ -197,7 +202,7 @@ export default function WorkspacePage() {
             {mode === 'photo' && photos.length > 1 && <div className="photo-count">已添加 {photos.length} 张照片，将使用第一张作为主视角</div>}
           </section>
 
-          <section className="control-section"><div className="section-title"><span>02 / 选择空间气质</span><small>先选一种，生成后可再次尝试</small></div><div className="style-options">{styleOptions.map((style) => <button key={style.key} className={`style-option ${selectedStyle === style.key ? 'selected' : ''}`} onClick={() => setSelectedStyle(style.key)}><span className="style-palette">{style.palette.map((color) => <i key={color} style={{ background: color }} />)}</span><span><strong>{style.name}</strong><small>{style.note}</small></span>{selectedStyle === style.key && <b>✓</b>}</button>)}</div></section>
+           <section className="control-section"><div className="section-title"><span>02 / 选择空间气质</span><small>先选一种，生成后可再次尝试</small></div><div className="style-options">{styleOptions.map((style) => <button key={style.key} className={`style-option ${workspaceStyle === style.key ? 'selected' : ''}`} onClick={() => setWorkspaceStyle(style.key)}><span className="style-palette">{style.palette.map((color) => <i key={color} style={{ background: color }} />)}</span><span><strong>{style.name}</strong><small>{style.note}</small></span>{workspaceStyle === style.key && <b>✓</b>}</button>)}</div></section>
 
           <section className="control-section"><div className="section-title"><span>03 / 补充你的想法</span><small>可选</small></div><textarea className="workspace-textarea" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={mode === 'photo' ? '比如：保留原来的窗户，增加一面电视墙，整体明亮一点…' : '比如：一家三口，需要更多收纳，希望客餐厅更通透…'} rows={4} /><input className="project-name-input" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="给这次方案取个名字" /></section>
           {error && <div className="workspace-error">{error}</div>}
