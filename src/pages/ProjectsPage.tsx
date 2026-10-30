@@ -37,7 +37,7 @@ function ProjectCard({ project, selected, onSelect }: { project: Project; select
 }
 
 function EmptyProjects() {
-  return <div className="projects-empty"><div className="empty-project-mark"><Icon name="layers" /></div><h2>还没有设计项目</h2><p>从一张毛坯照片或户型图开始，生成的方案会自动保存在这里。</p><Link className="projects-primary-button" to="/workspace"><Icon name="plus" />创建第一个项目</Link></div>;
+  return <div className="projects-empty"><div className="empty-project-mark"><Icon name="layers" /></div><h2>从第一个空间开始</h2><p>当前还没有保存的项目。创建项目并上传现场照片或户型图，生成后会保存在这里。</p><Link className="projects-primary-button" to="/workspace"><Icon name="plus" />创建第一个项目</Link></div>;
 }
 
 export default function ProjectsPage() {

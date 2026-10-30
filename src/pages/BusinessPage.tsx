@@ -136,6 +136,7 @@ export default function BusinessPage() {
   const [materialForm, setMaterialForm] = useState(emptyMaterial);
   const [workerForm, setWorkerForm] = useState(emptyWorker);
   const [certError, setCertError] = useState('');
+  const [profileFeedback, setProfileFeedback] = useState('');
   const [materialFeedback, setMaterialFeedback] = useState('');
   const [workerFeedback, setWorkerFeedback] = useState('');
 
@@ -147,6 +148,7 @@ export default function BusinessPage() {
   const saveProfile = (event: FormEvent) => {
     event.preventDefault();
     setProfile(profileDraft);
+    setProfileFeedback('企业资料已保存到本机草稿，尚未同步到平台。');
     setShowProfileForm(false);
   };
 
@@ -245,17 +247,17 @@ export default function BusinessPage() {
                 <Field label="服务地区"><input value={profileDraft.city} onChange={(event) => setProfileDraft({ ...profileDraft, city: event.target.value })} placeholder="例如：上海、苏州" /></Field>
                 <Field label="服务范围"><input value={profileDraft.services} onChange={(event) => setProfileDraft({ ...profileDraft, services: event.target.value })} placeholder="例如：全案设计、施工监理" /></Field>
                 <Field label="企业简介"><textarea value={profileDraft.intro} onChange={(event) => setProfileDraft({ ...profileDraft, intro: event.target.value })} placeholder="描述企业擅长方向和服务特点" rows={3} /></Field>
-                <button className="primary-button" type="submit"><Icon name="check" />保存本机草稿</button>
+                <div className="profile-form-actions"><button className="primary-button" type="submit"><Icon name="check" />保存本机草稿</button>{profileFeedback && <span className="form-success" role="status">{profileFeedback}</span>}</div>
               </form> : <div className="profile-summary"><strong>{profile.name || '还没有企业名称'}</strong><p>{profile.intro || '完善企业简介后，这里会显示企业服务定位。'}</p><div className="summary-lines"><span>服务地区 <b>{profile.city || '未填写'}</b></span><span>服务范围 <b>{profile.services || '未填写'}</b></span></div></div>}
             </section>
             <section className="overview-card checklist-card">
               <div className="card-heading"><div><span className="card-kicker">02</span><h3>业务资料清单</h3></div><span className="completion-count">{completion}/5</span></div>
               <div className="checklist">
-                <ChecklistItem done={Boolean(profile.name)} label="企业基础资料" onClick={() => { setShowProfileForm(true); setActiveTab('overview'); }} />
-                <ChecklistItem done={cases.length > 0} label="至少一条案例资料" onClick={() => goTo('cases')} />
-                <ChecklistItem done={materials.length > 0} label="至少一条材料报价" onClick={() => goTo('materials')} />
-                <ChecklistItem done={workers.length > 0} label="至少一条人工报价" onClick={() => goTo('workers')} />
-                <ChecklistItem done={certification.status === 'pending'} label="提交认证资料草稿" onClick={() => goTo('certification')} />
+                <ChecklistItem done={Boolean(profile.name)} label={`企业基础资料 · ${profile.name ? '已填写' : '待填写'}`} onClick={() => { setShowProfileForm(true); setProfileFeedback(''); setActiveTab('overview'); }} />
+                <ChecklistItem done={cases.length > 0} label={`案例资料 · ${cases.length} 条`} onClick={() => { setShowCaseForm(true); setEditingCaseId(''); setCaseForm(emptyCase); goTo('cases'); }} />
+                <ChecklistItem done={materials.length > 0} label={`材料报价 · ${materials.length} 条`} onClick={() => { setShowMaterialForm(true); setEditingMaterialId(''); setMaterialForm(emptyMaterial); setMaterialFeedback(''); goTo('materials'); }} />
+                <ChecklistItem done={workers.length > 0} label={`人工报价 · ${workers.length} 条`} onClick={() => { setShowWorkerForm(true); setEditingWorkerId(''); setWorkerForm(emptyWorker); setWorkerFeedback(''); goTo('workers'); }} />
+                <ChecklistItem done={certification.status === 'pending'} label={`认证资料 · ${certification.status === 'pending' ? '本机草稿已保存' : '待准备'}`} onClick={() => goTo('certification')} />
               </div>
             </section>
           </div>
