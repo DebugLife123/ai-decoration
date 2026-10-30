@@ -88,7 +88,7 @@ export default function HomePage() {
       <header className="home-topbar">
         <div className="welcome"><span className="online-dot" />今天，想改造哪里？</div>
         <div className="topbar-actions">
-          <Link className="business-entry" to="/business"><Icon name="layers" /> 团队与材料</Link>
+          <Link className="business-entry" to="/materials"><Icon name="layers" /> 材料库</Link>
           <button className="help-entry" onClick={() => setNotice('这里将提供新手引导与设计帮助。')}>使用指南</button>
           <Link className="top-workspace" to="/projects">我的方案 <Icon name="arrow" /></Link>
         </div>
@@ -183,7 +183,7 @@ export default function HomePage() {
         <section className="workflow-strip" id="materials">
           <div className="workflow-copy"><span className="eyebrow">FROM IDEA TO HOME</span><h2>灵感不止于一张效果图</h2><p>设计、修改与方案整理，留在同一个创作空间里。</p></div>
           <div className="workflow-steps"><span><b>01</b>上传空间</span><span><b>02</b>探索风格</span><span><b>03</b>局部调整</span></div>
-          <Link to="/workspace">走进设计工作台 <Icon name="arrow" /></Link>
+          <Link to="/materials">浏览材料清单 <Icon name="arrow" /></Link>
         </section>
 
         <footer className="home-footer"><span>筑境 AI · 让每一个家有自己的表达</span><span>AI 效果用于设计沟通，不作为施工图纸</span></footer>

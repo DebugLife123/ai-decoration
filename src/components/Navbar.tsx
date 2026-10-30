@@ -31,7 +31,7 @@ const consumerNavGroups = [
     { path: '/projects', label: '我的项目', icon: 'projects' as IconName },
     { path: '/#templates', label: '方案模板', icon: 'templates' as IconName },
   ] },
-  { label: '资源中心', items: [{ path: '/#materials', label: '材料灵感', icon: 'materials' as IconName }] },
+  { label: '资源中心', items: [{ path: '/materials', label: '材料库', icon: 'materials' as IconName }] },
 ];
 
 const businessNavGroups = [

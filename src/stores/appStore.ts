@@ -19,6 +19,19 @@ export interface Project {
   photoUrls: string[];
   versions: DesignVersion[];
   tasks: GenerationTask[];
+  materialIds: string[];
+}
+
+export interface MaterialRecord {
+  id: string;
+  name: string;
+  spec: string;
+  unit: string;
+  price: string;
+  category: string;
+  region: string;
+  validUntil: string;
+  updatedAt: string;
 }
 
 export interface DesignImage {
@@ -59,6 +72,7 @@ interface AppState {
   storageWarning: string;
   saveProject: (p: Project) => void;
   removeProject: (id: string) => void;
+  toggleProjectMaterial: (projectId: string, materialId: string) => void;
   selectedStyle: DesignStyle;
   setSelectedStyle: (s: DesignStyle) => void;
   isGenerating: boolean;
@@ -93,6 +107,7 @@ function savedProjects(): Project[] {
       photoUrls: Array.isArray(item.photoUrls) ? item.photoUrls : [],
       versions: Array.isArray(item.versions) ? item.versions : [],
       tasks: Array.isArray(item.tasks) ? item.tasks : [],
+      materialIds: Array.isArray(item.materialIds) ? item.materialIds : [],
     }));
   } catch {
     return [];
@@ -105,6 +120,19 @@ function persistProjects(projects: Project[]) {
     return true;
   } catch {
     return false;
+  }
+}
+
+export function readBusinessMaterials(): MaterialRecord[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const value = window.localStorage.getItem('decoration-business-materials');
+    const parsed = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) ? parsed.filter((item): item is MaterialRecord => Boolean(
+      item && typeof item === 'object' && typeof item.id === 'string' && typeof item.name === 'string',
+    )) : [];
+  } catch {
+    return [];
   }
 }
 
@@ -134,6 +162,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     const nextProjects = get().projects.filter((item) => item.id !== id);
     const persisted = persistProjects(nextProjects);
     set({ projects: nextProjects, currentProject: get().currentProject?.id === id ? null : get().currentProject, storageWarning: persisted ? '' : '项目已从当前页面移除，但浏览器存储空间不足，刷新后可能恢复。' });
+  },
+  toggleProjectMaterial: (projectId, materialId) => {
+    const projects = get().projects;
+    const nextProjects = projects.map((project) => {
+      if (project.id !== projectId) return project;
+      const materialIds = project.materialIds.includes(materialId)
+        ? project.materialIds.filter((id) => id !== materialId)
+        : [...project.materialIds, materialId];
+      return { ...project, materialIds, updatedAt: new Date().toISOString() };
+    });
+    const persisted = persistProjects(nextProjects);
+    const currentProject = nextProjects.find((project) => project.id === get().currentProject?.id) || get().currentProject;
+    set({ projects: nextProjects, currentProject, storageWarning: persisted ? '' : '材料关联已暂存于当前页面，但浏览器存储空间不足，刷新后可能无法恢复。' });
   },
   selectedStyle: 'modern',
   setSelectedStyle: (selectedStyle) => set({ selectedStyle }),

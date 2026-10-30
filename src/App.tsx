@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
 import WorkspacePage from './pages/WorkspacePage';
 import ProjectsPage from './pages/ProjectsPage';
+import MaterialsPage from './pages/MaterialsPage';
 import BusinessPage from './pages/BusinessPage';
 import { useAppStore } from './stores/appStore';
 import './App.css';
@@ -32,6 +33,7 @@ function App() {
           <Route path="/" element={<RoleRoute role="consumer"><HomePage /></RoleRoute>} />
           <Route path="/workspace" element={<RoleRoute role="consumer"><WorkspacePage /></RoleRoute>} />
           <Route path="/projects" element={<RoleRoute role="consumer"><ProjectsPage /></RoleRoute>} />
+          <Route path="/materials" element={<RoleRoute role="consumer"><MaterialsPage /></RoleRoute>} />
           <Route path="/business" element={<RoleRoute role="business"><BusinessPage /></RoleRoute>} />
           <Route path="*" element={<Navigate to={role === 'business' ? '/business' : '/'} replace />} />
         </Routes>

@@ -129,6 +129,7 @@ export default function WorkspacePage() {
       photoUrls: photos.length ? photos : existingProject?.photoUrls || [],
       versions: existingProject?.versions || [],
       tasks: [...(existingProject?.tasks || []), task],
+      materialIds: existingProject?.materialIds || [],
     };
     saveProject(projectDraft);
     setIsGenerating(true);
