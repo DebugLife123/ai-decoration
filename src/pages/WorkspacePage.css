@@ -234,11 +234,14 @@
   border-color: #8978dc;
   box-shadow: 0 5px 16px rgba(106, 90, 212, 0.11);
 }
+.style-option.recommended:not(.selected) { border-color: #e3d4b5; background: #fffdfa; }
 
 .style-option > span:last-of-type { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .style-option strong { overflow: hidden; color: #4d4559; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .style-option small { overflow: hidden; color: #aaa4b4; font-size: 11px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .style-option > b { margin-left: auto; color: #6a5ad4; font-size: 14px; }
+.style-option em { margin-left: auto; padding: 3px 5px; color: #8b6b35; background: #f7edda; border-radius: 4px; font-size: 9px; font-style: normal; white-space: nowrap; }
+.style-option em + b { margin-left: 0; }
 
 .style-palette { display: flex; flex: 0 0 27px; width: 27px; height: 27px; flex-wrap: wrap; gap: 2px; overflow: hidden; border-radius: 8px; }
 .style-palette i { flex: 1 1 9px; min-width: 9px; min-height: 13px; }
@@ -269,6 +272,13 @@
 .budget-field { display: grid; gap: 5px; color: var(--color-text-muted); font-size: 10px; }
 .budget-field input { min-width: 0; width: 100%; height: 42px; padding: 0 12px; color: var(--color-text); background: #faf9fc; border: 1px solid var(--color-border-light); border-radius: 9px; font-size: 12px; }
 .budget-field input:focus { outline: none; background: #fff; border-color: #9a8be0; box-shadow: 0 0 0 4px rgba(106, 90, 212, 0.08); }
+.budget-input-wrap { position: relative; }
+.budget-input-wrap input { padding-right: 48px; }
+.budget-input-wrap b { position: absolute; top: 50%; right: 12px; color: #91899b; font-size: 11px; font-weight: 500; transform: translateY(-50%); }
+.budget-section { padding: 15px; background: #f8f6fc; border: 1px solid #ece7f4; border-radius: 12px; }
+.budget-recommendation { display: grid; gap: 3px; padding: 10px 11px; color: #5e526b; background: #f7f3e9; border-left: 3px solid #c89447; border-radius: 5px; }
+.budget-recommendation strong { color: #856633; font-size: 11px; }
+.budget-recommendation span { font-size: 10px; line-height: 1.5; }
 .workspace-textarea:focus, .project-name-input:focus { background: #fff; border-color: #9a8be0; box-shadow: 0 0 0 4px rgba(106, 90, 212, 0.08); }
 .workspace-textarea::placeholder, .project-name-input::placeholder { color: #b1aaba; }
 

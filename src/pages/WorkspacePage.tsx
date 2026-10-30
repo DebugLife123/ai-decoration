@@ -16,6 +16,14 @@ const styleOptions: StyleOption[] = [
   { key: 'wabi', name: '自然侘寂', palette: ['#c2b29d', '#897661', '#e4d9cc'], note: '肌理、安静、自然' },
 ];
 
+function recommendedStyles(budgetInput: string): DesignStyle[] {
+  const budget = Number(budgetInput);
+  if (!budgetInput.trim() || !Number.isFinite(budget) || budget <= 0) return [];
+  if (budget < 10) return ['modern', 'minimal', 'wabi'];
+  if (budget < 25) return ['modern', 'minimal', 'cream', 'chinese'];
+  return ['european', 'chinese', 'cream', 'wabi'];
+}
+
 function readImage(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -69,6 +77,10 @@ export default function WorkspacePage() {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const floorPlanInputRef = useRef<HTMLInputElement>(null);
   const activeStyle = styleOptions.find((style) => style.key === workspaceStyle) || styleOptions[0];
+  const recommendedStyleKeys = recommendedStyles(budgetInput);
+  const orderedStyleOptions = recommendedStyleKeys.length
+    ? [...styleOptions.filter((style) => recommendedStyleKeys.includes(style.key)), ...styleOptions.filter((style) => !recommendedStyleKeys.includes(style.key))]
+    : styleOptions;
 
   const addPhotoFiles = useCallback(async (files: FileList | File[]) => {
     const images = Array.from(files).filter((file) => file.type.startsWith('image/')).slice(0, 4);
@@ -206,9 +218,11 @@ export default function WorkspacePage() {
             {mode === 'photo' && photos.length > 1 && <div className="photo-count">已添加 {photos.length} 张照片，将使用第一张作为主视角</div>}
           </section>
 
-           <section className="control-section"><div className="section-title"><span>02 / 选择空间气质</span><small>先选一种，生成后可再次尝试</small></div><div className="style-options">{styleOptions.map((style) => <button key={style.key} className={`style-option ${workspaceStyle === style.key ? 'selected' : ''}`} onClick={() => setWorkspaceStyle(style.key)}><span className="style-palette">{style.palette.map((color) => <i key={color} style={{ background: color }} />)}</span><span><strong>{style.name}</strong><small>{style.note}</small></span>{workspaceStyle === style.key && <b>✓</b>}</button>)}</div></section>
+          <section className="control-section budget-section"><div className="section-title"><span>02 / 先说预算，再看风格</span><small>可以修改，也可以暂不填写</small></div><p className="section-help">填写计划投入的装修总预算，我们会先给出适合进一步沟通的风格方向。当前建议根据预算区间整理，仅供设计沟通参考，不代表实际报价。</p><label className="budget-field"><span>计划总预算（万元）</span><div className="budget-input-wrap"><input type="number" min="0" step="0.1" value={budgetInput} onChange={(event) => setBudgetInput(event.target.value)} placeholder="输入预算，例如 20" /><b>万元</b></div></label></section>
 
-          <section className="control-section"><div className="section-title"><span>03 / 补充你的想法</span><small>可选</small></div><p className="section-help">补充的描述、项目名称和预算会一起保存到方案中，帮助后续生成更贴近你的需求；都可以留空。</p><textarea className="workspace-textarea" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={mode === 'photo' ? '比如：保留原来的窗户，增加一面电视墙，整体明亮一点…' : '比如：一家三口，需要更多收纳，希望客餐厅更通透…'} rows={4} /><div className="workspace-meta-fields"><label className="project-name-field"><span>项目名称</span><input className="project-name-input" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="例如：我的客厅改造" /></label><label className="budget-field"><span>预算（万元）</span><input type="number" min="0" step="0.1" value={budgetInput} onChange={(event) => setBudgetInput(event.target.value)} placeholder="例如 20" /></label></div></section>
+          <section className="control-section"><div className="section-title"><span>03 / 选择空间气质</span><small>{recommendedStyleKeys.length ? '已按预算排列建议方向' : '填写预算后可查看建议方向'}</small></div>{recommendedStyleKeys.length > 0 && <div className="budget-recommendation"><strong>预算方向参考</strong><span>{budgetInput} 万元区间内，可优先了解标记为“建议”的风格。实际适配还会受面积、城市和材料选择影响。</span></div>}<div className="style-options">{orderedStyleOptions.map((style) => <button key={style.key} className={`style-option ${workspaceStyle === style.key ? 'selected' : ''} ${recommendedStyleKeys.includes(style.key) ? 'recommended' : ''}`} onClick={() => setWorkspaceStyle(style.key)}><span className="style-palette">{style.palette.map((color) => <i key={color} style={{ background: color }} />)}</span><span><strong>{style.name}</strong><small>{style.note}</small></span>{recommendedStyleKeys.includes(style.key) && <em>建议</em>}{workspaceStyle === style.key && <b>✓</b>}</button>)}</div></section>
+
+          <section className="control-section"><div className="section-title"><span>04 / 补充你的想法</span><small>可选</small></div><p className="section-help">补充生活习惯、空间保留要求等信息，让方案更贴合你的需求。</p><textarea className="workspace-textarea" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={mode === 'photo' ? '比如：保留原来的窗户，增加一面电视墙，整体明亮一点…' : '比如：一家三口，需要更多收纳，希望客餐厅更通透…'} rows={4} /><label className="project-name-field"><span>项目名称</span><input className="project-name-input" value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="例如：我的客厅改造" /></label></section>
           {error && <div className="workspace-error">{error}</div>}
           <button className="workspace-generate" onClick={() => void handleGenerate()} disabled={isGenerating}>{isGenerating ? <><span className="spinner" />正在分析并生成…</> : <><Icon name="spark" />生成{mode === 'photo' ? '现场效果图' : '全屋汇报方案'}<Icon name="arrow" /></>}</button>
           <p className="privacy-note">图片会通过本机代理发送到已配置的 AI 服务，密钥不会暴露给浏览器。</p>
