@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
+import type { MaterialRecord } from '../services/dataContracts';
+import { readLocalValue, writeLocalValue } from '../services/localDataAdapter';
 import './BusinessPage.css';
 
 type TabKey = 'overview' | 'cases' | 'materials' | 'workers' | 'certification';
@@ -14,18 +16,6 @@ type CaseRecord = {
   budget: string;
   status: RecordStatus;
   files: string[];
-  updatedAt: string;
-};
-
-type MaterialRecord = {
-  id: string;
-  name: string;
-  spec: string;
-  unit: string;
-  price: string;
-  category: string;
-  region: string;
-  validUntil: string;
   updatedAt: string;
 };
 
@@ -77,23 +67,13 @@ const defaultCertification: Certification = {
 };
 
 function readStored<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const value = window.localStorage.getItem(key);
-    return value ? JSON.parse(value) as T : fallback;
-  } catch {
-    return fallback;
-  }
+  return readLocalValue(key, fallback);
 }
 
 function useStoredState<T>(key: string, fallback: T) {
   const [value, setValue] = useState<T>(() => readStored(key, fallback));
   useEffect(() => {
-    try {
-      window.localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // The page remains usable when browser storage is unavailable.
-    }
+    writeLocalValue(key, value);
   }, [key, value]);
   return [value, setValue] as const;
 }

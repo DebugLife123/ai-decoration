@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { readBusinessMaterials, useAppStore } from '../stores/appStore';
+import { useAppStore } from '../stores/appStore';
+import { localWorkspaceDataAdapter } from '../services/localDataAdapter';
 import type { Project } from '../stores/appStore';
 import './ProjectsPage.css';
 
@@ -41,7 +42,7 @@ function EmptyProjects() {
 
 export default function ProjectsPage() {
   const { projects, removeProject, setCurrentProject, storageWarning } = useAppStore();
-  const materials = readBusinessMaterials();
+  const materials = localWorkspaceDataAdapter.loadMaterials();
   const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState(projects[0]?.id || '');
   const [selectedVersionId, setSelectedVersionId] = useState(projects[0]?.versions.at(-1)?.id || '');

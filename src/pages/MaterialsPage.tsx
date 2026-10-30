@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { readBusinessMaterials, useAppStore } from '../stores/appStore';
+import { useAppStore } from '../stores/appStore';
+import { localWorkspaceDataAdapter } from '../services/localDataAdapter';
 import './MaterialsPage.css';
 
 export default function MaterialsPage() {
@@ -9,7 +10,7 @@ export default function MaterialsPage() {
   const [projectId, setProjectId] = useState(projects[0]?.id || '');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('全部');
-  const materials = readBusinessMaterials();
+  const materials = localWorkspaceDataAdapter.loadMaterials();
   const categories = ['全部', ...new Set(materials.map((material) => material.category).filter(Boolean))];
   const visibleMaterials = useMemo(() => materials.filter((material) => {
     const matchesQuery = `${material.name} ${material.spec} ${material.region}`.toLowerCase().includes(query.trim().toLowerCase());
