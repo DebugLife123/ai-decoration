@@ -64,7 +64,13 @@ export function saveProjects(projects: Project[]) {
 }
 
 export const localWorkspaceDataAdapter: WorkspaceDataAdapter = {
-  loadProjects,
-  saveProjects,
-  loadMaterials,
+  async loadProjects() {
+    return loadProjects();
+  },
+  async saveProjects(projects) {
+    return saveProjects(projects);
+  },
+  async loadMaterials() {
+    return loadMaterials();
+  },
 };

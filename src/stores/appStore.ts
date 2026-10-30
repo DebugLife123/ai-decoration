@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { localWorkspaceDataAdapter } from '../services/localDataAdapter';
+import { workspaceDataAdapter } from '../services/workspaceData';
 import type { DesignStyle, Project } from '../services/dataContracts';
 
 export type { DesignImage, DesignStyle, DesignVersion, GenerationTask, MaterialRecord, Project } from '../services/dataContracts';
@@ -12,6 +12,9 @@ interface AppState {
   currentProject: Project | null;
   setCurrentProject: (p: Project | null) => void;
   projects: Project[];
+  projectsStatus: 'loading' | 'ready' | 'error';
+  projectsError: string;
+  loadProjects: () => Promise<void>;
   storageWarning: string;
   saveProject: (p: Project) => void;
   removeProject: (id: string) => void;
@@ -32,6 +35,8 @@ function savedRole(): UserRole {
   }
 }
 
+let projectsLoadPromise: Promise<void> | null = null;
+
 export const useAppStore = create<AppState>((set, get) => ({
   role: savedRole(),
   setRole: (role) => {
@@ -44,20 +49,35 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   currentProject: null,
   setCurrentProject: (currentProject) => set({ currentProject }),
-  projects: localWorkspaceDataAdapter.loadProjects(),
+  projects: [],
+  projectsStatus: 'loading',
+  projectsError: '',
+  loadProjects: () => {
+    if (projectsLoadPromise) return projectsLoadPromise;
+    set({ projectsStatus: 'loading', projectsError: '' });
+    projectsLoadPromise = workspaceDataAdapter.loadProjects()
+      .then((projects) => set({ projects, projectsStatus: 'ready' }))
+      .catch(() => set({ projectsStatus: 'error', projectsError: '项目暂时无法加载，请重试。' }))
+      .finally(() => { projectsLoadPromise = null; });
+    return projectsLoadPromise;
+  },
   storageWarning: '',
   saveProject: (project) => {
     const projects = get().projects;
     const nextProjects = projects.some((item) => item.id === project.id)
       ? projects.map((item) => item.id === project.id ? project : item)
       : [project, ...projects];
-    const persisted = localWorkspaceDataAdapter.saveProjects(nextProjects);
-    set({ projects: nextProjects, currentProject: project, storageWarning: persisted ? '' : '本次内容已暂存于当前页面，但浏览器存储空间不足，刷新后可能无法恢复。' });
+    set({ projects: nextProjects, currentProject: project, projectsStatus: 'ready', storageWarning: '' });
+    void workspaceDataAdapter.saveProjects(nextProjects).then((persisted) => {
+      if (!persisted) set({ storageWarning: '本次内容已暂存于当前页面，但浏览器存储空间不足，刷新后可能无法恢复。' });
+    }).catch(() => set({ storageWarning: '本次内容未能保存，请稍后重试。' }));
   },
   removeProject: (id) => {
     const nextProjects = get().projects.filter((item) => item.id !== id);
-    const persisted = localWorkspaceDataAdapter.saveProjects(nextProjects);
-    set({ projects: nextProjects, currentProject: get().currentProject?.id === id ? null : get().currentProject, storageWarning: persisted ? '' : '项目已从当前页面移除，但浏览器存储空间不足，刷新后可能恢复。' });
+    set({ projects: nextProjects, currentProject: get().currentProject?.id === id ? null : get().currentProject, storageWarning: '' });
+    void workspaceDataAdapter.saveProjects(nextProjects).then((persisted) => {
+      if (!persisted) set({ storageWarning: '项目已从当前页面移除，但浏览器存储空间不足，刷新后可能恢复。' });
+    }).catch(() => set({ storageWarning: '项目变更未能保存，请稍后重试。' }));
   },
   toggleProjectMaterial: (projectId, materialId) => {
     const projects = get().projects;
@@ -68,9 +88,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         : [...project.materialIds, materialId];
       return { ...project, materialIds, updatedAt: new Date().toISOString() };
     });
-    const persisted = localWorkspaceDataAdapter.saveProjects(nextProjects);
     const currentProject = nextProjects.find((project) => project.id === get().currentProject?.id) || get().currentProject;
-    set({ projects: nextProjects, currentProject, storageWarning: persisted ? '' : '材料关联已暂存于当前页面，但浏览器存储空间不足，刷新后可能无法恢复。' });
+    set({ projects: nextProjects, currentProject, storageWarning: '' });
+    void workspaceDataAdapter.saveProjects(nextProjects).then((persisted) => {
+      if (!persisted) set({ storageWarning: '材料关联已暂存于当前页面，但浏览器存储空间不足，刷新后可能无法恢复。' });
+    }).catch(() => set({ storageWarning: '材料关联未能保存，请稍后重试。' }));
   },
   selectedStyle: 'modern',
   setSelectedStyle: (selectedStyle) => set({ selectedStyle }),

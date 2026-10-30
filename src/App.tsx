@@ -25,6 +25,12 @@ function RoleRoute({ role, children }: { role: 'consumer' | 'business'; children
 
 function App() {
   const role = useAppStore((state) => state.role);
+  const loadProjects = useAppStore((state) => state.loadProjects);
+
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
+
   return (
     <div className="app">
       <Navbar />

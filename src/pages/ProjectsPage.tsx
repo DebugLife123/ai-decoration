@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../stores/appStore';
-import { localWorkspaceDataAdapter } from '../services/localDataAdapter';
+import { workspaceDataAdapter } from '../services/workspaceData';
 import type { Project } from '../stores/appStore';
+import type { MaterialRecord } from '../services/dataContracts';
 import './ProjectsPage.css';
 
 const styleNames: Record<Project['style'], string> = {
@@ -41,8 +42,15 @@ function EmptyProjects() {
 }
 
 export default function ProjectsPage() {
-  const { projects, removeProject, setCurrentProject, storageWarning } = useAppStore();
-  const materials = localWorkspaceDataAdapter.loadMaterials();
+  const { projects, projectsStatus, projectsError, loadProjects, removeProject, setCurrentProject, storageWarning } = useAppStore();
+  const [materials, setMaterials] = useState<MaterialRecord[]>([]);
+  useEffect(() => {
+    let active = true;
+    void workspaceDataAdapter.loadMaterials().then((items) => {
+      if (active) setMaterials(items);
+    });
+    return () => { active = false; };
+  }, []);
   const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState(projects[0]?.id || '');
   const [selectedVersionId, setSelectedVersionId] = useState(projects[0]?.versions.at(-1)?.id || '');
@@ -69,7 +77,7 @@ export default function ProjectsPage() {
   return <div className="projects-page">
     <header className="projects-header"><div><span className="projects-eyebrow">YOUR DESIGN ARCHIVE</span><h1>我的项目</h1><p>所有设计尝试、生成任务和方案版本都集中在这里。</p></div><Link className="projects-primary-button" to="/workspace"><Icon name="plus" />新建项目</Link></header>
     <div className={`projects-local-note ${storageWarning ? 'warning' : ''}`}><Icon name="clock" /><span>{storageWarning || '当前使用本机保存，等后端接口接入后再同步到账号。'}</span></div>
-    {projects.length === 0 ? <EmptyProjects /> : <div className="projects-layout">
+    {projectsStatus === 'loading' ? <div className="projects-empty" role="status"><h2>正在加载项目</h2><p>请稍候。</p></div> : projectsStatus === 'error' ? <div className="projects-empty" role="alert"><h2>项目暂时无法加载</h2><p>{projectsError}</p><button className="projects-primary-button" onClick={() => void loadProjects()}>重试</button></div> : projects.length === 0 ? <EmptyProjects /> : <div className="projects-layout">
       <section className="projects-list" aria-label="项目列表"><div className="projects-list-heading"><strong>全部项目</strong><span>{projects.length} 个</span></div>{projects.map((project) => <ProjectCard key={project.id} project={project} selected={selectedProject?.id === project.id} onSelect={() => chooseProject(project)} />)}</section>
       {selectedProject && <section className="project-detail"><div className="project-detail-head"><div><span className="projects-eyebrow">PROJECT DETAIL</span><h2>{selectedProject.name}</h2><p>{styleNames[selectedProject.style]} · {selectedProject.spaceType}{selectedProject.budget !== undefined ? ` · 预算 ${selectedProject.budget} 万元` : ''} · 创建于 {formatDate(selectedProject.createdAt)}</p></div><div className="detail-actions"><Link className="detail-button primary" to={`/workspace?projectId=${selectedProject.id}${selectedVersion ? `&versionId=${selectedVersion.id}` : ''}`}>继续编辑 <Icon name="arrow" /></Link><button className="detail-button danger" onClick={() => setConfirmDelete(true)}><Icon name="trash" />删除</button></div></div>
         <div className="detail-summary"><div><span>项目状态</span><strong className={`detail-status ${selectedProject.status}`}>{statusNames[selectedProject.status]}</strong></div><div><span>方案版本</span><strong>{selectedProject.versions.length}</strong></div><div><span>生成任务</span><strong>{selectedProject.tasks.length}</strong></div><div><span>关联材料</span><strong>{selectedProject.materialIds.length}</strong></div></div>

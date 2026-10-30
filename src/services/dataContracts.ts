@@ -62,9 +62,9 @@ export interface MaterialRecord {
 }
 
 export interface WorkspaceDataAdapter {
-  loadProjects(): Project[];
-  saveProjects(projects: Project[]): boolean;
-  loadMaterials(): MaterialRecord[];
+  loadProjects(): Promise<Project[]>;
+  saveProjects(projects: Project[]): Promise<boolean>;
+  loadMaterials(): Promise<MaterialRecord[]>;
 }
 
 export interface GenerateDesignInput {
