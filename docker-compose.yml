@@ -1,6 +1,7 @@
 services:
   decoration:
     build: .
+    image: ${DECORATION_IMAGE:-wyx-decoration:local}
     network_mode: bridge
     ports:
       - "4175:4173"
@@ -10,3 +11,9 @@ services:
       AI_VISION_MODEL: ${AI_VISION_MODEL:-grok-4.7}
       AI_IMAGE_MODEL: ${AI_IMAGE_MODEL:-grok-imagine-image-quality}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/').then((r) => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
