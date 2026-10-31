@@ -45,19 +45,41 @@ deploy_production:
     name: production
     url: http://192.168.6.78:4175/
   script: |
+    $deploymentPath = 'D:/wyx/decoration'
+    if (-not (Test-Path -LiteralPath (Join-Path $deploymentPath '.git'))) { throw "Deployment directory is not a Git checkout: $deploymentPath" }
+    if ((git -C $deploymentPath branch --show-current) -ne 'main') { throw "Deployment directory is not on main; refusing to deploy." }
+    if ((git -C $deploymentPath remote get-url origin) -ne 'http://192.168.6.78/wyxgroup/decoration.git') { throw "Deployment directory origin does not match this project." }
+    if (git -C $deploymentPath status --porcelain --untracked-files=normal) { throw "Deployment directory has local changes; refusing to overwrite them." }
+    $env:GIT_CONFIG_COUNT = '1'
+    $env:GIT_CONFIG_KEY_0 = 'http.extraHeader'
+    $env:GIT_CONFIG_VALUE_0 = "JOB-TOKEN: $env:CI_JOB_TOKEN"
+    try {
+      git -C $deploymentPath fetch origin $env:CI_COMMIT_SHA
+      if ($LASTEXITCODE -ne 0) { throw "Could not fetch this pipeline commit into the deployment directory." }
+      git -C $deploymentPath merge --ff-only FETCH_HEAD
+      if ($LASTEXITCODE -ne 0) { throw "Deployment directory cannot fast-forward to this pipeline commit." }
+      $deployedSha = git -C $deploymentPath rev-parse HEAD
+      if ($deployedSha -ne $env:CI_COMMIT_SHA) { throw "Deployment directory is not at the pipeline commit after synchronization." }
+    } finally {
+      Remove-Item Env:GIT_CONFIG_COUNT,Env:GIT_CONFIG_KEY_0,Env:GIT_CONFIG_VALUE_0 -ErrorAction SilentlyContinue
+    }
+    Set-Location -LiteralPath $deploymentPath
+    $composeArgs = @('--project-directory', $deploymentPath, '-p', $env:COMPOSE_PROJECT_NAME, '-f', (Join-Path $deploymentPath 'docker-compose.yml'))
     $env:IMAGE_TAG = "wyx-decoration:$env:CI_COMMIT_SHA"
     $previousImage = docker inspect wyx-decoration-decoration-1 --format '{{.Image}}' 2>$null
     if ($LASTEXITCODE -eq 0 -and $previousImage) { $env:ROLLBACK_IMAGE = "wyx-decoration:rollback"; docker tag $previousImage $env:ROLLBACK_IMAGE; if ($LASTEXITCODE -ne 0) { throw "Could not preserve the current production image." } }
     docker build --tag $env:IMAGE_TAG .
     if ($LASTEXITCODE -ne 0) { throw "Docker image build failed." }
     $env:DECORATION_IMAGE = $env:IMAGE_TAG
-    docker compose -p $env:COMPOSE_PROJECT_NAME config --quiet
-    docker compose -p $env:COMPOSE_PROJECT_NAME up -d --no-build
+    docker compose @composeArgs config --quiet
+    if ($LASTEXITCODE -ne 0) { throw "Docker Compose configuration validation failed." }
+    docker compose @composeArgs up -d --no-build
+    if ($LASTEXITCODE -ne 0) { throw "Docker Compose could not start the production service." }
     $healthy = $false
     for ($attempt = 1; $attempt -le 18; $attempt++) { try { $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:4175/" -TimeoutSec 5; if ([int]$response.StatusCode -eq 200) { $healthy = $true; break } } catch {}; Start-Sleep -Seconds 5 }
-    if (-not $healthy) { docker compose -p $env:COMPOSE_PROJECT_NAME ps; docker compose -p $env:COMPOSE_PROJECT_NAME logs --tail 80; if ($env:ROLLBACK_IMAGE) { $env:DECORATION_IMAGE = $env:ROLLBACK_IMAGE; docker compose -p $env:COMPOSE_PROJECT_NAME up -d --no-build; Start-Sleep -Seconds 10 }; throw "Production health check failed; previous image rollback was attempted." }
+    if (-not $healthy) { docker compose @composeArgs ps; docker compose @composeArgs logs --tail 80; if ($env:ROLLBACK_IMAGE) { $env:DECORATION_IMAGE = $env:ROLLBACK_IMAGE; docker compose @composeArgs up -d --no-build; Start-Sleep -Seconds 10 }; throw "Production health check failed; previous image rollback was attempted." }
     $policy = docker inspect wyx-decoration-decoration-1 --format '{{.HostConfig.RestartPolicy.Name}}'
     if ($policy -ne "unless-stopped") { throw "Unexpected restart policy: $policy" }
-    docker compose -p $env:COMPOSE_PROJECT_NAME ps
+    docker compose @composeArgs ps
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
