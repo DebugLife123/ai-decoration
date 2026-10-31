@@ -1,6 +1,7 @@
 services:
   decoration:
     build: .
+    network_mode: bridge
     ports:
       - "4175:4173"
     environment:
