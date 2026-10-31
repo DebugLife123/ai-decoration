@@ -23,6 +23,8 @@ cache:
 
 verify:
   stage: verify
+  tags:
+    - dockerlab-windows
   script:
     - npm ci --prefer-offline
     - npm run lint
@@ -34,6 +36,8 @@ verify:
 
 deploy_production:
   stage: deploy
+  tags:
+    - dockerlab-windows
   needs:
     - job: verify
   resource_group: decoration-production
