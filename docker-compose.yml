@@ -1,0 +1,11 @@
+services:
+  decoration:
+    build: .
+    ports:
+      - "4173:4173"
+    environment:
+      CODEX2API_API_KEY: ${CODEX2API_API_KEY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://codex2api.com}
+      AI_VISION_MODEL: ${AI_VISION_MODEL:-grok-4.7}
+      AI_IMAGE_MODEL: ${AI_IMAGE_MODEL:-grok-imagine-image-quality}
+    restart: unless-stopped
