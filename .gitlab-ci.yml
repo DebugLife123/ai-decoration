@@ -40,20 +40,20 @@ deploy_production:
   environment:
     name: production
     url: http://192.168.6.78:4175/
-  script:
-    - $env:IMAGE_TAG = "wyx-decoration:$env:CI_COMMIT_SHA"
-    - $previousImage = docker inspect wyx-decoration-decoration-1 --format '{{.Image}}' 2>$null
-    - if ($LASTEXITCODE -eq 0 -and $previousImage) { $env:ROLLBACK_IMAGE = "wyx-decoration:rollback"; docker tag $previousImage $env:ROLLBACK_IMAGE; if ($LASTEXITCODE -ne 0) { throw "Could not preserve the current production image." } }
-    - docker build --tag $env:IMAGE_TAG .
-    - if ($LASTEXITCODE -ne 0) { throw "Docker image build failed." }
-    - $env:DECORATION_IMAGE = $env:IMAGE_TAG
-    - docker compose -p $env:COMPOSE_PROJECT_NAME config --quiet
-    - docker compose -p $env:COMPOSE_PROJECT_NAME up -d --no-build
-    - $healthy = $false
-    - for ($attempt = 1; $attempt -le 18; $attempt++) { try { $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:4175/" -TimeoutSec 5; if ([int]$response.StatusCode -eq 200) { $healthy = $true; break } } catch {}; Start-Sleep -Seconds 5 }
-    - if (-not $healthy) { docker compose -p $env:COMPOSE_PROJECT_NAME ps; docker compose -p $env:COMPOSE_PROJECT_NAME logs --tail 80; if ($env:ROLLBACK_IMAGE) { $env:DECORATION_IMAGE = $env:ROLLBACK_IMAGE; docker compose -p $env:COMPOSE_PROJECT_NAME up -d --no-build; Start-Sleep -Seconds 10 }; throw "Production health check failed; previous image rollback was attempted." }
-    - $policy = docker inspect wyx-decoration-decoration-1 --format '{{.HostConfig.RestartPolicy.Name}}'
-    - if ($policy -ne "unless-stopped") { throw "Unexpected restart policy: $policy" }
-    - docker compose -p $env:COMPOSE_PROJECT_NAME ps
+  script: |
+    $env:IMAGE_TAG = "wyx-decoration:$env:CI_COMMIT_SHA"
+    $previousImage = docker inspect wyx-decoration-decoration-1 --format '{{.Image}}' 2>$null
+    if ($LASTEXITCODE -eq 0 -and $previousImage) { $env:ROLLBACK_IMAGE = "wyx-decoration:rollback"; docker tag $previousImage $env:ROLLBACK_IMAGE; if ($LASTEXITCODE -ne 0) { throw "Could not preserve the current production image." } }
+    docker build --tag $env:IMAGE_TAG .
+    if ($LASTEXITCODE -ne 0) { throw "Docker image build failed." }
+    $env:DECORATION_IMAGE = $env:IMAGE_TAG
+    docker compose -p $env:COMPOSE_PROJECT_NAME config --quiet
+    docker compose -p $env:COMPOSE_PROJECT_NAME up -d --no-build
+    $healthy = $false
+    for ($attempt = 1; $attempt -le 18; $attempt++) { try { $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:4175/" -TimeoutSec 5; if ([int]$response.StatusCode -eq 200) { $healthy = $true; break } } catch {}; Start-Sleep -Seconds 5 }
+    if (-not $healthy) { docker compose -p $env:COMPOSE_PROJECT_NAME ps; docker compose -p $env:COMPOSE_PROJECT_NAME logs --tail 80; if ($env:ROLLBACK_IMAGE) { $env:DECORATION_IMAGE = $env:ROLLBACK_IMAGE; docker compose -p $env:COMPOSE_PROJECT_NAME up -d --no-build; Start-Sleep -Seconds 10 }; throw "Production health check failed; previous image rollback was attempted." }
+    $policy = docker inspect wyx-decoration-decoration-1 --format '{{.HostConfig.RestartPolicy.Name}}'
+    if ($policy -ne "unless-stopped") { throw "Unexpected restart policy: $policy" }
+    docker compose -p $env:COMPOSE_PROJECT_NAME ps
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
