@@ -20,7 +20,10 @@ export default function Navbar() {
     if (isEntering) return;
     setMobileOpen(false);
     setIsEntering(true);
-    window.setTimeout(() => navigate(source ? `/workspace?source=${source}` : '/workspace'), 1050);
+    window.setTimeout(() => {
+      setIsEntering(false);
+      navigate(source ? `/workspace?source=${source}` : '/workspace');
+    }, 1050);
   };
 
   return <>
