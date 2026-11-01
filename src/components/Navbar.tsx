@@ -31,7 +31,7 @@ export default function Navbar() {
     <button className="mobile-nav-toggle" onClick={() => setMobileOpen((open) => !open)} aria-label={mobileOpen ? '关闭导航' : '打开导航'}><span /><span /><span /></button>
     <aside className={`navbar ${mobileOpen ? 'mobile-open' : ''}`}>
       <div className="navbar-inner">
-        <Link to="/" className="navbar-logo" onClick={() => setMobileOpen(false)}><span className="logo-mark"><span /></span><span className="logo-text"><strong>简艺装</strong><small>JIAN YI ZHUANG</small></span></Link>
+        <Link to="/" className="navbar-logo" onClick={() => setMobileOpen(false)}><span className="logo-mark"><span /></span><span className="logo-text"><strong>简易装</strong><small>JIAN YI ZHUANG</small></span></Link>
         <div className="workspace-switcher"><span className="workspace-avatar">J</span><span><strong>个人工作区</strong><small>Personal workspace</small></span></div>
         <nav className="navbar-links" aria-label="主导航">
           <div className="nav-group"><div className="nav-group-label">我的设计</div>{navItems.map((item) => { const routePath = item.path.split('#')[0]; const active = routePath === '/' ? location.pathname === '/' : location.pathname.startsWith(routePath); return <Link key={item.path} to={item.path} className={`nav-link ${active ? 'active' : ''}`} onClick={(event) => item.path === '/workspace' ? startWorkspace(event) : setMobileOpen(false)}><NavIcon name={item.icon} /><span>{item.label}</span>{item.path === '/workspace' && <span className="nav-new">P0</span>}</Link>; })}</div>
