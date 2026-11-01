@@ -1,5 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
-import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useState, type MouseEvent } from 'react';
+import BrandLoading from './BrandLoading';
 import './Navbar.css';
 
 type IconName = 'home' | 'workspace' | 'templates' | 'folder';
@@ -9,6 +11,31 @@ const navItems = [{ path: '/', label: '首页', icon: 'home' as IconName }, { pa
 
 export default function Navbar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
-  return <><button className="mobile-nav-toggle" onClick={() => setMobileOpen((open) => !open)} aria-label={mobileOpen ? '关闭导航' : '打开导航'}><span /><span /><span /></button><aside className={`navbar ${mobileOpen ? 'mobile-open' : ''}`}><div className="navbar-inner"><Link to="/" className="navbar-logo" onClick={() => setMobileOpen(false)}><span className="logo-mark"><span /></span><span className="logo-text"><strong>简艺装</strong><small>JIAN YI ZHUANG</small></span></Link><div className="workspace-switcher"><span className="workspace-avatar">J</span><span><strong>个人工作区</strong><small>Personal workspace</small></span></div><nav className="navbar-links" aria-label="主导航"><div className="nav-group"><div className="nav-group-label">我的设计</div>{navItems.map((item) => { const routePath = item.path.split('#')[0]; const active = routePath === '/' ? location.pathname === '/' : location.pathname.startsWith(routePath); return <Link key={item.path} to={item.path} className={`nav-link ${active ? 'active' : ''}`} onClick={() => setMobileOpen(false)}><NavIcon name={item.icon} /><span>{item.label}</span>{item.path === '/workspace' && <span className="nav-new">P0</span>}</Link>; })}</div><div className="nav-group"><div className="nav-group-label">快速入口</div><Link to="/workspace?source=cad" className="nav-link" onClick={() => setMobileOpen(false)}><NavIcon name="folder" /><span>CAD 全屋渲染</span></Link><Link to="/workspace?source=floorplan" className="nav-link" onClick={() => setMobileOpen(false)}><NavIcon name="workspace" /><span>户型图设计</span></Link></div></nav><div className="navbar-bottom"><div className="nav-note"><span>i</span><p><strong>个人 C 端原型</strong><small>先完成设计闭环，再接入 AI 服务</small></p></div><div className="nav-user"><span className="user-avatar">W</span><span><strong>我的设计空间</strong><small>Prototype / 2026</small></span></div></div></div></aside></>;
+  const [isEntering, setIsEntering] = useState(false);
+
+  const startWorkspace = (event: MouseEvent<HTMLAnchorElement>, source?: string) => {
+    event.preventDefault();
+    if (isEntering) return;
+    setMobileOpen(false);
+    setIsEntering(true);
+    window.setTimeout(() => navigate(source ? `/workspace?source=${source}` : '/workspace'), 1050);
+  };
+
+  return <>
+    {isEntering && <BrandLoading />}
+    <button className="mobile-nav-toggle" onClick={() => setMobileOpen((open) => !open)} aria-label={mobileOpen ? '关闭导航' : '打开导航'}><span /><span /><span /></button>
+    <aside className={`navbar ${mobileOpen ? 'mobile-open' : ''}`}>
+      <div className="navbar-inner">
+        <Link to="/" className="navbar-logo" onClick={() => setMobileOpen(false)}><span className="logo-mark"><span /></span><span className="logo-text"><strong>简艺装</strong><small>JIAN YI ZHUANG</small></span></Link>
+        <div className="workspace-switcher"><span className="workspace-avatar">J</span><span><strong>个人工作区</strong><small>Personal workspace</small></span></div>
+        <nav className="navbar-links" aria-label="主导航">
+          <div className="nav-group"><div className="nav-group-label">我的设计</div>{navItems.map((item) => { const routePath = item.path.split('#')[0]; const active = routePath === '/' ? location.pathname === '/' : location.pathname.startsWith(routePath); return <Link key={item.path} to={item.path} className={`nav-link ${active ? 'active' : ''}`} onClick={(event) => item.path === '/workspace' ? startWorkspace(event) : setMobileOpen(false)}><NavIcon name={item.icon} /><span>{item.label}</span>{item.path === '/workspace' && <span className="nav-new">P0</span>}</Link>; })}</div>
+          <div className="nav-group"><div className="nav-group-label">快速入口</div><Link to="/workspace?source=cad" className="nav-link" onClick={(event) => startWorkspace(event, 'cad')}><NavIcon name="folder" /><span>CAD 全屋渲染</span></Link><Link to="/workspace?source=floorplan" className="nav-link" onClick={(event) => startWorkspace(event, 'floorplan')}><NavIcon name="workspace" /><span>户型图设计</span></Link></div>
+        </nav>
+        <div className="navbar-bottom"><div className="nav-note"><span>i</span><p><strong>个人 C 端原型</strong><small>先完成设计闭环，再接入 AI 服务</small></p></div><div className="nav-user"><span className="user-avatar">W</span><span><strong>我的设计空间</strong><small>Prototype / 2026</small></span></div></div>
+      </div>
+    </aside>
+  </>;
 }
