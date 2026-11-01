@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
+import InspirationPage from './pages/InspirationPage';
 import WorkspacePage from './pages/WorkspacePage';
 import BusinessPage from './pages/BusinessPage';
 import './App.css';
@@ -12,6 +13,7 @@ function App() {
       <main className="app-main">
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/inspiration" element={<InspirationPage />} />
           <Route path="/workspace" element={<WorkspacePage />} />
           <Route path="/business" element={<BusinessPage />} />
         </Routes>
