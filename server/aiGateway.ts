@@ -1,21 +1,21 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 
-type GatewayConfig = { baseUrl: string; apiKey: string; visionModel: string; imageModel: string };
+export type GatewayConfig = { baseUrl: string; apiKey: string; visionModel: string; imageModel: string };
 type GenerateRequest = { mode: 'photo' | 'floorplan'; style: string; prompt?: string; photo?: string; floorPlan?: string; photos?: string[]; source?: 'cad' | 'floorplan' };
 type AnalyzeRequest = { floorPlan?: string; source?: 'cad' | 'floorplan' };
 type ImageResult = { imageUrl: string };
 
-function sendJson(res: ServerResponse, status: number, body: unknown) {
+export function sendJson(res: ServerResponse, status: number, body: unknown) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.end(JSON.stringify(body));
 }
 
-async function readBody(req: IncomingMessage): Promise<GenerateRequest> {
+export async function readBody<T = GenerateRequest>(req: IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(Buffer.from(chunk));
-  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as GenerateRequest;
+  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as T;
 }
 
 function baseUrl(value: string) { return value.replace(/\/+$/, '').replace(/\/v1$/, ''); }
@@ -24,18 +24,18 @@ function imageBlob(dataUrl: string) {
   if (!match) throw new Error('上传图片格式无效，请重新选择图片。');
   return new Blob([Buffer.from(match[2], 'base64')], { type: match[1] });
 }
-function textFrom(payload: any): string {
+export function textFrom(payload: any): string {
   const content = payload?.choices?.[0]?.message?.content;
   return Array.isArray(content) ? content.map((item) => item?.text ?? '').join('') : typeof content === 'string' ? content : '';
 }
-function imageFrom(payload: any): string | null {
+export function imageFrom(payload: any): string | null {
   const item = payload?.data?.[0];
   if (typeof item?.url === 'string') return item.url;
   if (typeof item?.b64_json === 'string') return `data:image/png;base64,${item.b64_json}`;
   return typeof payload?.image_url === 'string' ? payload.image_url : null;
 }
 
-async function callApi(config: GatewayConfig, path: string, init: RequestInit) {
+export async function callApi(config: GatewayConfig, path: string, init: RequestInit) {
   const response = await fetch(`${baseUrl(config.baseUrl)}/v1${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${config.apiKey}`, ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...init.headers },
@@ -47,11 +47,11 @@ async function callApi(config: GatewayConfig, path: string, init: RequestInit) {
   return payload;
 }
 
-async function analyze(config: GatewayConfig, image: string, mode: 'photo' | 'floorplan' | 'cad') {
+export async function analyze(config: GatewayConfig, image: string, mode: 'photo' | 'floorplan' | 'cad') {
   const instruction = mode === 'photo'
     ? '分析这张现场毛坯空间照片。用简洁中文描述空间类型、现有结构、采光、主要墙面地面和不可移动元素，供室内效果图生成使用。不要虚构看不见的结构。'
     : mode === 'cad'
-      ? '分析这张 CAD 导出的住宅平面图。重点识别图中可见的墙体边界、门窗开口、尺寸标注、房间名称及空间连接关系；忽略图框和图签。不得仅凭面积数字臆测空间。只输出 JSON，格式为 {"rooms":[{"name":"客厅","description":"..."}]}，最多识别 6 个房间。'
+      ? '分析这张 CAD 导出的住宅平面图。重点识别可见的墙体边界、门窗开口、尺寸标注、房间名称及空间连接关系，忽略图框和图签，不得仅凭面积数字臆测。只输出严格 JSON，不要 Markdown 代码块，必须包含 rooms、walls、openings、connections、uncertainties 五个数组。rooms 项包含 id、name、description、confidence、status；walls 项包含 id、thicknessMm、confidence、status；openings 项包含 id、type、roomFrom、roomTo、widthMm、heightMm、status；connections 项包含 from、to、type。status 只能是 confirmed、identified、unknown；看不清使用 null 或 unknown，禁止补猜。最多识别 20 个房间。'
       : '分析这张住宅户型图，识别可见的房间、动线、门窗和大致空间关系。只输出 JSON，格式为 {"rooms":[{"name":"客厅","description":"..."}]}，最多识别 6 个房间。';
   const payload = await callApi(config, '/chat/completions', { method: 'POST', body: JSON.stringify({ model: config.visionModel, temperature: 0.2, messages: [{ role: 'user', content: [{ type: 'text', text: instruction }, { type: 'image_url', image_url: { url: image, detail: 'high' } }] }] }) });
   return textFrom(payload);
@@ -65,7 +65,7 @@ function roomsFrom(text: string) {
   throw new Error('户型识别模型未返回有效空间列表，请重试或更换清晰的户型图片。');
 }
 
-async function generate(config: GatewayConfig, prompt: string): Promise<ImageResult> {
+export async function generate(config: GatewayConfig, prompt: string): Promise<ImageResult> {
   const payload = await callApi(config, '/images/generations', { method: 'POST', body: JSON.stringify({ model: config.imageModel, prompt, n: 1, size: '1024x1024', response_format: 'b64_json' }) });
   const imageUrl = imageFrom(payload);
   if (!imageUrl) throw new Error('生图接口没有返回图片，请检查当前生图模型配置。');

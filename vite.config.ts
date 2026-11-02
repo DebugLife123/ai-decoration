@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv } from 'vite'
 import { createAiGatewayPlugin } from './server/aiGateway.js'
+import { createCadWorkflowMiddleware } from './server/cadWorkflow.js'
 
 const aiEnvKeys = ['CODEX2API_API_KEY', 'AI_BASE_URL', 'AI_VISION_MODEL', 'AI_IMAGE_MODEL', 'AI_API_KEY', 'AI_MODEL', 'IMAGE_MODEL']
 
@@ -15,7 +16,7 @@ export default defineConfig(() => {
     if (typeof fileEnv[key] === 'string') loadedEnv[key] = fileEnv[key]
   }
   return {
-    plugins: [react(), createAiGatewayPlugin(loadedEnv)],
+    plugins: [react(), createAiGatewayPlugin(loadedEnv), { name: 'cad-workflow', configureServer(server) { server.middlewares.use('/api/cad', createCadWorkflowMiddleware({ baseUrl: loadedEnv.AI_BASE_URL || 'https://codex2api.com', apiKey: loadedEnv.CODEX2API_API_KEY || loadedEnv.AI_API_KEY || '', visionModel: loadedEnv.AI_VISION_MODEL || loadedEnv.AI_MODEL || 'gpt-4o-mini', imageModel: loadedEnv.AI_IMAGE_MODEL || loadedEnv.IMAGE_MODEL || 'gpt-image-1' })) }, configurePreviewServer(server) { server.middlewares.use('/api/cad', createCadWorkflowMiddleware({ baseUrl: loadedEnv.AI_BASE_URL || 'https://codex2api.com', apiKey: loadedEnv.CODEX2API_API_KEY || loadedEnv.AI_API_KEY || '', visionModel: loadedEnv.AI_VISION_MODEL || loadedEnv.AI_MODEL || 'gpt-4o-mini', imageModel: loadedEnv.AI_IMAGE_MODEL || loadedEnv.IMAGE_MODEL || 'gpt-image-1' })) } }],
     preview: { allowedHosts: ['www.openai2api.com'] },
   }
 })
