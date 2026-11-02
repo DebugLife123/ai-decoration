@@ -2,7 +2,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 
 type GatewayConfig = { baseUrl: string; apiKey: string; visionModel: string; imageModel: string };
-type GenerateRequest = { mode: 'photo' | 'floorplan'; style: string; prompt?: string; photo?: string; floorPlan?: string; photos?: string[] };
+type GenerateRequest = { mode: 'photo' | 'floorplan'; style: string; prompt?: string; photo?: string; floorPlan?: string; photos?: string[]; source?: 'cad' | 'floorplan' };
+type AnalyzeRequest = { floorPlan?: string; source?: 'cad' | 'floorplan' };
 type ImageResult = { imageUrl: string };
 
 function sendJson(res: ServerResponse, status: number, body: unknown) {
@@ -46,10 +47,12 @@ async function callApi(config: GatewayConfig, path: string, init: RequestInit) {
   return payload;
 }
 
-async function analyze(config: GatewayConfig, image: string, mode: 'photo' | 'floorplan') {
+async function analyze(config: GatewayConfig, image: string, mode: 'photo' | 'floorplan' | 'cad') {
   const instruction = mode === 'photo'
     ? '分析这张现场毛坯空间照片。用简洁中文描述空间类型、现有结构、采光、主要墙面地面和不可移动元素，供室内效果图生成使用。不要虚构看不见的结构。'
-    : '分析这张户型图，识别可见的房间、动线、门窗和大致空间关系。只输出 JSON，格式为 {"rooms":[{"name":"客厅","description":"..."}]}，最多识别 6 个房间。';
+    : mode === 'cad'
+      ? '分析这张 CAD 导出的住宅平面图。重点识别图中可见的墙体边界、门窗开口、尺寸标注、房间名称及空间连接关系；忽略图框和图签。不得仅凭面积数字臆测空间。只输出 JSON，格式为 {"rooms":[{"name":"客厅","description":"..."}]}，最多识别 6 个房间。'
+      : '分析这张住宅户型图，识别可见的房间、动线、门窗和大致空间关系。只输出 JSON，格式为 {"rooms":[{"name":"客厅","description":"..."}]}，最多识别 6 个房间。';
   const payload = await callApi(config, '/chat/completions', { method: 'POST', body: JSON.stringify({ model: config.visionModel, temperature: 0.2, messages: [{ role: 'user', content: [{ type: 'text', text: instruction }, { type: 'image_url', image_url: { url: image, detail: 'high' } }] }] }) });
   return textFrom(payload);
 }
@@ -57,13 +60,9 @@ async function analyze(config: GatewayConfig, image: string, mode: 'photo' | 'fl
 function roomsFrom(text: string) {
   try {
     const parsed = JSON.parse(text.replace(/^```json\s*/i, '').replace(/```$/i, '').trim());
-    if (Array.isArray(parsed?.rooms)) return parsed.rooms.slice(0, 6).map((room: any, index: number) => ({ name: String(room?.name || `空间 ${index + 1}`), description: String(room?.description || '根据户型图识别的空间') }));
-  } catch { /* Use a visible fallback when a compatible model ignores JSON mode. */ }
-  return [
-    { name: '客厅', description: '根据户型图生成的公共活动空间，保留主要采光和动线。' },
-    { name: '卧室', description: '根据户型图生成的休息空间，强调舒适、收纳和自然光。' },
-    { name: '厨房', description: '根据户型图生成的厨房空间，关注操作动线和储物。' },
-  ];
+    if (Array.isArray(parsed?.rooms) && parsed.rooms.length > 0) return parsed.rooms.slice(0, 6).map((room: any, index: number) => ({ name: String(room?.name || `空间 ${index + 1}`), description: String(room?.description || '根据户型图识别的空间') }));
+  } catch { /* Fall through to an explicit model-output error. */ }
+  throw new Error('户型识别模型未返回有效空间列表，请重试或更换清晰的户型图片。');
 }
 
 async function generate(config: GatewayConfig, prompt: string): Promise<ImageResult> {
@@ -91,13 +90,25 @@ async function photoFlow(config: GatewayConfig, request: GenerateRequest) {
 
 async function floorPlanFlow(config: GatewayConfig, request: GenerateRequest) {
   if (!request.floorPlan) throw new Error('请先上传户型图。');
-  const analysis = await analyze(config, request.floorPlan, 'floorplan');
+  const analysis = await analyze(config, request.floorPlan, request.source === 'cad' ? 'cad' : 'floorplan');
   const rooms = roomsFrom(analysis);
-  const common = `基于同一套住宅户型，保持${request.style}风格、统一材质和色彩。${request.prompt || ''}。这是室内设计方案效果图，不是施工图。`;
+  const stylePrompts: Record<string, string> = {
+    modern: 'Contemporary Chinese modern minimalist interior, warm ivory and light greige palette, pale oak and restrained walnut veneer, clean geometric lines, concealed storage, airy circulation, soft daylight, integrated linear lighting, realistic premium materials. No clutter, ornate details or dramatic colors.',
+    song: 'Contemporary Chinese interior inspired by Song dynasty aesthetics: refined restraint, deep walnut lattice screen, warm grey-beige textured walls, handmade ceramic vessels, subtle ink art, asymmetrical sparse styling, generous negative space, natural tactile materials, soft amber light. Livable modern home, not a historical set. No palace decor or clutter.',
+    smallAmerican: 'Compact small American classic interior: creamy raised-panel cabinetry, warm ivory walls, olive green upholstery, dark walnut floor, discreet aged brass hardware, built-in storage, balanced classic trim and restrained vintage accessories, warm natural light. Keep furniture practical and scaled to a small home; no excessive ornament.',
+  };
+  const stylePrompt = stylePrompts[request.style] || stylePrompts.modern;
+  const common = `基于同一套住宅户型，保持${request.style}风格并统一材质色彩。${stylePrompt}\n用户补充偏好：${request.prompt || '无'}。严格保持户型墙体、门窗、空间比例与房间连接，不得擅自改造结构。这是室内设计效果图，不是施工图；画面真实、完整、适合方案沟通。不要文字、水印或人物。`;
   const cover = await generate(config, `${common}生成一张全屋装修方案的代表性总览图，体现客餐厅和整体空间气质。户型识别摘要：${analysis}`);
   const roomResults = [];
   for (const room of rooms) roomResults.push({ ...room, ...(await generate(config, `${common}生成${room.name}的室内效果图。空间说明：${room.description}。画面需要完整展示${room.name}的墙面、地面、家具、灯光和软装。`)) });
   return { type: 'floorplan', analysis, cover: cover.imageUrl, rooms: roomResults };
+}
+
+async function analyzeFloorPlanRequest(config: GatewayConfig, request: AnalyzeRequest) {
+  if (!request.floorPlan) throw new Error('请先上传户型图。');
+  const analysis = await analyze(config, request.floorPlan, request.source === 'cad' ? 'cad' : 'floorplan');
+  return { analysis, rooms: roomsFrom(analysis) };
 }
 
 export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
@@ -112,9 +123,21 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
     name: 'ai-decoration-gateway',
     configureServer(server) {
       server.middlewares.use('/api/ai/generate', gatewayMiddleware);
+      server.middlewares.use('/api/ai/analyze-floorplan', async (req, res, next) => {
+        if (req.method !== 'POST') return next();
+        if (!config.apiKey) return sendJson(res, 500, { error: '未检测到 CODEX2API_API_KEY 或 AI_API_KEY。' });
+        try { sendJson(res, 200, await analyzeFloorPlanRequest(config, await readBody(req) as AnalyzeRequest)); }
+        catch (error) { sendJson(res, 502, { error: error instanceof Error ? error.message : '户型识别失败，请稍后重试。' }); }
+      });
     },
     configurePreviewServer(server) {
       server.middlewares.use('/api/ai/generate', gatewayMiddleware);
+      server.middlewares.use('/api/ai/analyze-floorplan', async (req, res, next) => {
+        if (req.method !== 'POST') return next();
+        if (!config.apiKey) return sendJson(res, 500, { error: '未检测到 CODEX2API_API_KEY 或 AI_API_KEY。' });
+        try { sendJson(res, 200, await analyzeFloorPlanRequest(config, await readBody(req) as AnalyzeRequest)); }
+        catch (error) { sendJson(res, 502, { error: error instanceof Error ? error.message : '户型识别失败，请稍后重试。' }); }
+      });
     },
   };
 }

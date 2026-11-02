@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type UserRole = 'guest' | 'consumer' | 'business';
-export type DesignStyle = 'modern' | 'minimal' | 'chinese' | 'cream' | 'european' | 'wabi';
+export type DesignStyle = 'modern' | 'song' | 'smallAmerican' | 'minimal' | 'chinese' | 'cream' | 'european' | 'wabi';
 
 export interface Project {
   id: string;
