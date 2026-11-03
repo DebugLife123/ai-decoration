@@ -19,7 +19,8 @@ export async function readBody<T = GenerateRequest>(req: IncomingMessage): Promi
 }
 
 function baseUrl(value: string) { return value.replace(/\/+$/, '').replace(/\/v1$/, ''); }
-const API_TIMEOUT_MS = 60_000;
+const ANALYSIS_TIMEOUT_MS = 60_000;
+const IMAGE_TIMEOUT_MS = 180_000;
 function imageBlob(dataUrl: string) {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) throw new Error('上传图片格式无效，请重新选择图片。');
@@ -47,7 +48,9 @@ export function imageFrom(payload: any): string | null {
 
 export async function callApi(config: GatewayConfig, path: string, init: RequestInit) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const isImageRequest = path.startsWith('/images/');
+  const timeoutMs = isImageRequest ? IMAGE_TIMEOUT_MS : ANALYSIS_TIMEOUT_MS;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${baseUrl(config.baseUrl)}/v1${path}`, {
       ...init,
@@ -60,7 +63,7 @@ export async function callApi(config: GatewayConfig, path: string, init: Request
     if (!response.ok) throw new Error(`上游接口返回 ${response.status}：${payload?.error?.message || payload?.message || raw || '未提供错误详情'}`);
     return payload;
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw new Error('上游接口请求超时，请稍后重试。');
+    if (error instanceof Error && error.name === 'AbortError') throw new Error(`${isImageRequest ? '图片生成' : 'AI 分析'}上游接口请求超时（${timeoutMs / 1000} 秒），请稍后重试。`);
     if (error instanceof Error && error.message.startsWith('上游接口返回')) throw error;
     throw new Error(`上游接口连接失败：${error instanceof Error ? error.message : '未知网络错误'}`);
   } finally {
