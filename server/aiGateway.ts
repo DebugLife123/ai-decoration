@@ -19,6 +19,7 @@ export async function readBody<T = GenerateRequest>(req: IncomingMessage): Promi
 }
 
 function baseUrl(value: string) { return value.replace(/\/+$/, '').replace(/\/v1$/, ''); }
+const API_TIMEOUT_MS = 60_000;
 function imageBlob(dataUrl: string) {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) throw new Error('上传图片格式无效，请重新选择图片。');
@@ -31,20 +32,40 @@ export function textFrom(payload: any): string {
 export function imageFrom(payload: any): string | null {
   const item = payload?.data?.[0];
   if (typeof item?.url === 'string') return item.url;
-  if (typeof item?.b64_json === 'string') return `data:image/png;base64,${item.b64_json}`;
+  if (typeof item?.b64_json === 'string') {
+    const mime = item.b64_json.startsWith('/9j/')
+      ? 'image/jpeg'
+      : item.b64_json.startsWith('iVBORw0KGgo')
+        ? 'image/png'
+        : item.b64_json.startsWith('UklGR')
+          ? 'image/webp'
+          : 'image/png';
+    return `data:${mime};base64,${item.b64_json}`;
+  }
   return typeof payload?.image_url === 'string' ? payload.image_url : null;
 }
 
 export async function callApi(config: GatewayConfig, path: string, init: RequestInit) {
-  const response = await fetch(`${baseUrl(config.baseUrl)}/v1${path}`, {
-    ...init,
-    headers: { Authorization: `Bearer ${config.apiKey}`, ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...init.headers },
-  });
-  const raw = await response.text();
-  let payload: any;
-  try { payload = raw ? JSON.parse(raw) : {}; } catch { payload = { raw }; }
-  if (!response.ok) throw new Error(payload?.error?.message || payload?.message || raw || `上游接口返回 ${response.status}`);
-  return payload;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${baseUrl(config.baseUrl)}/v1${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${config.apiKey}`, ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...init.headers },
+    });
+    const raw = await response.text();
+    let payload: any;
+    try { payload = raw ? JSON.parse(raw) : {}; } catch { payload = { raw }; }
+    if (!response.ok) throw new Error(`上游接口返回 ${response.status}：${payload?.error?.message || payload?.message || raw || '未提供错误详情'}`);
+    return payload;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw new Error('上游接口请求超时，请稍后重试。');
+    if (error instanceof Error && error.message.startsWith('上游接口返回')) throw error;
+    throw new Error(`上游接口连接失败：${error instanceof Error ? error.message : '未知网络错误'}`);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function analyze(config: GatewayConfig, image: string, mode: 'photo' | 'floorplan' | 'cad') {
