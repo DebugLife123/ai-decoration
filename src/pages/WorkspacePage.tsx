@@ -50,29 +50,40 @@ function Icon({ name }: { name: 'arrow' | 'upload' | 'file' | 'spark' | 'check' 
 
 function PlanComparison({ original, render, title }: { original: string; render: string; title: string }) {
   const [position, setPosition] = useState(50);
-  const updatePosition = (clientX: number, element: HTMLDivElement) => {
+  const updatePosition = (clientX: number, element: Element) => {
     const bounds = element.getBoundingClientRect();
     if (bounds.width === 0) return;
     setPosition(Math.max(0, Math.min(100, ((clientX - bounds.left) / bounds.width) * 100)));
   };
-  return <div
-    className="plan-comparison"
-    role="slider"
-    tabIndex={0}
-    aria-label={`拖动比较原始户型图与${title}渲染效果`}
-    aria-valuemin={0}
-    aria-valuemax={100}
-    aria-valuenow={Math.round(position)}
-    aria-valuetext={`原始图纸显示 ${Math.round(position)}%`}
-    onPointerDown={(event) => {
-      if (event.button !== 0) return;
-      event.currentTarget.setPointerCapture(event.pointerId);
-      updatePosition(event.clientX, event.currentTarget);
-    }}
-    onPointerMove={(event) => {
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) updatePosition(event.clientX, event.currentTarget);
-    }}
-    onKeyDown={(event) => {
+  return <div className="plan-comparison">
+    <img className="plan-comparison-render" src={render} alt={`${title}渲染效果`} />
+    <div className="plan-comparison-original" style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}>
+      <img src={original} alt="上传的原始户型图或 CAD 图" />
+    </div>
+    <span className="comparison-label comparison-label-original">原始图纸</span>
+    <span className="comparison-label comparison-label-render">渲染效果</span>
+    <span className="comparison-divider" style={{ left: `${position}%` }}>
+      <span
+        className="comparison-handle"
+        role="slider"
+        tabIndex={0}
+        aria-label={`拖动比较原始户型图与${title}渲染效果`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(position)}
+        aria-valuetext={`原始图纸显示 ${Math.round(position)}%`}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          const board = event.currentTarget.closest('.plan-comparison');
+          if (board) updatePosition(event.clientX, board);
+        }}
+        onPointerMove={(event) => {
+          if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+          const board = event.currentTarget.closest('.plan-comparison');
+          if (board) updatePosition(event.clientX, board);
+        }}
+        onKeyDown={(event) => {
       const step = event.shiftKey ? 10 : 2;
       if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') setPosition((current) => Math.max(0, current - step));
       else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') setPosition((current) => Math.min(100, current + step));
@@ -80,15 +91,9 @@ function PlanComparison({ original, render, title }: { original: string; render:
       else if (event.key === 'End') setPosition(100);
       else return;
       event.preventDefault();
-    }}
-  >
-    <img className="plan-comparison-render" src={render} alt={`${title}渲染效果`} />
-    <div className="plan-comparison-original" style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}>
-      <img src={original} alt="上传的原始户型图或 CAD 图" />
-    </div>
-    <span className="comparison-label comparison-label-original">原始图纸</span>
-    <span className="comparison-label comparison-label-render">渲染效果</span>
-    <span className="comparison-divider" style={{ left: `${position}%` }} aria-hidden="true" />
+        }}
+      />
+    </span>
   </div>;
 }
 
