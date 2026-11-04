@@ -4,7 +4,6 @@ services:
     image: ${DECORATION_IMAGE:-wyx-decoration:local}
     network_mode: bridge
     ports:
-      - "417:4173"
       - "4175:4173"
     environment:
       CODEX2API_API_KEY: ${CODEX2API_API_KEY:-}
