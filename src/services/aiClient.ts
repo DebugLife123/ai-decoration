@@ -13,7 +13,7 @@ export async function analyzeFloorPlan(floorPlan: string, source: PlanSource = '
   if (!response.ok) throw new Error(payload.error || '户型识别失败，请检查接口配置。');
   return payload;
 }
-export async function generateDesign(input: { mode: DesignMode; style: DesignStyle; prompt: string; photo?: string; photos?: string[]; floorPlan?: string; source?: PlanSource }): Promise<GenerationResult> {
+export async function generateDesign(input: { mode: DesignMode; style: DesignStyle; prompt: string; photo?: string; photos?: string[]; floorPlan?: string; source?: PlanSource; analysis?: string; rooms?: IdentifiedRoom[]; selectedRooms?: string[] }): Promise<GenerationResult> {
   const response = await fetch('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
   const payload = await response.json() as GenerationResult & { error?: string };
   if (!response.ok) throw new Error(payload.error || 'AI 生成失败，请检查接口配置。');

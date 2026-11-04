@@ -8,6 +8,10 @@
   margin-left: 244px;
 }
 
+.app:has(.whole-home-report) .app-main { margin-left: 0; }
+.app:has(.whole-home-report) .navbar,
+.app:has(.whole-home-report) .mobile-nav-toggle { display: none; }
+
 @media (max-width: 760px) {
   .app-main { margin-left: 0; }
 }
