@@ -1,5 +1,8 @@
 export type DesignMode = 'photo' | 'floorplan';
-export type DesignStyle = 'modern' | 'minimal' | 'chinese' | 'cream' | 'european' | 'wabi';
+export type DesignStyle = 'modern' | 'minimal' | 'chinese' | 'cream' | 'european' | 'wabi' | 'song' | 'smallAmerican';
+
+/** 图纸来源：CAD 图纸或普通户型图片。 */
+export type PlanSource = 'cad' | 'floorplan';
 
 export interface DesignImage {
   id: string;
@@ -80,6 +83,14 @@ export interface GenerateDesignInput {
   photo?: string;
   photos?: string[];
   floorPlan?: string;
+  /** 图纸来源：CAD 图纸或普通户型图（CAD 工作流识别入口使用）。 */
+  source?: PlanSource;
+  /** 户型/CAD 识别得到的整体分析文本。 */
+  analysis?: string;
+  /** 识别出的空间列表。 */
+  rooms?: IdentifiedRoom[];
+  /** 本次选择要生成的空间名称。 */
+  selectedRooms?: string[];
 }
 
 export interface DesignGenerationAdapter {
@@ -103,6 +114,18 @@ export interface FloorPlanGeneration {
   cover: string;
   analysis: string;
   rooms: RoomGeneration[];
+}
+
+/** 户型/CAD 识别出的单个空间。 */
+export interface IdentifiedRoom {
+  name: string;
+  description: string;
+}
+
+/** 户型/CAD 识别结果。 */
+export interface FloorPlanAnalysis {
+  analysis: string;
+  rooms: IdentifiedRoom[];
 }
 
 export type GenerationResult = PhotoGeneration | FloorPlanGeneration;

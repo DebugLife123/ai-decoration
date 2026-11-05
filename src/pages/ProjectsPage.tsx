@@ -7,7 +7,7 @@ import type { MaterialRecord } from '../services/dataContracts';
 import './ProjectsPage.css';
 
 const styleNames: Record<Project['style'], string> = {
-  modern: '现代简约', minimal: '北欧原木', chinese: '新中式', cream: '奶油法式', european: '轻奢欧式', wabi: '自然侘寂',
+  modern: '现代简约', minimal: '北欧原木', chinese: '新中式', cream: '奶油法式', european: '轻奢欧式', wabi: '自然侘寂', song: '宋式美学', smallAmerican: '小美风格',
 };
 
 const statusNames: Record<Project['status'], string> = {

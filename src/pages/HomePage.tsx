@@ -1,195 +1,73 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { useAppStore } from '../stores/appStore';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { DesignStyle } from '../stores/appStore';
+import BrandLoading from '../components/BrandLoading';
 import heroImage from '../assets/generated/hero-home.png';
-import modernLivingImage from '../assets/generated/template-modern-living.png';
-import nordicBedroomImage from '../assets/generated/template-nordic-bedroom.png';
-import modernKitchenImage from '../assets/generated/template-modern-kitchen.png';
-import creamCompactImage from '../assets/generated/template-cream-compact.png';
-import chineseHomeImage from '../assets/generated/template-chinese-home.png';
-import wabiHomeImage from '../assets/generated/template-wabi-home.png';
+import modernImage from '../assets/generated/template-modern-minimal.png';
+import songImage from '../assets/generated/template-song-aesthetic.png';
+import americanImage from '../assets/generated/template-small-american.png';
 import './HomePage.css';
 
-const styles: { key: DesignStyle; name: string; palette: string[] }[] = [
-  { key: 'modern', name: '现代简约', palette: ['#dedbd5', '#545b64', '#a5b3b9'] },
-  { key: 'minimal', name: '北欧原木', palette: ['#e8dfd1', '#bda37d', '#78846a'] },
-  { key: 'chinese', name: '新中式', palette: ['#ded4c1', '#785d43', '#39453c'] },
-  { key: 'cream', name: '奶油法式', palette: ['#eee5d9', '#d8bca4', '#f4f0e9'] },
-  { key: 'european', name: '轻奢欧式', palette: ['#d4d7d8', '#b9a68a', '#323840'] },
-  { key: 'wabi', name: '自然侘寂', palette: ['#c9bda8', '#958571', '#e3dace'] },
-];
+export type InspirationTemplate = {
+  id: string; title: string; category: string; style: string; styleKey: DesignStyle; tags: string[];
+  image: string; analysis: string; ruleItems: { label: string; value: string }[];
+  palette: string[]; materials: string[]; prompt: string;
+};
 
-const templates = [
-  { title: '让阳光成为客厅的一部分', category: '客厅', style: '现代简约', image: modernLivingImage, prompt: '改造客厅，保持明亮通透，增加收纳和舒适的会客区域', className: 'living' },
-  { title: '原木与亚麻的安静卧室', category: '卧室', style: '北欧原木', image: nordicBedroomImage, prompt: '设计一间安静放松的卧室，使用原木、亚麻和柔和自然光', className: 'bedroom' },
-  { title: '把生活放进开放厨房', category: '厨房', style: '现代简约', image: modernKitchenImage, prompt: '优化厨房与餐厅的连接，增加备餐台面和实用储物', className: 'kitchen' },
-  { title: '小空间也能从容生活', category: '小户型', style: '奶油法式', image: creamCompactImage, prompt: '为小户型提升空间利用率，浅色基调，增加隐形收纳', className: 'compact' },
-  { title: '东方留白，木的呼吸', category: '全屋', style: '新中式', image: chineseHomeImage, prompt: '以现代方式呈现东方居住气质，木质、留白和克制的中式细节', className: 'oriental' },
-  { title: '在自然肌理里慢下来', category: '全屋', style: '自然侘寂', image: wabiHomeImage, prompt: '营造自然安静的侘寂空间，微水泥、原木和柔和光影', className: 'wabi' },
+export const templates: InspirationTemplate[] = [
+  { id: 'modern-minimal', title: '克制留白里的日常秩序', category: '全屋', style: '现代简约', styleKey: 'modern', tags: ['现代简约'], image: modernImage, analysis: '以暖白、浅灰和浅木色建立明亮基底，隐藏式收纳与简洁几何线条降低视觉干扰，保留通透动线和自然采光。', ruleItems: [{ label: '空间策略', value: '优先保证采光面与客餐厅之间的连续动线，柜体尽量整合入墙。' }, { label: '材质规范', value: '以哑光墙面、浅木饰面和浅色石材为主，黑色金属仅作细节点缀。' }], palette: ['暖白', '浅灰', '浅木色'], materials: ['白橡木饰面', '哑光涂料', '浅色石材'], prompt: 'Photorealistic contemporary Chinese apartment interior, modern minimalist design, warm ivory and light greige palette, pale oak and restrained walnut veneer, clean geometric lines, concealed full-height storage, uncluttered surfaces, airy open circulation, large soft daylight, subtle integrated linear lighting, premium realistic materials, editorial interior photography. Preserve the supplied floor plan walls, openings, proportions and room connections. No people, text, watermark, excessive decor, ornate classic details or dramatic colors.' },
+  { id: 'song-aesthetic', title: '宋式雅居 · 木与留白', category: '全屋', style: '宋式美学', styleKey: 'song', tags: ['宋式美学'], image: songImage, analysis: '以深木格栅、陶器与书画形成含蓄的东方气韵，墙面保留肌理和留白，用暖色漫射光呈现安静、克制的当代宋式空间。', ruleItems: [{ label: '构图规范', value: '采用疏朗、非对称的陈设关系，留出完整呼吸面，避免符号堆叠。' }, { label: '材质规范', value: '深胡桃木、陶土、石材与手工肌理墙面形成有层次的自然触感。' }], palette: ['米灰', '深胡桃木', '陶土褐'], materials: ['胡桃木格栅', '手工陶器', '肌理涂料'], prompt: 'Photorealistic contemporary Chinese home inspired by Song dynasty aesthetics, refined Song-style restraint, deep walnut wood lattice screen and crafted timber furniture, warm grey-beige textured walls, handmade ceramic vessels, subtle ink art, asymmetrical sparse styling, generous negative space, natural stone and tactile materials, soft amber indirect lighting, quiet scholarly atmosphere, realistic high-end interior photography. Preserve supplied floor plan walls, openings, proportions and circulation. Contemporary livable home, not a historical set. No people, text, watermark, red-lacquer palace decor or clutter.' },
+  { id: 'small-american', title: '复古线条与温柔奶油色', category: '全屋', style: '小美风格', styleKey: 'smallAmerican', tags: ['小美风格'], image: americanImage, analysis: '以奶油色线框柜门和暖白墙面打底，橄榄绿布艺、深木地板及黄铜小五金带出轻复古气质，尺度温和而适合日常居住。', ruleItems: [{ label: '空间策略', value: '用成套柜体和书桌提升小户型收纳效率，保持家具尺度轻巧。' }, { label: '细节规范', value: '线框门板、黄铜五金、少量复古装饰彼此呼应，避免繁复堆叠。' }], palette: ['奶油白', '橄榄绿', '深木色'], materials: ['线框烤漆柜门', '深色木地板', '黄铜五金'], prompt: 'Photorealistic compact American-style home interior, small American classic style, creamy white raised-panel cabinetry and warm ivory walls, olive green upholstered accents, dark walnut wood floor, discreet aged brass hardware, built-in storage and practical desk, balanced classic trim, restrained vintage accessories, warm natural daylight and gentle ambient lighting, comfortable realistic proportions, polished interior editorial photography. Preserve supplied floor plan walls, openings, proportions and circulation. No people, text, watermark, oversized furniture, ornate palace detailing or excessive decor.' },
 ];
+const toneOptions = ['暖白', '灰米', '木色', '低饱和'];
+const lightOptions = ['自然光', '暖光', '明亮通透'];
+const materialOptions = ['木饰面', '石材', '艺术涂料', '亚麻布艺'];
 
-function Icon({ name }: { name: 'spark' | 'upload' | 'arrow' | 'image' | 'plus' | 'workspace' | 'layers' | 'close' }) {
+function Icon({ name }: { name: 'arrow' | 'upload' | 'file' | 'spark' | 'check' | 'grid' | 'close' }) {
   const paths = {
-    spark: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z"/><path d="m19 15 .9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15Z"/></>,
-    upload: <><path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></>,
-    arrow: <><path d="M5 12h14M13 6l6 6-6 6"/></>,
-    image: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></>,
-    plus: <><path d="M12 5v14M5 12h14"/></>,
-    workspace: <><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M7 9h10M7 13h5"/></>,
-    layers: <><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></>,
-    close: <><path d="m6 6 12 12M18 6 6 18"/></>,
+    arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>, upload: <><path d="M12 16V4m0 0L7 9m5-5 5 5" /><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" /></>, file: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h5M9 13h6M9 17h5" /></>, spark: <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" />, check: <path d="m5 12 4 4L19 6" />, grid: <><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><rect x="14" y="14" width="6" height="6" rx="1" /></>, close: <path d="m6 6 12 12M18 6 6 18" />,
   };
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
-export default function HomePage() {
-  const { selectedStyle, setSelectedStyle } = useAppStore();
-  const location = useLocation();
-  const [prompt, setPrompt] = useState('');
-  const [files, setFiles] = useState<{ name: string; url: string }[]>([]);
-  const [notice, setNotice] = useState('');
-  const [templateFilter, setTemplateFilter] = useState('精选');
-  const [ideaVisible, setIdeaVisible] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
+export default function HomePage({ isInspirationPage = false }: { isInspirationPage?: boolean }) {
+  const navigate = useNavigate();
+  const [isEntering, setIsEntering] = useState(false);
+  const [activeCategory, setActiveCategory] = useState('全部');
+  const [detailTemplate, setDetailTemplate] = useState<InspirationTemplate | null>(null);
+  const [configTemplate, setConfigTemplate] = useState<InspirationTemplate | null>(null);
+  const [sourceType, setSourceType] = useState<'cad' | 'floorplan'>('floorplan');
+  const [tone, setTone] = useState('暖白');
+  const [light, setLight] = useState('自然光');
+  const [material, setMaterial] = useState('木饰面');
+  const timerRef = useRef<number | null>(null);
+  const categories = ['全部', ...templates.map((template) => template.style)];
+  const visibleTemplates = templates.filter((template) => activeCategory === '全部' || template.style === activeCategory);
+  useEffect(() => () => { if (timerRef.current) window.clearTimeout(timerRef.current); }, []);
   useEffect(() => {
-    if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' });
-  }, [location.hash]);
-
-  useEffect(() => () => files.forEach((file) => URL.revokeObjectURL(file.url)), [files]);
-
-  const addFiles = (event: ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(event.target.files ?? []).filter((file) => file.type.startsWith('image/'));
-    setFiles((current) => [...current, ...selected.map((file) => ({ name: file.name, url: URL.createObjectURL(file) }))].slice(-4));
-    event.target.value = '';
+    if (!detailTemplate && !configTemplate) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') { setDetailTemplate(null); setConfigTemplate(null); } };
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden'; window.addEventListener('keydown', onKeyDown);
+    return () => { document.body.style.overflow = overflow; window.removeEventListener('keydown', onKeyDown); };
+  }, [detailTemplate, configTemplate]);
+  const enterWorkspace = (nextSource: 'cad' | 'floorplan' = 'floorplan', template?: InspirationTemplate) => {
+    if (isEntering) return;
+    setIsEntering(true);
+    const params = new URLSearchParams({ source: nextSource });
+    if (template) { params.set('style', template.styleKey); params.set('template', template.id); params.set('prompt', template.prompt); params.set('tone', tone); params.set('light', light); params.set('material', material); }
+    timerRef.current = window.setTimeout(() => navigate(`/workspace?${params.toString()}`), 450);
   };
-
-  const startDesign = () => {
-    if (!prompt.trim() && files.length === 0) {
-      setNotice('先聊聊你想要的家，或者上传一张户型图。');
-      return;
-    }
-    setIdeaVisible(true);
-    setNotice('设计需求已整理为预览，AI 生成服务接入后可生成对应效果图。');
-  };
-
-  const applyTemplate = (template: typeof templates[number]) => {
-    setPrompt(template.prompt);
-    const match = styles.find((style) => style.name === template.style);
-    if (match) setSelectedStyle(match.key);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const activeStyle = styles.find((style) => style.key === selectedStyle)!;
-
-  return (
-    <div className="home">
-      <header className="home-topbar">
-        <div className="welcome"><span className="online-dot" />今天，想改造哪里？</div>
-        <div className="topbar-actions">
-          <Link className="business-entry" to="/materials"><Icon name="layers" /> 材料库</Link>
-          <button className="help-entry" onClick={() => setNotice('这里将提供新手引导与设计帮助。')}>使用指南</button>
-          <Link className="top-workspace" to="/projects">我的方案 <Icon name="arrow" /></Link>
-        </div>
-      </header>
-
-      <main className="home-content">
-        <section className="creator-section" aria-labelledby="creator-title">
-          <div className="creator-copy">
-            <span className="eyebrow">YOUR HOME, REIMAGINED</span>
-            <h1 id="creator-title">你好，<br />一起设计<span>理想的家</span>。</h1>
-            <p>不需要专业术语。告诉我你的生活习惯和偏好，<br />从一句想法，看见一个家的可能。</p>
-            <div className="creator-assurances"><span>六种风格</span><i /><span>支持参考图</span><i /><span>随时修改</span></div>
-          </div>
-
-          <div className="inspiration-composition" aria-label="客厅设计灵感示意">
-            <div className="inspiration-orbit" />
-            <div className="inspiration-photo">
-              <img src={heroImage} alt="现代住宅客厅与餐厅设计灵感" />
-              <span className="inspiration-tag"><Icon name="spark" /> 让灵感发生</span>
-            </div>
-            <div className="material-note"><span className="material-swatch" /><span><small>材质灵感</small><strong>自然 · 温润 · 松弛</strong></span></div>
-            <div className="inspiration-line" aria-hidden="true"><svg viewBox="0 0 95 56"><path d="M2 54C18 7 56 2 92 13"/><path d="m83 7 9 6-7 9"/></svg></div>
-          </div>
-        </section>
-
-        <section className="creation-studio" aria-label="AI 设计输入">
-          <div className="studio-topline"><span><Icon name="spark" /> 和 AI 聊聊你的想法</span><span>随时换一种表达方式</span></div>
-          <div className="prompt-panel">
-            <textarea
-              aria-label="描述你的家装需求"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder="比如：我喜欢阳光、原木和一点点绿植，想把 89㎡ 的家改得明亮又松弛……"
-              rows={3}
-            />
-            {files.length > 0 && (
-              <div className="upload-previews">
-                {files.map((file, index) => (
-                  <div className="upload-preview" key={`${file.name}-${index}`}>
-                    <img src={file.url} alt={file.name} /><span>{file.name}</span>
-                    <button aria-label={`移除${file.name}`} onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Icon name="close" /></button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="prompt-footer">
-              <button className="upload-button" onClick={() => inputRef.current?.click()}><Icon name="plus" /> 添加户型图或参考图</button>
-              <input ref={inputRef} type="file" accept="image/*" multiple hidden onChange={addFiles} />
-              <div className="selected-style-note"><span style={{ background: activeStyle.palette[1] }} />{activeStyle.name}</div>
-              <button className="generate-button" onClick={startDesign}><Icon name="spark" /> 生成我的设计</button>
-            </div>
-          </div>
-          <div className="style-picker" aria-label="选择设计风格">
-            {styles.map((style) => (
-              <button key={style.key} className={selectedStyle === style.key ? 'selected' : ''} onClick={() => setSelectedStyle(style.key)}>
-                <span className="style-swatch">{style.palette.map((color) => <i key={color} style={{ background: color }} />)}</span>
-                <span>{style.name}</span><i className="style-check">✓</i>
-              </button>
-            ))}
-          </div>
-          {notice && <div className="demo-notice"><span>i</span>{notice}<button onClick={() => setNotice('')} aria-label="关闭提示"><Icon name="close" /></button></div>}
-          {ideaVisible && <div className="idea-preview"><span className="idea-icon"><Icon name="spark" /></span><div><strong>你的设计简报已准备好</strong><p>{activeStyle.name} · {files.length > 0 ? `已添加 ${files.length} 张素材` : '文字灵感'} · {prompt || '等待补充空间描述'}</p></div><Link to="/workspace" state={{ prompt, style: selectedStyle }}>继续到工作台 <Icon name="arrow" /></Link></div>}
-        </section>
-
-        <section className="entry-links" aria-label="设计入口">
-          <Link to="/workspace"><Icon name="upload" /><span><strong>有户型图？</strong><small>从真实空间开始规划</small></span><Icon name="arrow" /></Link>
-          <button onClick={() => inputRef.current?.click()}><Icon name="image" /><span><strong>有喜欢的参考图？</strong><small>让 AI 读懂你的审美</small></span><Icon name="arrow" /></button>
-          <button onClick={() => document.getElementById('templates')?.scrollIntoView({ behavior: 'smooth' })}><Icon name="layers" /><span><strong>还没有具体想法？</strong><small>先去灵感画板逛逛</small></span><Icon name="arrow" /></button>
-        </section>
-
-        <section className="template-section" id="templates">
-          <div className="section-heading-row">
-            <div><span className="eyebrow">A LITTLE INSPIRATION</span><h2>给家的另一种可能</h2><p>选一个打动你的画面，接着讲出自己的故事。</p></div>
-            <div className="template-filters" aria-label="模板分类">
-              {['精选', '客厅', '卧室', '厨房', '全屋'].map((filter) => <button key={filter} className={templateFilter === filter ? 'active' : ''} onClick={() => setTemplateFilter(filter)}>{filter}</button>)}
-            </div>
-          </div>
-          <div className="template-grid">
-            {templates.filter((template) => templateFilter === '精选' || template.category === templateFilter).map((template) => (
-              <button className={`template-card ${template.className}`} key={template.title} onClick={() => applyTemplate(template)}>
-                <span className="template-image-wrap">
-                  <img src={template.image} alt={`${template.style}${template.category}设计效果图`} loading="lazy" />
-                  <span className="template-use"><Icon name="plus" /> 用它做设计</span>
-                  <span className="template-category">{template.category}</span>
-                </span>
-                <span className="template-caption"><span><strong>{template.title}</strong><small>{template.style}</small></span><Icon name="arrow" /></span>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="workflow-strip" id="materials">
-          <div className="workflow-copy"><span className="eyebrow">FROM IDEA TO HOME</span><h2>灵感不止于一张效果图</h2><p>设计、修改与方案整理，留在同一个创作空间里。</p></div>
-          <div className="workflow-steps"><span><b>01</b>上传空间</span><span><b>02</b>探索风格</span><span><b>03</b>局部调整</span></div>
-          <Link to="/materials">浏览材料清单 <Icon name="arrow" /></Link>
-        </section>
-
-        <footer className="home-footer"><span>筑境 AI · 让每一个家有自己的表达</span><span>AI 效果用于设计沟通，不作为施工图纸</span></footer>
-      </main>
-    </div>
-  );
+  const openConfig = (template: InspirationTemplate) => { setDetailTemplate(null); setConfigTemplate(template); setSourceType('floorplan'); setTone(template.palette[0]); setLight('自然光'); setMaterial(template.materials[0]); };
+  return <div className={`home-page ${isInspirationPage ? 'inspiration-page' : 'landing-page'}`}>
+    {isEntering && <BrandLoading />}
+    <header className="home-topbar"><div className="home-status"><span className="online-dot" />设计风格模板</div><button type="button" onClick={() => enterWorkspace()} className="topbar-workspace" disabled={isEntering}><Icon name="grid" />进入工作台</button></header>
+    <main className="home-content">
+      {!isInspirationPage && <><section className="home-hero"><div className="hero-copy"><span className="eyebrow">JianYiZhuang / PERSONAL DESIGN TOOL</span><h1>把一张图纸，<br /><em>变成家的样子。</em></h1><p>上传户型图片，选定设计方向，生成全屋装修效果方案。</p><div className="hero-actions"><button type="button" onClick={() => enterWorkspace()} className="primary-action" disabled={isEntering}><Icon name="upload" />开始设计<Icon name="arrow" /></button><button type="button" className="secondary-action" onClick={() => navigate('/inspiration')}>浏览三套风格 <Icon name="arrow" /></button></div><div className="hero-notes"><span><Icon name="check" />现代简约</span><span><Icon name="check" />宋式美学</span><span><Icon name="check" />小美风格</span></div></div><div className="hero-visual"><div className="hero-image-wrap"><img src={heroImage} alt="室内设计效果参考" /></div><div className="hero-caption"><span className="caption-number">AI</span><span><strong>从真实户型出发</strong><small>风格模板可复用</small></span></div></div></section><section className="featured-section"><div className="section-heading"><div><span className="eyebrow">CURATED DESIGN STYLES</span><h2>三套风格方案</h2><p>基于资料库参考提炼，并通过生图验证。</p></div><button type="button" className="featured-more" onClick={() => navigate('/inspiration')}>进入灵感广场 <Icon name="arrow" /></button></div><div className="featured-grid">{templates.map((template, index) => <article className="featured-card" key={template.id}><div className="featured-visual"><button type="button" className="featured-card-image" onClick={() => navigate('/inspiration')}><img src={template.image} alt={`${template.style}效果图`} /><span>风格方案 · 0{index + 1}</span></button><button type="button" className="featured-upload" onClick={() => openConfig(template)}><Icon name="upload" /><span>以此为参考</span></button></div><div className="featured-card-copy"><div><small>全屋 / {template.style}</small><h3>{template.title}</h3></div></div></article>)}</div></section></>}
+      {isInspirationPage && <section className="inspiration-section" id="inspiration"><div className="section-heading"><div><span className="eyebrow">INSPIRATION SQUARE</span><h2>灵感广场</h2><p>三套经过生图验证的装修风格方案。</p></div><div className="inspiration-summary"><span><strong>3</strong>套风格模板</span><span><strong>3</strong>组风格提示词</span></div></div><div className="reference-toolbar"><div className="reference-filters" role="tablist" aria-label="风格分类">{categories.map((category) => <button type="button" role="tab" aria-selected={activeCategory === category} className={activeCategory === category ? 'active' : ''} key={category} onClick={() => setActiveCategory(category)}>{category}</button>)}</div><span className="reference-mark">JYZ / INSPIRATION</span></div><div className="reference-meta"><span>共 {visibleTemplates.length} 套风格方案</span><span>查看风格细节，或基于户型生成方案</span></div><div className="reference-grid">{visibleTemplates.map((template) => <article className="reference-card" key={template.id}><button type="button" className="reference-card-open" onClick={() => setDetailTemplate(template)}><span className="reference-image"><img src={template.image} alt={`${template.style}参考图`} /><span className="reference-category">{template.category}</span><span className="reference-hover-copy">查看风格方案</span></span><span className="reference-copy"><strong>{template.title}</strong><small>{template.style}</small><Icon name="arrow" /></span></button></article>)}</div></section>}
+      <footer className="home-footer"><span>简易装 / JianYiZhuang</span><span>AI 效果用于设计沟通，不作为施工图纸</span></footer>
+    </main>
+    {isInspirationPage && detailTemplate && <div className="home-modal-backdrop" role="presentation" onMouseDown={() => setDetailTemplate(null)}><section className="inspiration-modal detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title" onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setDetailTemplate(null)} aria-label="关闭详情"><Icon name="close" /></button><div className="modal-image"><img src={detailTemplate.image} alt={`${detailTemplate.style}效果图`} /><div className="modal-image-caption"><span>{detailTemplate.category}</span><strong>{detailTemplate.style}</strong></div></div><div className="modal-content"><div className="modal-kicker">DESIGN REFERENCE / {detailTemplate.category}</div><h2 id="detail-title">{detailTemplate.title}</h2><div className="modal-subline"><span>{detailTemplate.style}</span></div><div className="detail-section"><span className="detail-label">设计分析</span><p>{detailTemplate.analysis}</p></div><div className="detail-section"><span className="detail-label">设计规范</span><div className="detail-rules">{detailTemplate.ruleItems.map((item) => <div className="detail-rule" key={item.label}><strong>{item.label}</strong><span>{item.value}</span></div>)}</div></div><div className="detail-section detail-section-inline"><div><span className="detail-label">色彩建议</span><div className="detail-palette">{detailTemplate.palette.map((item, index) => <span key={item}><i className={`palette-swatch swatch-${index}`} />{item}</span>)}</div></div><div><span className="detail-label">材质建议</span><div className="detail-tags">{detailTemplate.materials.map((item) => <span key={item}>{item}</span>)}</div></div></div><div className="modal-actions"><button type="button" className="modal-primary-button" onClick={() => openConfig(detailTemplate)}>生成同款 <Icon name="arrow" /></button></div></div></section></div>}
+    {configTemplate && <div className="home-modal-backdrop" role="presentation" onMouseDown={() => setConfigTemplate(null)}><section className="inspiration-modal config-modal" role="dialog" aria-modal="true" aria-labelledby="config-title" onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setConfigTemplate(null)} aria-label="关闭生成设置"><Icon name="close" /></button><div className="config-heading"><span className="eyebrow">GENERATE A SIMILAR HOME</span><h2 id="config-title">生成{configTemplate.style}方案</h2><p>上传户型图片后，按所选风格生成全屋效果图。</p></div><div className="config-reference"><img src={configTemplate.image} alt="当前风格参考" /><span><small>当前参考</small><strong>{configTemplate.title}</strong></span></div><div className="config-options"><fieldset><legend>上传方式</legend><div className="option-grid two-columns">{[['floorplan', '户型图设计', '上传图片户型图'], ['cad', 'CAD / PDF', '请先导出为图片']].map(([value, label, note]) => <button type="button" key={value} className={sourceType === value ? 'selected' : ''} onClick={() => setSourceType(value as 'cad' | 'floorplan')}><strong>{label}</strong><small>{note}</small></button>)}</div></fieldset><fieldset><legend>空间色调</legend><div className="option-grid">{toneOptions.map((option) => <button type="button" key={option} className={tone === option ? 'selected' : ''} onClick={() => setTone(option)}>{option}</button>)}</div></fieldset><fieldset><legend>光线氛围</legend><div className="option-grid">{lightOptions.map((option) => <button type="button" key={option} className={light === option ? 'selected' : ''} onClick={() => setLight(option)}>{option}</button>)}</div></fieldset><fieldset><legend>主要材质</legend><div className="option-grid">{materialOptions.map((option) => <button type="button" key={option} className={material === option ? 'selected' : ''} onClick={() => setMaterial(option)}>{option}</button>)}</div></fieldset></div><div className="config-actions"><button type="button" className="quiet-button" onClick={() => setConfigTemplate(null)}>取消</button><button type="button" className="modal-primary-button" onClick={() => enterWorkspace(sourceType, configTemplate)}>进入工作台生成 <Icon name="arrow" /></button></div></section></div>}
+  </div>;
 }
-
-

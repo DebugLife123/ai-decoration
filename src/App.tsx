@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
+import InspirationPage from './pages/InspirationPage';
 import WorkspacePage from './pages/WorkspacePage';
 import ProjectsPage from './pages/ProjectsPage';
 import MaterialsPage from './pages/MaterialsPage';
@@ -11,6 +12,7 @@ import LoginPage from './pages/LoginPage';
 import AdminLoginPage from './pages/AdminLoginPage';
 import AdminPage from './pages/AdminPage';
 import BusinessStylesPage from './pages/BusinessStylesPage';
+import CadWorkflowPage from './pages/CadWorkflowPage';
 import { useAppStore } from './stores/appStore';
 import './App.css';
 
@@ -52,7 +54,9 @@ function App() {
           <Route path="/login" element={isAuthenticated ? <Navigate to={role === 'business' ? '/business' : role === 'admin' ? '/admin' : '/'} replace /> : <LoginPage />} />
           <Route path="/admin/login" element={isAuthenticated ? <Navigate to={role === 'admin' ? '/admin' : role === 'business' ? '/business' : '/'} replace /> : <AdminLoginPage />} />
           <Route path="/" element={<RoleRoute role="consumer"><HomePage /></RoleRoute>} />
+          <Route path="/inspiration" element={<RoleRoute role="consumer"><InspirationPage /></RoleRoute>} />
           <Route path="/workspace" element={<RoleRoute role="consumer"><WorkspacePage /></RoleRoute>} />
+          <Route path="/cad-workflow" element={<RoleRoute role="consumer"><CadWorkflowPage /></RoleRoute>} />
           <Route path="/projects" element={<RoleRoute role="consumer"><ProjectsPage /></RoleRoute>} />
           <Route path="/materials" element={<RoleRoute role="consumer"><MaterialsPage /></RoleRoute>} />
           <Route path="/budget" element={<RoleRoute role="consumer"><BudgetPage /></RoleRoute>} />

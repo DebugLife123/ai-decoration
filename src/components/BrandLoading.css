@@ -1,0 +1,57 @@
+.brand-loading {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 16px;
+  color: #4d4660;
+  background: #fbf9f5f2;
+  backdrop-filter: blur(5px);
+  animation: brand-loading-in .22s ease both;
+}
+
+.brand-loading-mark {
+  position: relative;
+  display: grid;
+  width: 66px;
+  height: 66px;
+  place-items: center;
+  background: linear-gradient(135deg, #7664d1, #9e8de2);
+  border-radius: 22px 22px 22px 7px;
+  box-shadow: 0 14px 30px #7664d12e;
+  animation: brand-mark-breathe 1.4s ease-in-out infinite;
+}
+
+.brand-loading-mark::before,
+.brand-loading-mark::after,
+.brand-loading-mark span {
+  position: absolute;
+  content: '';
+  width: 28px;
+  height: 3px;
+  background: #fff;
+  border-radius: 4px;
+}
+
+.brand-loading-mark::before { transform: translateY(-9px) rotate(-36deg); }
+.brand-loading-mark::after { transform: translateY(3px) rotate(36deg); }
+.brand-loading-mark span { width: 3px; height: 20px; transform: translate(9px, 9px); }
+
+.brand-loading-copy { display: flex; align-items: center; flex-direction: column; gap: 3px; }
+.brand-loading-copy strong { color: #37324a; font-size: 18px; letter-spacing: 1px; }
+.brand-loading-copy span { color: #958da2; font-size: 11px; letter-spacing: .4px; }
+
+.brand-loading-track { display: flex; gap: 7px; height: 10px; align-items: center; }
+.brand-loading-track i { width: 6px; height: 6px; background: #7664d1; border-radius: 50%; animation: brand-dot 1.1s ease-in-out infinite; }
+.brand-loading-track i:nth-child(2) { background: #c09a68; animation-delay: .14s; }
+.brand-loading-track i:nth-child(3) { background: #91a37f; animation-delay: .28s; }
+
+@keyframes brand-loading-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes brand-mark-breathe { 0%, 100% { transform: rotate(-3deg) scale(1); } 50% { transform: rotate(3deg) scale(1.04); } }
+@keyframes brand-dot { 0%, 100% { transform: translateY(0); opacity: .45; } 50% { transform: translateY(-5px); opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-loading, .brand-loading-mark, .brand-loading-track i { animation: none; }
+}
