@@ -5,28 +5,21 @@ import { analyzeFloorPlan, generateDesign, type IdentifiedRoom, type PlanSource 
 import { deleteDesignHistory, listDesignHistory, saveDesignHistory, type DesignHistoryRecord } from '../services/designHistory';
 import { templates } from './HomePage';
 import { recommendStyles } from '../services/styleRecommendation';
+import { styleCatalog } from '../services/styleCatalog';
 import type { Project } from '../services/dataContracts';
 import './WorkspacePage.css';
 
 type Stage = 1 | 2 | 4;
 type UploadedFile = { name: string; size: string; preview: string };
 type WorkKind = 'recognizing' | 'generating' | null;
-const styleNotes: Partial<Record<DesignStyle, string>> = {
-  modern: '暖白 · 浅木 · 隐藏收纳',
-  song: '深木 · 陶器 · 东方留白',
-  smallAmerican: '奶油线框 · 橄榄绿 · 复古细节',
-  minimal: '原木 · 亚麻 · 自然光',
-  chinese: '木色 · 留白 · 东方线条',
-  cream: '柔和 · 温润 · 松弛',
-  european: '石材 · 金属 · 克制质感',
-  wabi: '肌理 · 安静 · 自然',
-};
-const reportDetails: Record<string, { subtitle: string; principles: { title: string; body: string }[]; notes: string[] }> = {
-  modern: { subtitle: '明亮、克制且适合日常居住的现代空间', principles: [{ title: '统一基底', body: '以暖白墙面与浅木色建立连续、明亮的空间感。' }, { title: '收纳隐形', body: '整合柜体与简洁线条，减少视觉干扰并保持动线通畅。' }, { title: '自然采光', body: '优先保留窗边采光，让灯光作为柔和补充。' }], notes: ['效果图用于方案沟通，实际尺寸以现场测量为准。', '柜体、门窗及固定设施位置请在施工前复核。'] },
-  song: { subtitle: '以木、陶与留白表达安静含蓄的东方居住气质', principles: [{ title: '疏朗留白', body: '控制装饰密度，以非对称陈设保留空间呼吸感。' }, { title: '自然材质', body: '结合深木、肌理墙面、石材与手作陶器，呈现温润层次。' }, { title: '当代宋韵', body: '提取宋式审美的克制气质，保持现代住宅的实用尺度。' }], notes: ['木作颜色与墙面肌理会受现场光线和材料批次影响。', '效果图不替代施工图，尺寸与结构需由专业人员复核。'] },
-  smallAmerican: { subtitle: '温柔奶油色与复古线条结合的轻松居家方案', principles: [{ title: '经典线条', body: '以简洁线框门板和适度装饰线条建立复古基调。' }, { title: '温暖配色', body: '奶油白搭配橄榄绿、深木色与少量黄铜细节。' }, { title: '小户型友好', body: '优先考虑轻巧家具、整合收纳与清晰活动空间。' }], notes: ['复古线条与五金细节可按预算和现货情况调整。', '家具尺度、收纳容量与过道宽度请结合现场尺寸确认。'] },
-};
-const styleOptions = templates.map((template) => ({ ...template, key: template.styleKey, name: template.style, note: styleNotes[template.styleKey] ?? template.style, details: reportDetails[template.styleKey] ?? reportDetails.modern }));
+// 风格清单以 styleCatalog 为唯一来源（8 种，和 recommendStyles 一一对应）；
+// templates 只补充灵感页已有的配图与生成提示词，缺失时降级为纯文字。
+const templateByStyle = new Map(templates.map((template) => [template.styleKey, template]));
+const styleOptions = styleCatalog.map((entry) => ({
+  ...entry,
+  image: templateByStyle.get(entry.key)?.image,
+  prompt: templateByStyle.get(entry.key)?.prompt,
+}));
 function formatSize(bytes: number) { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`; }
 function readImage(file: File) { return new Promise<string>((resolve, reject) => {
   if (!file.type.startsWith('image/')) return reject(new Error('请上传 PNG、JPG 或 WEBP 户型图片；CAD/PDF 需先导出为图片。'));
@@ -124,11 +117,12 @@ export default function WorkspacePage() {
   const isWorking = workKind !== null;
   const [message, setMessage] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  // 预算资料（BUS-02）：面积、预算、地区，参与推荐与方案保存
-  const [projectName, setProjectName] = useState('我的全屋方案');
-  const [budgetInput, setBudgetInput] = useState('');
-  const [areaInput, setAreaInput] = useState('');
-  const [regionInput, setRegionInput] = useState('');
+  // 预算资料（BUS-02）：面积、预算、地区，参与推荐与方案保存。
+  // 预算页「采用此风格」和项目页「继续编辑」都会带 query 参数进来，这里作为初始值。
+  const [projectName, setProjectName] = useState(searchParams.get('projectName')?.trim() || '我的全屋方案');
+  const [budgetInput, setBudgetInput] = useState(searchParams.get('budget')?.trim() ?? '');
+  const [areaInput, setAreaInput] = useState(searchParams.get('area')?.trim() ?? '');
+  const [regionInput, setRegionInput] = useState(searchParams.get('region')?.trim() ?? '');
   const requestedStyle = searchParams.get('style');
   const routeStyle = styleOptions.some((style) => style.key === requestedStyle) ? requestedStyle as DesignStyle : null;
   const [styleOverride, setStyleOverride] = useState<{ route: string | null; value: DesignStyle } | null>(null);

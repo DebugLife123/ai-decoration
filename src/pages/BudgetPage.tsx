@@ -101,7 +101,13 @@ export default function BudgetPage() {
           <div className="style-recommendations">
             <div className="style-recommendations-heading"><div><h2>按预算推荐风格</h2><p>{recommendationBudget ? `根据 ${recommendationBudget} 万元计划预算，优先考虑这些方向。` : '填写计划总预算后，可查看更匹配的风格方向。'}</p></div>{recommendationBudget && <span>{recommendationBudget < 10 ? '预算较紧' : recommendationBudget < 25 ? '舒适区间' : '品质空间'}</span>}</div>
             {recommendationBudget ? <div className="style-recommendation-list">{recommendedStyleProfiles.map((style, index) => {
-              return <article className={`style-recommendation ${index === 0 ? 'primary' : ''}`} key={style.style}><div className="style-recommendation-copy"><div><strong>{style.name}</strong>{index === 0 && <em>优先推荐</em>}</div><span>{style.note}</span><p>{style.reason}</p></div><Link to="/workspace" state={{ style: style.style, prompt: `预算约 ${recommendationBudget} 万元，倾向${style.name}风格。` }}>采用此风格</Link></article>;
+              // 工作台通过 query 参数接收风格与提示词（它只读 useSearchParams），
+              // 所以这里必须落到 URL 上，不能用 state —— 否则点击后风格不会切换。
+              const workspaceParams = new URLSearchParams({ style: style.style, prompt: `预算约 ${recommendationBudget} 万元，倾向${style.name}风格。` });
+              if (area > 0) workspaceParams.set('area', String(area));
+              if (region.trim()) workspaceParams.set('region', region.trim());
+              workspaceParams.set('budget', String(recommendationBudget));
+              return <article className={`style-recommendation ${index === 0 ? 'primary' : ''}`} key={style.style}><div className="style-recommendation-copy"><div><strong>{style.name}</strong>{index === 0 && <em>优先推荐</em>}</div><span>{style.note}</span><p>{style.reason}</p></div><Link to={`/workspace?${workspaceParams.toString()}`}>采用此风格</Link></article>;
             })}</div> : <div className="style-recommendation-empty">先填写预算金额，再查看风格建议。</div>}
           </div>
           <div className="estimate-breakdown"><h2>分项参考</h2>{estimate.breakdown.map((item) => <div className="estimate-row" key={item.label}><span>{item.label}</span><strong>¥{formatMoney(item.low)} - ¥{formatMoney(item.high)} 万</strong></div>)}</div>
