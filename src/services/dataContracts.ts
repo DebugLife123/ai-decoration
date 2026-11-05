@@ -65,6 +65,9 @@ export interface MaterialRecord {
   validUntil: string;
   updatedAt: string;
   version?: number;
+  /** 报价来源企业；来自平台材料目录时由后端补全。 */
+  companyId?: string;
+  companyName?: string;
 }
 
 export interface WorkspaceDataAdapter {

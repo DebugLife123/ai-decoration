@@ -130,8 +130,8 @@ class BusinessDataPostgresIntegrationTest {
     @Test
     void scopesQuotesAndReplaysIdempotentCreate() throws Exception {
         var body = """
-                {"name":"oak","spec":"solid","unit":"sqm","price":12.50,"category":"floor","region":"Shanghai","validUntil":"2099-01-01"}
-                """;
+                {"name":"oak","spec":"solid","unit":"sqm","price":12.50,"category":"floor","region":"Shanghai","validUntil":"%s"}
+                """.formatted(futureDate());
         var first = mockMvc.perform(post("/api/v1/business/material-quotes")
                         .with(token(COMPANY_A, "COMPANY_EDITOR"))
                         .header("Idempotency-Key", "material-key-0001")
@@ -169,8 +169,8 @@ class BusinessDataPostgresIntegrationTest {
     @Test
     void appliesOptimisticVersionChecks() throws Exception {
         var body = """
-                {"type":"electrician","unit":"day","price":450,"region":"Shanghai","validUntil":"2099-01-01"}
-                """;
+                {"type":"electrician","unit":"day","price":450,"region":"Shanghai","validUntil":"%s"}
+                """.formatted(futureDate());
         var response = mockMvc.perform(post("/api/v1/business/labor-quotes")
                         .with(token(COMPANY_A, "COMPANY_ADMIN"))
                         .header("Idempotency-Key", "labor-key-00001")
@@ -349,9 +349,86 @@ class BusinessDataPostgresIntegrationTest {
                 .andExpect(jsonPath("$.data.reviewedBy").value(adminId.toString()));
     }
 
+    @Test
+    void publishesOnlyCertifiedQuotesToConsumerCatalog() throws Exception {
+        var certifiedCompany = UUID.randomUUID();
+        var pendingCompany = UUID.randomUUID();
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, ?, now())", certifiedCompany, "Certified Studio");
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, ?, now())", pendingCompany, "Pending Studio");
+
+        mockMvc.perform(post("/api/v1/business/material-quotes")
+                        .with(token(certifiedCompany, "COMPANY_ADMIN"))
+                        .header("Idempotency-Key", "catalog-key-certified")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"oak floor","spec":"solid","unit":"sqm","price":299,"category":"floor","region":"Shanghai","validUntil":"%s"}
+                                """.formatted(futureDate())))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/v1/business/material-quotes")
+                        .with(token(pendingCompany, "COMPANY_ADMIN"))
+                        .header("Idempotency-Key", "catalog-key-pending")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"pine floor","spec":"engineered","unit":"sqm","price":199,"category":"floor","region":"Shanghai","validUntil":"%s"}
+                                """.formatted(futureDate())))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/v1/business/certification")
+                        .with(token(certifiedCompany, "COMPANY_ADMIN"))
+                        .contentType("application/json")
+                        .content("""
+                                {"companyName":"Certified Studio","contactName":"C Admin","contactInfo":"c@example.test","serviceAreas":["Shanghai"],"documentRefs":[]}
+                                """))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("PENDING"));
+
+        // 未认证前，C 端目录应为空（个人账号也能读到，但看不到未认证企业的报价）。
+        mockMvc.perform(get("/api/v1/materials").with(token(UUID.randomUUID(), "PERSONAL_USER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items").isEmpty());
+
+        var certification = mockMvc.perform(get("/api/v1/business/certification").with(token(certifiedCompany, "COMPANY_VIEWER")))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var version = com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(certification).path("data").path("version").asInt();
+        mockMvc.perform(post("/api/v1/business/certification/{companyId}/review", certifiedCompany)
+                        .with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString())
+                                        .claim("roles", java.util.List.of("PLATFORM_ADMIN")))
+                                .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")))
+                        .contentType("application/json")
+                        .content("{\"status\":\"APPROVED\",\"reviewNote\":\"ok\",\"version\":%d}".formatted(version)))
+                .andExpect(status().isOk());
+
+        // 认证通过后，个人账号能在目录里看到该企业的报价，且看不到未认证企业的那条。
+        mockMvc.perform(get("/api/v1/materials").with(token(UUID.randomUUID(), "PERSONAL_USER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].name").value("oak floor"))
+                .andExpect(jsonPath("$.data.items[0].companyName").value("Certified Studio"))
+                .andExpect(jsonPath("$.data.page.total").value(1));
+
+        mockMvc.perform(get("/api/v1/materials").param("region", "Beijing").with(token(UUID.randomUUID(), "PERSONAL_USER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items").isEmpty());
+
+        jdbc.update("delete from material_quotes where company_id in (?, ?)", certifiedCompany, pendingCompany);
+        jdbc.update("delete from company_certifications where company_id = ?", certifiedCompany);
+        jdbc.update("delete from auth_companies where id in (?, ?)", certifiedCompany, pendingCompany);
+    }
+
+    @Test
+    void rejectsAnonymousAccessToMaterialCatalog() throws Exception {
+        mockMvc.perform(get("/api/v1/materials"))
+                .andExpect(status().isUnauthorized());
+    }
+
     private static JwtRequestPostProcessor token(UUID companyId, String role) {
         return jwt().jwt(jwt -> jwt.claim("companyId", companyId.toString()).claim("roles", java.util.List.of(role)))
                 .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + role));
+    }
+
+    /** 报价有效期只允许“今天起 10 年内”，写死年份会随时间推移失效，因此动态生成。 */
+    private static String futureDate() {
+        return java.time.LocalDate.now().plusYears(1).toString();
     }
 
     private static String env(String name, String fallback) {

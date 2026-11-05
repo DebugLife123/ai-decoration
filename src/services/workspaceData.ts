@@ -1,5 +1,6 @@
 import { localWorkspaceDataAdapter } from './localDataAdapter';
 import { businessApiConfig, businessDataAdapter } from './businessData';
+import { loadCatalogMaterials } from './materialCatalog';
 import { currentAccessToken, readAuthSession } from './authSession';
 import type { Project, WorkspaceDataAdapter } from './dataContracts';
 
@@ -41,7 +42,7 @@ const projectApiAdapter: WorkspaceDataAdapter = {
   async deleteProject(id) {
     await projectApiRequest<void>(`/api/v1/projects/${id}`, { method: 'DELETE' });
   },
-  loadMaterials: () => businessDataAdapter.loadMaterials(),
+  loadMaterials: () => loadMaterialsForConsumer(),
 };
 
 function activeWorkspaceAdapter(): WorkspaceDataAdapter {
@@ -51,10 +52,29 @@ function activeWorkspaceAdapter(): WorkspaceDataAdapter {
     : localWorkspaceDataAdapter;
 }
 
+function hasPlatformSession(): boolean {
+  return Boolean(businessApiConfig.enabled && (readAuthSession() || currentAccessToken()));
+}
+
+/**
+ * 消费端（含个人账号）读的是平台材料目录：已认证企业录入、未过期的报价。
+ * 未登录或接口不可用时回退到企业适配器/本地草稿，保证页面不白屏。
+ */
+async function loadMaterialsForConsumer() {
+  if (hasPlatformSession()) {
+    try {
+      return await loadCatalogMaterials();
+    } catch {
+      // 平台目录不可用时继续走下面的回退链路。
+    }
+  }
+  return businessDataAdapter.loadMaterials();
+}
+
 export const workspaceDataAdapter: WorkspaceDataAdapter = {
   loadProjects: () => activeWorkspaceAdapter().loadProjects(),
   saveProjects: (projects) => activeWorkspaceAdapter().saveProjects(projects),
   saveProject: (project) => activeWorkspaceAdapter().saveProject!(project),
   deleteProject: (id) => activeWorkspaceAdapter().deleteProject!(id),
-  loadMaterials: () => businessDataAdapter.loadMaterials(),
+  loadMaterials: () => loadMaterialsForConsumer(),
 };
