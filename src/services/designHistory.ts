@@ -15,7 +15,7 @@ export interface DesignHistoryRecord {
   analysis: string;
   rooms: IdentifiedRoom[];
   selectedRooms: string[];
-  results: { name: string; imageUrl: string }[];
+  results: { name: string; imageUrl: string; review?: { status: 'pass' | 'check' | 'unverified'; note: string } }[];
 }
 
 function openDatabase() {

@@ -44,6 +44,25 @@ function readImage(file: File) { return new Promise<string>((resolve, reject) =>
   reader.readAsDataURL(file);
 }); }
 
+function makeRoomReferenceSheet(source: string, bounds: NonNullable<IdentifiedRoom['bounds']>) {
+  return new Promise<string>((resolve, reject) => {
+    const image = new Image();
+    image.onerror = () => reject(new Error('户型图局部裁切失败。'));
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      const width = 1120; const height = 680; const context = canvas.getContext('2d');
+      if (!context) return reject(new Error('无法创建空间参考图。'));
+      canvas.width = width; canvas.height = height; context.fillStyle = '#f5f3ee'; context.fillRect(0, 0, width, height);
+      const panelWidth = 520; const panelHeight = 590; const gap = 40;
+      const drawContain = (x: number, y: number, w: number, h: number) => { const scale = Math.min(w / image.naturalWidth, h / image.naturalHeight); const dw = image.naturalWidth * scale; const dh = image.naturalHeight * scale; context.drawImage(image, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh); };
+      context.fillStyle = '#514b43'; context.font = '600 22px sans-serif'; context.fillText('全图定位', 20, 34); context.fillText('目标空间局部', panelWidth + gap + 20, 34); drawContain(20, 50, panelWidth, panelHeight);
+      const left = Math.floor(bounds.x * image.naturalWidth); const top = Math.floor(bounds.y * image.naturalHeight); const cropWidth = Math.max(1, Math.floor(bounds.width * image.naturalWidth)); const cropHeight = Math.max(1, Math.floor(bounds.height * image.naturalHeight));
+      context.fillStyle = '#e7e2d9'; context.fillRect(panelWidth + gap + 20, 50, panelWidth, panelHeight); const scale = Math.min(panelWidth / cropWidth, panelHeight / cropHeight); const dw = cropWidth * scale; const dh = cropHeight * scale; context.drawImage(image, left, top, cropWidth, cropHeight, panelWidth + gap + 20 + (panelWidth - dw) / 2, 50 + (panelHeight - dh) / 2, dw, dh);
+      resolve(canvas.toDataURL('image/jpeg', 0.88));
+    }; image.src = source;
+  });
+}
+
 function Icon({ name }: { name: 'arrow' | 'upload' | 'file' | 'spark' | 'check' | 'refresh' | 'close' }) {
   const paths = { arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>, upload: <><path d="M12 16V4m0 0L7 9m5-5 5 5" /><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" /></>, file: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h5M9 13h6M9 17h5" /></>, spark: <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" />, check: <path d="m5 12 4 4L19 6" />, refresh: <><path d="M20 11a8 8 0 1 0 1 4" /><path d="M20 5v6h-6" /></>, close: <path d="m6 6 12 12M18 6 6 18" /> };
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
@@ -109,7 +128,7 @@ export default function WorkspacePage() {
   const [imageData, setImageData] = useState('');
   const [rooms, setRooms] = useState<IdentifiedRoom[]>([]);
   const [selectedRooms, setSelectedRooms] = useState<string[]>([]);
-  const [results, setResults] = useState<{ name: string; imageUrl: string }[]>([]);
+  const [results, setResults] = useState<{ name: string; imageUrl: string; review?: { status: 'pass' | 'check' | 'unverified'; note: string } }[]>([]);
   const [history, setHistory] = useState<DesignHistoryRecord[]>([]);
   const [historyMessage, setHistoryMessage] = useState('');
   const [workKind, setWorkKind] = useState<WorkKind>(null);
@@ -166,11 +185,12 @@ export default function WorkspacePage() {
     if (!imageData) { setMessage('请先上传户型图片。'); setStage(1); return; }
     setWorkElapsed(0); setWorkKind('generating'); setMessage(''); setResults([]); setStage(2);
     const sourcePrompt = sourceType === 'cad' ? '输入来源为 CAD 导出的住宅平面图，严格参考图中墙体、门窗和尺寸标注。' : '输入来源为住宅户型图，严格参考图中可见的房间边界与空间连接。';
-    const prompt = [sourcePrompt, searchParams.get('prompt'), ...preferences.map(([label, value]) => `${label}:${value}`), `户型识别结果：${input.analysis}`, `识别空间：${input.rooms.map((room) => `${room.name}（${room.description}）`).join('；')}`].filter(Boolean).join('。');
+    const prompt = [sourcePrompt, searchParams.get('prompt'), ...preferences.map(([label, value]) => `${label}:${value}`), `户型识别结果：${input.analysis}`, `识别空间：${input.rooms.map((room) => `${room.name}${room.suggestedName ? `（候选：${room.suggestedName}）` : ''}（${room.description}；${room.evidence?.map((item) => item.detail).join('、') || '无额外可见证据'}）`).join('；')}`].filter(Boolean).join('。');
     try {
-      const result = await generateDesign({ mode: 'floorplan', style: workflowStyle, prompt, floorPlan: imageData, source: sourceType, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms });
+      const roomReferenceImages = await Promise.all(input.rooms.filter((room) => input.selectedRooms.includes(room.name) && room.bounds).map(async (room) => ({ name: room.name, image: await makeRoomReferenceSheet(imageData, room.bounds!) })));
+      const result = await generateDesign({ mode: 'floorplan', style: workflowStyle, prompt, floorPlan: imageData, source: sourceType, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, roomReferenceImages });
       if (result.type !== 'floorplan') throw new Error('返回结果类型不正确。');
-      const generatedResults = [{ name: '全屋总览', imageUrl: result.cover }, ...result.rooms.map((room) => ({ name: room.name, imageUrl: room.imageUrl }))];
+      const generatedResults = [{ name: '全屋总览', imageUrl: result.cover }, ...result.rooms.map((room) => ({ name: room.name, imageUrl: room.imageUrl, review: room.review }))];
       setResults(generatedResults);
        setStage(3);
       const record: DesignHistoryRecord = {
@@ -224,7 +244,7 @@ export default function WorkspacePage() {
       <div className="report-metrics"><span><strong>{selectedRooms.length}</strong><small>进入设计的空间</small></span><span><strong>{rooms.length - selectedRooms.length}</strong><small>保留识别空间</small></span><span><strong>{activeStyle.palette.length}</strong><small>全屋主色</small></span><span><strong>{activeStyle.materials.length}</strong><small>建议材质</small></span></div>
       <section className="report-section report-style-section" id="report-style"><div className="report-section-heading"><span>02</span><div><h4>全屋设计风格说明</h4><p>先建立统一的材质与色彩秩序，再让每个房间保留自己的功能性格。</p></div></div><div className="report-principles">{activeStyle.details.principles.map((item, index) => <article key={item.title}><small>0{index + 1}</small><strong>{item.title}</strong><p>{item.body}</p></article>)}</div><div className="report-materials"><div><strong>色彩关系</strong><div className="report-swatches">{activeStyle.palette.map((color) => <span key={color}><i style={{ background: color }} />{color}</span>)}</div></div><div><strong>材质方向</strong><p>{activeStyle.materials.join(' · ')}</p></div></div></section>
       <section className="report-section report-board-section" id="report-board"><div className="report-section-heading"><span>03</span><div><h4>整屋设计</h4><p>拖动分隔线，对照原始户型图与全屋渲染结果。</p></div></div><div className="design-board-grid"><article className="design-board-cover"><PlanComparison original={imageData} render={results[0].imageUrl} title="全屋" /><div><span>全屋效果总览</span><strong>{activeStyle.name} · 全屋方案</strong></div></article><article className="design-board-brief"><span>设计构想</span><h5>设计概念</h5><p>{activeStyle.analysis}</p><dl><div><dt>设计风格</dt><dd>{activeStyle.name}</dd></div><div><dt>空间范围</dt><dd>{selectedRooms.map((name) => name).join('、')}</dd></div><div><dt>户型依据</dt><dd>基于上传户型图及识别出的空间信息</dd></div></dl></article><article className="design-board-plan"><img src={imageData} alt="原始户型平面图" /><span>原始户型依据</span></article><article className="design-board-colors"><span>材质与色彩</span><h5>材质与色彩</h5><div className="report-swatches">{activeStyle.palette.map((color) => <span key={color}><i style={{ background: color }} />{color}</span>)}</div><p>{activeStyle.materials.join('、')}</p></article></div></section>
-      <section className="report-section report-rooms-section" id="report-rooms"><div className="report-section-heading"><span>04</span><div><h4>沿着生活动线，逐间看方案</h4><p>每张效果图对应一个明确识别的房间，不使用模糊空间编号。</p></div></div><div className="report-room-list">{results.slice(1).map((item, index) => { const room = rooms.find((entry) => entry.name === item.name); return <article className="report-room" key={`${item.name}-${index}`}><div className="report-room-image"><img src={item.imageUrl} alt={`${item.name}室内视角效果图`} /><span>{item.name} · 室内视角</span></div><div className="report-room-copy"><span className="report-kicker">{activeStyle.name} · 空间设计</span><h5>{item.name}</h5><p>{room?.description || `按户型中${item.name}所在位置与相邻空间关系设计。`}</p><small>概念示意，非施工依据</small></div></article>; })}</div></section>
+      <section className="report-section report-rooms-section" id="report-rooms"><div className="report-section-heading"><span>04</span><div><h4>沿着生活动线，逐间看方案</h4><p>空间命名和视角以识别证据为依据；低置信度内容保留待确认状态。</p></div></div><div className="report-room-list">{results.slice(1).map((item, index) => { const room = rooms.find((entry) => entry.name === item.name); return <article className="report-room" key={`${item.name}-${index}`}><div className="report-room-image"><img src={item.imageUrl} alt={`${item.name}室内视角效果图`} /><span>{item.name} · 室内视角</span></div><div className="report-room-copy"><span className="report-kicker">{activeStyle.name} · 空间设计</span><h5>{item.name}</h5><p>{room?.description || `按户型中${item.name}所在位置与相邻空间关系设计。`}</p>{room?.suggestedName && <small>识别候选：{room.suggestedName}，功能尚未确认</small>}<small className={`room-review room-review-${item.review?.status || 'unverified'}`}>{item.review?.status === 'pass' ? '自动复核：未发现明显空间错配' : item.review?.status === 'check' ? `自动复核建议：${item.review.note}` : item.review?.note || '自动复核结果不可用，请人工对照原图核验'}</small><small>概念示意，非施工依据</small></div></article>; })}</div></section>
       <section className="report-section report-notes-section" id="report-notes"><div className="report-section-heading"><span>05</span><div><h4>落地前，需要确认的判断</h4><p>把识别与效果表达的边界说明清楚，便于继续深化。</p></div></div><div className="report-checks"><article><strong>01 / 图面核对</strong><p>房间边界、门窗及固定设施以原始户型图为依据；模糊信息需现场复核。</p></article><article><strong>02 / 尺寸复核</strong><p>效果图不代表精确尺寸，施工前需完成现场测量并核验通行与家具尺度。</p></article><article><strong>03 / 实施边界</strong><p>当前方案用于设计沟通，不替代施工图、材料封样、报价与工艺确认。</p></article></div><div className="report-room-register"><strong>本次户型识别</strong>{rooms.map((room) => <span key={room.name}>{room.name}</span>)}</div></section>
     </div>}
   </main></div>;

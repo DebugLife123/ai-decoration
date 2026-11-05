@@ -261,6 +261,9 @@
 .report-room-image { position: relative; min-width: 0; aspect-ratio: 16 / 9; overflow: hidden; background: #e4e3dc; }
 .report-room-image img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .report-room-image > span { position: absolute; bottom: 12px; left: 14px; color: white; font-size: 9px; text-shadow: 0 1px 4px #0008; }
+.report-room-copy .room-review { color: #806b39; }
+.report-room-copy .room-review-pass { color: #476a4c; }
+.report-room-copy .room-review-check { color: #98613c; }
 .report-room-copy h5 { margin-top: 14px; font-family: var(--font-display), Georgia, serif; font-size: 32px; font-weight: 500; }
 .report-room-copy p { margin-top: 12px; color: var(--report-muted); font-size: 12px; line-height: 1.9; }
 .report-room-copy small { display: inline-block; margin-top: 20px; color: #8a8d82; font-size: 10px; }
