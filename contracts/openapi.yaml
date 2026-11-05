@@ -1,0 +1,1322 @@
+openapi: 3.1.0
+info:
+  title: Decoration Business API
+  version: 0.1.0
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+  description: >-
+    Contract for the authenticated business workspace. Company ownership is
+    always derived from the bearer token; clients cannot choose a company ID.
+    Tokens carry companyId and role claims. Roles are COMPANY_ADMIN,
+    COMPANY_EDITOR, and COMPANY_VIEWER. Viewers are read-only; editors can
+    create and update resources; only admins can delete resources or publish
+    cases. Cross-company resource IDs return 404 to prevent resource discovery.
+servers:
+  - url: https://api.decoration.invalid
+    description: Placeholder host; configure the deployment URL per environment.
+security:
+  - bearerAuth: []
+tags:
+  - name: Authentication
+    description: Email and password registration and login for personal and business accounts.
+  - name: Projects
+    description: Full project workspace aggregates scoped to the authenticated company.
+  - name: Company profile
+    description: Current company's editable profile, scoped from the bearer token.
+  - name: Business cases
+    description: Case portfolio records owned by the authenticated company.
+  - name: Material quotes
+    description: Company material prices and their regional validity periods.
+  - name: Labor quotes
+    description: Company labor rates and their regional validity periods.
+paths:
+  /api/v1/auth/register:
+    post:
+      security: []
+      tags: [Authentication]
+      operationId: registerAccount
+      summary: Register a personal or business account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Account created and authenticated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/auth/login:
+    post:
+      security: []
+      tags: [Authentication]
+      operationId: login
+      summary: Sign in with an email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Signed in and authenticated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/me:
+    get:
+      tags: [Authentication]
+      operationId: getCurrentUser
+      summary: Get the current account
+      responses:
+        '200':
+          description: Current authenticated account.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/projects:
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      summary: List projects owned by the current company
+      responses:
+        '200':
+          description: Project aggregates ordered by most recently updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [Projects]
+      operationId: replaceProjects
+      summary: Replace the current company's complete project list
+      description: Omitted projects are deleted. Prefer the single-project endpoint for routine edits.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectBatchRequest' }
+      responses:
+        '200':
+          description: Replaced project list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectListResponse' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/projects/{projectId}:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [Projects]
+      operationId: saveProject
+      summary: Create or replace one project aggregate
+      description: The JSON body's id is required and must match projectId.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectAggregate' }
+      responses:
+        '200':
+          description: Saved project aggregate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectResponse' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Projects]
+      operationId: deleteProject
+      summary: Delete one project aggregate
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/projects/{projectId}/assets:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Projects]
+      operationId: listProjectAssets
+      summary: List asset metadata for a project
+      responses:
+        '200':
+          description: Project assets.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssetListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Projects]
+      operationId: registerProjectAsset
+      summary: Register an asset already stored by the configured object storage adapter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssetRequest' }
+      responses:
+        '201':
+          description: Registered project asset.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AssetResponse' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/projects/{projectId}/versions:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Projects]
+      operationId: listProjectVersions
+      summary: List saved versions for a project
+      responses:
+        '200':
+          description: Versions ordered newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectHistoryListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/projects/{projectId}/tasks:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Projects]
+      operationId: listProjectTasks
+      summary: List generation tasks for a project
+      responses:
+        '200':
+          description: Project tasks ordered newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectHistoryListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/projects/{projectId}/renders:
+    post:
+      tags: [Projects]
+      operationId: enqueueRender
+      summary: Persist a render task for asynchronous execution
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '202':
+          description: Task accepted into the persistent queue.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/projects/{projectId}/edits:
+    post:
+      tags: [Projects]
+      operationId: enqueueEdit
+      summary: Persist an edit task for asynchronous execution
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '202':
+          description: Task accepted into the persistent queue.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/projects/{projectId}/recommendations:
+    post:
+      tags: [Projects]
+      operationId: enqueueRecommendation
+      summary: Persist a recommendation task for asynchronous execution
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '202':
+          description: Task accepted into the persistent queue.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/tasks/{taskId}:
+    get:
+      tags: [Projects]
+      operationId: getTask
+      summary: Get a task owned by the authenticated user or company
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Task state and result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/tasks/{taskId}/retry:
+    post:
+      tags: [Projects]
+      operationId: retryFailedTask
+      summary: Queue a failed task again
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Task queued, content: { application/json: { schema: { $ref: '#/components/schemas/TaskResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/tasks/claim-next:
+    post:
+      tags: [Projects]
+      operationId: claimNextTask
+      summary: Claim the next generation task (AI_WORKER only)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskLeaseRequest' }
+      responses:
+        '200': { description: Claimed task or null, content: { application/json: { schema: { $ref: '#/components/schemas/TaskResponse' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/tasks/{taskId}/claim:
+    post:
+      tags: [Projects]
+      operationId: claimTask
+      summary: Claim one generation task (AI_WORKER only)
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskLeaseRequest' }
+      responses:
+        '200': { description: Claimed task, content: { application/json: { schema: { $ref: '#/components/schemas/TaskResponse' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/tasks/{taskId}/complete:
+    post:
+      tags: [Projects]
+      operationId: completeTask
+      summary: Complete a task and create a project version (AI_WORKER only)
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskCompletionRequest' }
+      responses:
+        '200': { description: Completed task, content: { application/json: { schema: { $ref: '#/components/schemas/TaskResponse' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/tasks/{taskId}/fail:
+    post:
+      tags: [Projects]
+      operationId: failTask
+      summary: Fail a task attempt and optionally retry it (AI_WORKER only)
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskFailureRequest' }
+      responses:
+        '200': { description: Updated task, content: { application/json: { schema: { $ref: '#/components/schemas/TaskResponse' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/business/certification:
+    get:
+      tags: [Company profile]
+      operationId: getCompanyCertification
+      summary: Get the current company's certification application
+      responses:
+        '200': { description: Application or null, content: { application/json: { schema: { $ref: '#/components/schemas/CertificationResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [Company profile]
+      operationId: submitCompanyCertification
+      summary: Submit or update a certification application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CertificationRequest' }
+      responses:
+        '200': { description: Submitted application, content: { application/json: { schema: { $ref: '#/components/schemas/CertificationResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/VersionConflict' }
+  /api/v1/business/certification/{companyId}/review:
+    post:
+      tags: [Company profile]
+      operationId: reviewCompanyCertification
+      summary: Approve or reject a pending company certification (PLATFORM_ADMIN only)
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CertificationDecision' }
+      responses:
+        '200': { description: Reviewed application, content: { application/json: { schema: { $ref: '#/components/schemas/CertificationResponse' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/VersionConflict' }
+  /api/v1/business/profile:
+    get:
+      tags: [Company profile]
+      operationId: getCompanyProfile
+      summary: Get the current company's profile
+      responses:
+        '200':
+          description: Profile or null when the company has not created one yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyProfileResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    put:
+      tags: [Company profile]
+      operationId: replaceCompanyProfile
+      summary: Create or replace the current company's profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyProfileRequest'
+      responses:
+        '200':
+          description: Saved profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyProfileResponse'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/VersionConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/business/cases:
+    get:
+      tags: [Business cases]
+      operationId: listBusinessCases
+      summary: List cases owned by the current company
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/CaseStatus'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Page of cases; an empty result is still 200
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessCasePageResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Business cases]
+      operationId: createBusinessCase
+      summary: Create a case draft or publishable case
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessCaseRequest'
+      responses:
+        '201':
+          description: Created case
+          headers:
+            Location:
+              schema: { type: string, format: uri-reference }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessCaseResponse'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/business/cases/{caseId}:
+    parameters:
+      - $ref: '#/components/parameters/CaseId'
+    get:
+      tags: [Business cases]
+      operationId: getBusinessCase
+      summary: Get one case owned by the current company
+      responses:
+        '200':
+          description: Case
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessCaseResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Business cases]
+      operationId: updateBusinessCase
+      summary: Update fields on a case
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessCasePatch'
+      responses:
+        '200':
+          description: Updated case
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessCaseResponse'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/VersionConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Business cases]
+      operationId: deleteBusinessCase
+      summary: Delete a case
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '204': { description: Deleted; repeating the delete returns 404 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/VersionConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/business/material-quotes:
+    get:
+      tags: [Material quotes]
+      operationId: listMaterialQuotes
+      summary: List material quotes owned by the current company
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: region
+          in: query
+          schema: { type: string, maxLength: 80 }
+        - name: category
+          in: query
+          schema: { type: string, maxLength: 80 }
+        - name: includeExpired
+          in: query
+          description: Defaults to false; expired quotes are hidden from normal lists.
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Page of material quotes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaterialQuotePageResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Material quotes]
+      operationId: createMaterialQuote
+      summary: Create a material quote
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaterialQuoteRequest'
+      responses:
+        '201':
+          description: Created material quote
+          headers:
+            Location:
+              schema: { type: string, format: uri-reference }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaterialQuoteResponse'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/business/material-quotes/{quoteId}:
+    parameters:
+      - $ref: '#/components/parameters/QuoteId'
+    get:
+      tags: [Material quotes]
+      operationId: getMaterialQuote
+      summary: Get one material quote owned by the current company
+      responses:
+        '200':
+          description: Material quote
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaterialQuoteResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Material quotes]
+      operationId: updateMaterialQuote
+      summary: Update a material quote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaterialQuotePatch'
+      responses:
+        '200':
+          description: Updated material quote
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaterialQuoteResponse'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Material quotes]
+      operationId: deleteMaterialQuote
+      summary: Delete a material quote
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '204': { description: Deleted; repeating the delete returns 404 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/VersionConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/business/labor-quotes:
+    get:
+      tags: [Labor quotes]
+      operationId: listLaborQuotes
+      summary: List labor quotes owned by the current company
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: region
+          in: query
+          schema: { type: string, maxLength: 80 }
+        - name: includeExpired
+          in: query
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Page of labor quotes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaborQuotePageResponse'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Labor quotes]
+      operationId: createLaborQuote
+      summary: Create a labor quote
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LaborQuoteRequest'
+      responses:
+        '201':
+          description: Created labor quote
+          headers:
+            Location:
+              schema: { type: string, format: uri-reference }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaborQuoteResponse'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/business/labor-quotes/{quoteId}:
+    parameters:
+      - $ref: '#/components/parameters/QuoteId'
+    get:
+      tags: [Labor quotes]
+      operationId: getLaborQuote
+      summary: Get one labor quote owned by the current company
+      responses:
+        '200':
+          description: Labor quote
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaborQuoteResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Labor quotes]
+      operationId: updateLaborQuote
+      summary: Update a labor quote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LaborQuotePatch'
+      responses:
+        '200':
+          description: Updated labor quote
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LaborQuoteResponse'
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Labor quotes]
+      operationId: deleteLaborQuote
+      summary: Delete a labor quote
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '204': { description: Deleted; repeating the delete returns 404 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/VersionConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: One-based page number.
+      schema: { type: integer, minimum: 1, default: 1 }
+    Size:
+      name: size
+      in: query
+      description: Maximum page size.
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Sort:
+      name: sort
+      in: query
+      description: Stable allow-listed sort expression.
+      schema: { type: string, default: updatedAt, maxLength: 40 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-generated key retained for at least 24 hours.
+      schema: { type: string, minLength: 8, maxLength: 128 }
+    CaseId:
+      name: caseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    QuoteId:
+      name: quoteId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password, displayName, accountType]
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+        password: { type: string, minLength: 8, maxLength: 128, writeOnly: true }
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        accountType: { type: string, enum: [PERSONAL, BUSINESS] }
+        companyName: { type: string, maxLength: 160, description: Required for BUSINESS accounts. }
+      additionalProperties: false
+    LoginRequest:
+      type: object
+      required: [email, password, accountType]
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+        password: { type: string, maxLength: 128, writeOnly: true }
+        accountType: { type: string, enum: [PERSONAL, BUSINESS] }
+      additionalProperties: false
+    AuthUser:
+      type: object
+      required: [id, email, displayName, accountType, role]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        accountType: { type: string, enum: [personal, business] }
+        companyId: { type: string, format: uuid, nullable: true }
+        role: { type: string }
+    AuthResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [accessToken, expiresInSeconds, user]
+              properties:
+                accessToken: { type: string }
+                expiresInSeconds: { type: integer }
+                user: { $ref: '#/components/schemas/AuthUser' }
+    UserResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/AuthUser' }
+    ProjectAggregate:
+      type: object
+      required: [id]
+      description: The current frontend Project object. Additional fields are preserved in JSONB.
+      properties:
+        id: { type: string, format: uuid }
+      additionalProperties: true
+    ProjectBatchRequest:
+      type: object
+      required: [projects]
+      additionalProperties: false
+      properties:
+        projects:
+          type: array
+          items: { $ref: '#/components/schemas/ProjectAggregate' }
+    ProjectResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/ProjectAggregate' }
+    ProjectListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/ProjectAggregate' }
+    ProjectHistoryListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { type: object, additionalProperties: true }
+    AssetRequest:
+      type: object
+      required: [originalName, mediaType, byteSize, objectKey]
+      additionalProperties: false
+      properties:
+        originalName: { type: string, minLength: 1, maxLength: 255 }
+        mediaType: { type: string, minLength: 1, maxLength: 120 }
+        byteSize: { type: integer, minimum: 1 }
+        objectKey: { type: string, minLength: 1, maxLength: 2000, description: Must be prefixed by ownerId/projectId/. }
+        checksumSha256: { type: [string, 'null'], minLength: 64, maxLength: 64 }
+    Asset:
+      type: object
+      required: [id, projectId, originalName, mediaType, byteSize, objectKey, createdAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        originalName: { type: string }
+        mediaType: { type: string }
+        byteSize: { type: integer }
+        objectKey: { type: string }
+        checksumSha256: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    AssetResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/Asset' }
+    AssetListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/Asset' }
+    TaskResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [id, projectId, taskType, status]
+              additionalProperties: true
+              properties:
+                id: { type: string, format: uuid }
+                projectId: { type: string, format: uuid }
+                taskType: { type: string, enum: [RENDER, EDIT, RECOMMENDATION] }
+                status: { type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED] }
+    TaskLeaseRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        leaseSeconds: { type: integer, minimum: 30, maximum: 3600, default: 300 }
+    TaskCompletionRequest:
+      type: object
+      required: [result]
+      additionalProperties: false
+      properties:
+        result: { type: object, additionalProperties: true }
+        snapshot: { type: object, additionalProperties: true }
+    TaskFailureRequest:
+      type: object
+      required: [retryable]
+      additionalProperties: false
+      properties:
+        error: { type: [string, 'null'], maxLength: 1000 }
+        retryable: { type: boolean }
+    CertificationRequest:
+      type: object
+      required: [companyName, contactName, contactInfo, serviceAreas, documentRefs]
+      additionalProperties: false
+      properties:
+        companyName: { type: string, minLength: 1, maxLength: 160 }
+        contactName: { type: string, minLength: 1, maxLength: 120 }
+        contactInfo: { type: string, minLength: 1, maxLength: 160 }
+        serviceAreas: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 80 } }
+        documentRefs: { type: array, maxItems: 30, items: { type: string, minLength: 1, maxLength: 2000 } }
+        version: { type: integer, minimum: 0, description: Required when updating an existing application. }
+    CertificationDecision:
+      type: object
+      required: [status, version]
+      additionalProperties: false
+      properties:
+        status: { type: string, enum: [APPROVED, REJECTED] }
+        reviewNote: { type: [string, 'null'], maxLength: 1000 }
+        version: { type: integer, minimum: 0 }
+    CertificationResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data:
+              anyOf:
+                - type: object
+                  required: [id, companyName, contactName, contactInfo, serviceAreas, documentRefs, status, version, submittedAt, updatedAt]
+                  additionalProperties: false
+                  properties:
+                    id: { type: string, format: uuid }
+                    companyName: { type: string }
+                    contactName: { type: string }
+                    contactInfo: { type: string }
+                    serviceAreas: { type: array, items: { type: string } }
+                    documentRefs: { type: array, items: { type: string } }
+                    status: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+                    reviewNote: { type: [string, 'null'] }
+                    reviewedBy: { type: [string, 'null'], format: uuid }
+                    reviewedAt: { type: [string, 'null'], format: date-time }
+                    version: { type: integer, minimum: 0 }
+                    submittedAt: { type: string, format: date-time }
+                    updatedAt: { type: string, format: date-time }
+                - type: 'null'
+    ApiEnvelope:
+      type: object
+      required: [code, message, data, timestamp]
+      additionalProperties: false
+      properties:
+        code: { type: string, example: OK }
+        message: { type: string, example: success }
+        data: {}
+        timestamp: { type: string, format: date-time }
+    ErrorResponse:
+      type: object
+      required: [code, message, data, timestamp]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          enum: [INVALID_REQUEST, VALIDATION_ERROR, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CONFLICT, IDEMPOTENCY_CONFLICT, VERSION_CONFLICT, UNSUPPORTED_MEDIA_TYPE, INTERNAL_ERROR]
+        message: { type: string, maxLength: 500 }
+        data: { type: 'null' }
+        timestamp: { type: string, format: date-time }
+    PageMeta:
+      type: object
+      required: [page, size, total, totalPages]
+      additionalProperties: false
+      properties:
+        page: { type: integer, minimum: 1 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    CompanyProfile:
+      type: object
+      required: [id, name, city, services, intro, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        city: { type: string, maxLength: 80 }
+        services: { type: string, maxLength: 500 }
+        intro: { type: string, maxLength: 2000 }
+        version: { type: integer, minimum: 0, readOnly: true }
+        createdAt: { type: string, format: date-time, readOnly: true }
+        updatedAt: { type: string, format: date-time, readOnly: true }
+    CompanyProfileRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 160 }
+        city: { type: string, maxLength: 80 }
+        services: { type: string, maxLength: 500 }
+        intro: { type: string, maxLength: 2000 }
+        version: { type: integer, minimum: 0, description: Required when replacing an existing profile. }
+    CompanyProfileResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data:
+              anyOf:
+                - $ref: '#/components/schemas/CompanyProfile'
+                - type: 'null'
+    CaseStatus:
+      type: string
+      enum: [draft, published]
+    BusinessCase:
+      type: object
+      required: [id, title, status, fileIds, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        area: { type: [number, 'null'], minimum: 0, multipleOf: 0.01 }
+        style: { type: [string, 'null'], maxLength: 80 }
+        budget: { type: [number, 'null'], minimum: 0, multipleOf: 0.01 }
+        status: { $ref: '#/components/schemas/CaseStatus' }
+        fileIds:
+          type: array
+          maxItems: 30
+          items: { type: string, format: uuid }
+        version: { type: integer, minimum: 0, readOnly: true }
+        createdAt: { type: string, format: date-time, readOnly: true }
+        updatedAt: { type: string, format: date-time, readOnly: true }
+    BusinessCaseRequest:
+      type: object
+      required: [title]
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 1, maxLength: 160 }
+        area: { type: number, minimum: 0, multipleOf: 0.01 }
+        style: { type: string, maxLength: 80 }
+        budget: { type: number, minimum: 0, multipleOf: 0.01 }
+        status: { $ref: '#/components/schemas/CaseStatus' }
+        fileIds:
+          type: array
+          maxItems: 30
+          uniqueItems: true
+          items: { type: string, format: uuid }
+    BusinessCasePatch:
+      type: object
+      required: [version]
+      minProperties: 2
+      additionalProperties: false
+      description: Partial update; version is required and must match the last read version.
+      properties:
+        title: { type: string, minLength: 1, maxLength: 160 }
+        area: { type: number, minimum: 0, multipleOf: 0.01 }
+        style: { type: string, maxLength: 80 }
+        budget: { type: number, minimum: 0, multipleOf: 0.01 }
+        status: { $ref: '#/components/schemas/CaseStatus' }
+        fileIds:
+          type: array
+          maxItems: 30
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        version: { type: integer, minimum: 0 }
+    BusinessCaseResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/BusinessCase' }
+    BusinessCasePage:
+      type: object
+      required: [items, page]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BusinessCase' }
+        page: { $ref: '#/components/schemas/PageMeta' }
+    BusinessCasePageResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/BusinessCasePage' }
+    MaterialQuote:
+      type: object
+      required: [id, name, spec, unit, price, category, region, validUntil, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        spec: { type: string, minLength: 1, maxLength: 240 }
+        unit: { type: string, minLength: 1, maxLength: 40 }
+        price: { type: number, exclusiveMinimum: 0, multipleOf: 0.01 }
+        category: { type: string, minLength: 1, maxLength: 80 }
+        region: { type: string, minLength: 1, maxLength: 80 }
+        validUntil: { type: string, format: date }
+        version: { type: integer, minimum: 0, readOnly: true }
+        createdAt: { type: string, format: date-time, readOnly: true }
+        updatedAt: { type: string, format: date-time, readOnly: true }
+    MaterialQuoteRequest:
+      type: object
+      required: [name, spec, unit, price, category, region, validUntil]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 160 }
+        spec: { type: string, minLength: 1, maxLength: 240 }
+        unit: { type: string, minLength: 1, maxLength: 40 }
+        price: { type: number, exclusiveMinimum: 0, multipleOf: 0.01 }
+        category: { type: string, minLength: 1, maxLength: 80 }
+        region: { type: string, minLength: 1, maxLength: 80 }
+        validUntil: { type: string, format: date }
+    MaterialQuotePatch:
+      type: object
+      required: [version]
+      minProperties: 2
+      additionalProperties: false
+      description: Partial update; version is required and must match the last read version.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 160 }
+        spec: { type: string, minLength: 1, maxLength: 240 }
+        unit: { type: string, minLength: 1, maxLength: 40 }
+        price: { type: number, exclusiveMinimum: 0, multipleOf: 0.01 }
+        category: { type: string, minLength: 1, maxLength: 80 }
+        region: { type: string, minLength: 1, maxLength: 80 }
+        validUntil: { type: string, format: date }
+        version: { type: integer, minimum: 0 }
+    MaterialQuoteResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/MaterialQuote' }
+    MaterialQuotePage:
+      type: object
+      required: [items, page]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MaterialQuote' }
+        page: { $ref: '#/components/schemas/PageMeta' }
+    MaterialQuotePageResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/MaterialQuotePage' }
+    LaborQuote:
+      type: object
+      required: [id, type, unit, price, region, validUntil, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        type: { type: string, minLength: 1, maxLength: 160 }
+        unit: { type: string, minLength: 1, maxLength: 40 }
+        price: { type: number, exclusiveMinimum: 0, multipleOf: 0.01 }
+        region: { type: string, minLength: 1, maxLength: 80 }
+        validUntil: { type: string, format: date }
+        version: { type: integer, minimum: 0, readOnly: true }
+        createdAt: { type: string, format: date-time, readOnly: true }
+        updatedAt: { type: string, format: date-time, readOnly: true }
+    LaborQuoteRequest:
+      type: object
+      required: [type, unit, price, region, validUntil]
+      additionalProperties: false
+      properties:
+        type: { type: string, minLength: 1, maxLength: 160 }
+        unit: { type: string, minLength: 1, maxLength: 40 }
+        price: { type: number, exclusiveMinimum: 0, multipleOf: 0.01 }
+        region: { type: string, minLength: 1, maxLength: 80 }
+        validUntil: { type: string, format: date }
+    LaborQuotePatch:
+      type: object
+      required: [version]
+      minProperties: 2
+      additionalProperties: false
+      description: Partial update; version is required and must match the last read version.
+      properties:
+        type: { type: string, minLength: 1, maxLength: 160 }
+        unit: { type: string, minLength: 1, maxLength: 40 }
+        price: { type: number, exclusiveMinimum: 0, multipleOf: 0.01 }
+        region: { type: string, minLength: 1, maxLength: 80 }
+        validUntil: { type: string, format: date }
+        version: { type: integer, minimum: 0 }
+    LaborQuoteResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/LaborQuote' }
+    LaborQuotePage:
+      type: object
+      required: [items, page]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/LaborQuote' }
+        page: { $ref: '#/components/schemas/PageMeta' }
+    LaborQuotePageResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiEnvelope'
+        - type: object
+          properties:
+            data: { $ref: '#/components/schemas/LaborQuotePage' }
+  responses:
+    InvalidRequest:
+      description: Invalid JSON, type, query, or path parameter
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    ValidationError:
+      description: Bean validation failed
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Forbidden:
+      description: Authenticated principal lacks the required company role
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    NotFound:
+      description: Resource does not exist in the current company scope
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Conflict:
+      description: Business uniqueness or natural-key conflict
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    IdempotencyConflict:
+      description: Idempotency key was reused with a different request body
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    VersionConflict:
+      description: Optimistic concurrency conflict
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    InternalError:
+      description: Unexpected server error
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }

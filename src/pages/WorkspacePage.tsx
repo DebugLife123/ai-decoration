@@ -75,6 +75,8 @@ export default function WorkspacePage() {
   const [prompt, setPrompt] = useState(retryTask?.prompt ?? activeVersion?.prompt ?? draftState.prompt ?? '');
   const [projectName, setProjectName] = useState(existingProject?.name || '我的装修方案');
   const [budgetInput, setBudgetInput] = useState(existingProject?.budget?.toString() || '');
+  const [areaInput, setAreaInput] = useState(existingProject?.area?.toString() || '');
+  const [regionInput, setRegionInput] = useState(existingProject?.region || existingProject?.city || '');
   const [result, setResult] = useState<GenerationResult | null>(retryTask ? null : initialResult);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState('');
@@ -86,13 +88,47 @@ export default function WorkspacePage() {
     ? [...styleOptions.filter((style) => recommendedStyleKeys.includes(style.key)), ...styleOptions.filter((style) => !recommendedStyleKeys.includes(style.key))]
     : styleOptions;
 
+  const buildProjectDraft = (status: Project['status'] = existingProject?.status || 'draft'): Project => {
+    const budget = budgetInput.trim() ? Number(budgetInput) : undefined;
+    const area = areaInput.trim() ? Number(areaInput) : undefined;
+    return {
+      id: existingProject?.id || crypto.randomUUID(),
+      name: projectName.trim() || '我的装修方案',
+      spaceType: mode === 'photo' ? '现场照片' : '全屋',
+      style: workspaceStyle,
+      budget,
+      area,
+      city: regionInput.trim() || undefined,
+      region: regionInput.trim() || undefined,
+      preferences: prompt,
+      createdAt: existingProject?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status,
+      thumbnail: existingProject?.thumbnail,
+      floorPlanUrl: floorPlan || existingProject?.floorPlanUrl,
+      photoUrls: photos.length ? photos : existingProject?.photoUrls || [],
+      versions: existingProject?.versions || [],
+      tasks: existingProject?.tasks || [],
+      materialIds: existingProject?.materialIds || [],
+    };
+  };
+
+  const saveProjectInfo = () => {
+    const budget = budgetInput.trim() ? Number(budgetInput) : undefined;
+    const area = areaInput.trim() ? Number(areaInput) : undefined;
+    if (budget !== undefined && (!Number.isFinite(budget) || budget < 0)) { setError('预算请输入不小于 0 的数字。'); return; }
+    if (area !== undefined && (!Number.isFinite(area) || area <= 0)) { setError('面积请输入大于 0 的数字。'); return; }
+    setError('');
+    saveProject(buildProjectDraft('draft'));
+  };
+
   const addPhotoFiles = useCallback(async (files: FileList | File[]) => {
     const images = Array.from(files).filter((file) => file.type.startsWith('image/')).slice(0, 4);
     if (!images.length) return;
     const urls = await Promise.all(images.map(readImage));
     setPhotos((current) => [...current, ...urls].slice(-4));
     setPhoto(urls[0]);
-  }, []);
+  }, [setPhotos, setPhoto]);
 
   const handlePhotoChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) void addPhotoFiles(event.target.files);
@@ -103,7 +139,7 @@ export default function WorkspacePage() {
     const file = event.target.files?.[0];
     if (file?.type.startsWith('image/')) setFloorPlan(await readImage(file));
     event.target.value = '';
-  }, []);
+  }, [setFloorPlan]);
 
   const handleDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -112,7 +148,7 @@ export default function WorkspacePage() {
       const file = event.dataTransfer.files[0];
       if (file?.type.startsWith('image/')) void readImage(file).then(setFloorPlan);
     }
-  }, [addPhotoFiles, mode]);
+  }, [addPhotoFiles, mode, setFloorPlan]);
 
   const clearInputs = () => { setPhoto(null); setPhotos([]); setFloorPlan(null); setResult(null); setError(''); };
 
@@ -138,8 +174,10 @@ export default function WorkspacePage() {
       spaceType: mode === 'photo' ? '现场照片' : '全屋',
       style: workspaceStyle,
       budget,
-      area: existingProject?.area,
-      city: existingProject?.city,
+      area: areaInput.trim() ? Number(areaInput) : undefined,
+      city: regionInput.trim() || existingProject?.city,
+      region: regionInput.trim() || existingProject?.region,
+      preferences: prompt,
       createdAt: existingProject?.createdAt || startedAt,
       updatedAt: startedAt,
       status: 'generating',
@@ -222,7 +260,7 @@ export default function WorkspacePage() {
             {mode === 'photo' && photos.length > 1 && <div className="photo-count">已添加 {photos.length} 张照片，将使用第一张作为主视角</div>}
           </section>
 
-          <section className="control-section budget-section"><div className="section-title"><span>02 / 先说预算，再看风格</span><small>可以修改，也可以暂不填写</small></div><p className="section-help">填写计划投入的装修总预算，我们会先给出适合进一步沟通的风格方向。当前建议根据预算区间整理，仅供设计沟通参考，不代表实际报价。</p><label className="budget-field"><span>计划总预算（万元）</span><div className="budget-input-wrap"><input type="number" min="0" step="0.1" value={budgetInput} onChange={(event) => setBudgetInput(event.target.value)} placeholder="输入预算，例如 20" /><b>万元</b></div></label></section>
+          <section className="control-section budget-section"><div className="section-title"><span>02 / 装修预算资料</span><small>可先保存草稿</small></div><div className="budget-details-grid"><label className="budget-field"><span>计划总预算（万元）</span><div className="budget-input-wrap"><input type="number" min="0" step="0.1" value={budgetInput} onChange={(event) => setBudgetInput(event.target.value)} placeholder="例如 20" /><b>万元</b></div></label><label className="budget-field"><span>户型面积（㎡）</span><input type="number" min="0.1" step="0.1" value={areaInput} onChange={(event) => setAreaInput(event.target.value)} placeholder="例如 120" /></label><label className="budget-field"><span>所在城市/地区</span><input value={regionInput} onChange={(event) => setRegionInput(event.target.value)} placeholder="例如：上海" /></label></div><p className="section-help">预算建议仅用于前期方案沟通，不代表实际报价。</p><button className="save-project-info" type="button" onClick={saveProjectInfo}>保存项目资料</button></section>
 
           <section className="control-section"><div className="section-title"><span>03 / 选择空间气质</span><small>{recommendedStyleKeys.length ? '已按预算排列建议方向' : '填写预算后可查看建议方向'}</small></div>{recommendedStyleKeys.length > 0 && <div className="budget-recommendation"><strong>预算方向参考</strong><span>{budgetInput} 万元区间内，可优先了解标记为“建议”的风格。实际适配还会受面积、城市和材料选择影响。</span></div>}<div className="style-options">{orderedStyleOptions.map((style) => <button key={style.key} className={`style-option ${workspaceStyle === style.key ? 'selected' : ''} ${recommendedStyleKeys.includes(style.key) ? 'recommended' : ''}`} onClick={() => setWorkspaceStyle(style.key)}><span className="style-palette">{style.palette.map((color) => <i key={color} style={{ background: color }} />)}</span><span><strong>{style.name}</strong><small>{style.note}</small></span>{recommendedStyleKeys.includes(style.key) && <em>建议</em>}{workspaceStyle === style.key && <b>✓</b>}</button>)}</div></section>
 

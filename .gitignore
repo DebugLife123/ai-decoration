@@ -25,3 +25,9 @@ dist-ssr
 
 .env
 test-output/
+
+# Java / Spring Boot build output
+backend/target/
+
+# Spring Boot runtime file uploads (local dev default ./var/uploads)
+backend/var/uploads/

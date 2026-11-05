@@ -38,6 +38,8 @@ export interface Project {
   budget?: number;
   area?: number;
   city?: string;
+  region?: string;
+  preferences?: string;
   createdAt: string;
   updatedAt: string;
   status: 'draft' | 'generating' | 'completed' | 'failed';
@@ -59,11 +61,14 @@ export interface MaterialRecord {
   region: string;
   validUntil: string;
   updatedAt: string;
+  version?: number;
 }
 
 export interface WorkspaceDataAdapter {
   loadProjects(): Promise<Project[]>;
   saveProjects(projects: Project[]): Promise<boolean>;
+  saveProject?(project: Project): Promise<void>;
+  deleteProject?(id: string): Promise<void>;
   loadMaterials(): Promise<MaterialRecord[]>;
 }
 

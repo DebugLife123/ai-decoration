@@ -1,47 +1,65 @@
 import { useEffect, type ReactNode } from 'react';
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
 import WorkspacePage from './pages/WorkspacePage';
 import ProjectsPage from './pages/ProjectsPage';
 import MaterialsPage from './pages/MaterialsPage';
+import BudgetPage from './pages/BudgetPage';
 import BusinessPage from './pages/BusinessPage';
+import LoginPage from './pages/LoginPage';
+import AdminLoginPage from './pages/AdminLoginPage';
+import AdminPage from './pages/AdminPage';
+import BusinessStylesPage from './pages/BusinessStylesPage';
 import { useAppStore } from './stores/appStore';
 import './App.css';
 
 function RoleRoute({ role, children }: { role: 'consumer' | 'business'; children: ReactNode }) {
   const currentRole = useAppStore((state) => state.role);
-  const navigate = useNavigate();
   const location = useLocation();
-  const target = currentRole === 'business' ? '/business' : '/';
+  const isAuthenticated = useAppStore((state) => Boolean(state.authSession));
+  const target = currentRole === 'business' ? '/business' : currentRole === 'admin' ? '/admin' : '/';
 
-  useEffect(() => {
-    if (currentRole !== role && location.pathname !== target) navigate(target, { replace: true });
-  }, [currentRole, location.pathname, navigate, role, target]);
-
+  if (!isAuthenticated) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
   if (currentRole !== role) return <Navigate to={target} replace />;
+  return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: ReactNode }) {
+  const currentRole = useAppStore((state) => state.role);
+  const location = useLocation();
+  const isAuthenticated = useAppStore((state) => Boolean(state.authSession));
+
+  if (!isAuthenticated) return <Navigate to={`/admin/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+  if (currentRole !== 'admin') return <Navigate to={currentRole === 'business' ? '/business' : '/'} replace />;
   return <>{children}</>;
 }
 
 function App() {
   const role = useAppStore((state) => state.role);
+  const isAuthenticated = useAppStore((state) => Boolean(state.authSession));
   const loadProjects = useAppStore((state) => state.loadProjects);
 
   useEffect(() => {
-    void loadProjects();
-  }, [loadProjects]);
+    if (isAuthenticated && role !== 'admin') void loadProjects();
+  }, [isAuthenticated, loadProjects, role]);
 
   return (
-    <div className="app">
-      <Navbar />
+    <div className={`app ${!isAuthenticated ? 'auth-app' : ''} ${role === 'admin' ? 'admin-app' : ''}`}>
+      {isAuthenticated && role !== 'admin' && <Navbar />}
       <main className="app-main">
         <Routes>
+          <Route path="/login" element={isAuthenticated ? <Navigate to={role === 'business' ? '/business' : role === 'admin' ? '/admin' : '/'} replace /> : <LoginPage />} />
+          <Route path="/admin/login" element={isAuthenticated ? <Navigate to={role === 'admin' ? '/admin' : role === 'business' ? '/business' : '/'} replace /> : <AdminLoginPage />} />
           <Route path="/" element={<RoleRoute role="consumer"><HomePage /></RoleRoute>} />
           <Route path="/workspace" element={<RoleRoute role="consumer"><WorkspacePage /></RoleRoute>} />
           <Route path="/projects" element={<RoleRoute role="consumer"><ProjectsPage /></RoleRoute>} />
           <Route path="/materials" element={<RoleRoute role="consumer"><MaterialsPage /></RoleRoute>} />
+          <Route path="/budget" element={<RoleRoute role="consumer"><BudgetPage /></RoleRoute>} />
           <Route path="/business" element={<RoleRoute role="business"><BusinessPage /></RoleRoute>} />
-          <Route path="*" element={<Navigate to={role === 'business' ? '/business' : '/'} replace />} />
+          <Route path="/business/styles" element={<RoleRoute role="business"><BusinessStylesPage /></RoleRoute>} />
+          <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
+          <Route path="*" element={<Navigate to={role === 'business' ? '/business' : role === 'admin' ? '/admin' : '/'} replace />} />
         </Routes>
       </main>
     </div>

@@ -8,6 +8,9 @@
   margin-left: 244px;
 }
 
+.auth-app .app-main { margin-left: 0; }
+.admin-app .app-main { margin-left: 0; }
+
 @media (max-width: 760px) {
   .app-main { margin-left: 0; }
 }

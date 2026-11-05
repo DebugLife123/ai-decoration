@@ -9,11 +9,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 32px;
-  padding: 34px 38px;
-  background: linear-gradient(115deg, #fff 0%, #f7f4ff 100%);
-  border: 1px solid var(--color-border-light);
-  border-radius: 22px;
-  box-shadow: var(--shadow-sm);
+  margin-bottom: 30px;
+  padding: 0 0 23px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .business-hero-copy { display: flex; align-items: center; gap: 22px; min-width: 0; }
@@ -27,11 +25,14 @@
 .cert-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
 .cert-badge.draft { color: var(--color-text-muted); background: #f2eff7; }
 .cert-badge.pending { color: var(--color-warning); background: #fff5df; }
+.cert-badge.approved { color: var(--color-success); background: #eaf8f0; }
+.cert-badge.rejected { color: var(--color-error); background: #fff0f0; }
 
-.business-progress { width: 210px; flex: 0 0 auto; padding-left: 22px; border-left: 1px solid var(--color-border); }
+.business-progress { display: grid; grid-template-columns: auto 42px; align-items: center; gap: 6px 14px; width: 180px; flex: 0 0 auto; padding-left: 18px; border-left: 1px solid var(--color-border); }
 .business-progress > span, .business-progress small { display: block; color: var(--color-text-secondary); font-size: 12px; }
-.business-progress strong { display: block; margin: 4px 0 10px; color: var(--color-primary); font-family: var(--font-display); font-size: 30px; line-height: 1; }
-.business-progress small { margin-top: 10px; color: var(--color-text-muted); line-height: 1.4; }
+.business-progress strong { color: var(--color-primary); font-family: var(--font-display); font-size: 24px; line-height: 1; text-align: right; }
+.business-progress strong i { color: var(--color-text-muted); font-size: 14px; font-style: normal; }
+.business-progress .progress-track { grid-column: 1 / -1; }
 .progress-track { width: 100%; height: 7px; overflow: hidden; background: #ebe7f2; border-radius: 99px; }
 .progress-track i { display: block; height: 100%; background: var(--color-primary); border-radius: inherit; transition: width .35s ease; }
 
@@ -67,6 +68,7 @@
 .business-field input[type="file"] { padding: 8px; font-size: 12px; }
 .primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; align-self: flex-start; padding: 10px 15px; color: #fff; background: var(--color-primary); border-radius: 9px; font-size: 13px; font-weight: 700; transition: var(--transition); }
 .primary-button:hover { background: var(--color-primary-dark); transform: translateY(-1px); }
+.primary-button:disabled { cursor: wait; opacity: .65; transform: none; }
 .primary-button svg, .text-action svg, .icon-button svg, .record-icon svg, .empty-mark svg, .check-circle svg, .quick-action svg { width: 16px; height: 16px; }
 .text-action { display: inline-flex; align-items: center; gap: 5px; color: var(--color-primary); font-size: 12px; font-weight: 700; }
 .text-action:hover { color: var(--color-primary-dark); }
@@ -93,6 +95,7 @@
 .entry-form, .cert-form { padding: 22px; }
 .form-grid { display: grid; gap: 14px; }
 .form-grid-4 { grid-template-columns: repeat(4, 1fr); }
+.form-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .form-footer, .form-actions, .cert-form-footer { display: flex; align-items: flex-end; gap: 16px; }
 .form-footer .business-field { flex: 1; }
 .switch-field { display: inline-flex; align-items: center; gap: 8px; height: 39px; color: var(--color-text-secondary); font-size: 12px; white-space: nowrap; }
@@ -112,6 +115,8 @@
 .record-main strong { font-size: 14px; }
 .record-main span, .record-detail span, .record-date { color: var(--color-text-muted); font-size: 12px; }
 .record-main span { margin-top: 3px; }
+.record-attachments { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 5px; }
+.record-attachments .text-action { padding: 0; font-size: 11px; }
 .record-detail b { color: var(--color-primary); font-size: 13px; }
 .record-detail span { margin-top: 3px; }
 .record-date { text-align: right; }
@@ -130,6 +135,8 @@
 .cert-status-panel { align-self: stretch; padding: 22px; background: #f8f6ff; border: 1px solid #e8e0ff; border-radius: 13px; }
 .cert-state { display: flex; align-items: center; gap: 8px; margin: 18px 0 8px; color: var(--color-text-muted); font-family: var(--font-display); font-size: 24px; font-weight: 700; }
 .cert-state.pending { color: var(--color-warning); }
+.cert-state.approved { color: var(--color-success); }
+.cert-state.rejected { color: var(--color-error); }
 .state-dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
 .cert-status-panel p { color: var(--color-text-secondary); font-size: 12px; line-height: 1.6; }
 .cert-steps { display: grid; gap: 10px; margin-top: 26px; color: var(--color-text-muted); font-size: 12px; }
@@ -139,21 +146,20 @@
 .cert-steps .done b { color: #fff; background: var(--color-success); border-color: var(--color-success); }
 
 @media (max-width: 900px) {
-  .business-hero { align-items: flex-start; flex-direction: column; }
-  .business-progress { width: 100%; padding: 18px 0 0; border-top: 1px solid var(--color-border); border-left: 0; }
+  .business-hero { align-items: flex-start; }
+  .business-progress { width: 150px; }
   .overview-grid, .cert-form { grid-template-columns: 1fr; }
   .form-grid-4 { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 640px) {
   .business-page { width: min(100% - 28px, 560px); padding-top: 24px; }
-  .business-hero { padding: 24px 20px; }
+  .business-hero { flex-direction: column; gap: 18px; padding-bottom: 18px; }
   .business-hero-copy { align-items: flex-start; gap: 14px; }
-  .business-avatar { width: 54px; height: 54px; border-radius: 14px; }
-  .business-avatar svg { width: 25px; height: 25px; }
+  .business-progress { width: 100%; padding: 0; border: 0; }
   .business-section-heading { align-items: flex-start; flex-direction: column; gap: 14px; }
   .business-section-heading h2 { font-size: 23px; }
-  .form-grid-4 { grid-template-columns: 1fr; }
+  .form-grid-4, .form-grid-2 { grid-template-columns: 1fr; }
   .form-footer, .form-actions, .cert-form-footer { align-items: stretch; flex-direction: column; }
   .form-footer .primary-button, .form-actions .primary-button, .cert-form-footer .primary-button { width: 100%; }
   .record-row { grid-template-columns: 36px minmax(0, 1fr) 68px; gap: 10px; padding: 15px; }

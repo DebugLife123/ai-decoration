@@ -272,6 +272,11 @@
 .budget-field { display: grid; gap: 5px; color: var(--color-text-muted); font-size: 10px; }
 .budget-field input { min-width: 0; width: 100%; height: 42px; padding: 0 12px; color: var(--color-text); background: #faf9fc; border: 1px solid var(--color-border-light); border-radius: 9px; font-size: 12px; }
 .budget-field input:focus { outline: none; background: #fff; border-color: #9a8be0; box-shadow: 0 0 0 4px rgba(106, 90, 212, 0.08); }
+.budget-details-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.budget-details-grid .budget-field:first-child { grid-column: 1 / -1; }
+.save-project-info { align-self: flex-start; min-height: 34px; padding: 0 12px; border: 1px solid var(--color-border-light); border-radius: 6px; color: var(--color-text); background: #fff; font-size: 11px; cursor: pointer; }
+.save-project-info:hover { border-color: #b79b55; color: #8a6d2f; }
+@media (max-width: 480px) { .budget-details-grid { grid-template-columns: 1fr; } .budget-details-grid .budget-field:first-child { grid-column: auto; } }
 .budget-input-wrap { position: relative; }
 .budget-input-wrap input { padding-right: 48px; }
 .budget-input-wrap b { position: absolute; top: 50%; right: 12px; color: #91899b; font-size: 11px; font-weight: 500; transform: translateY(-50%); }
