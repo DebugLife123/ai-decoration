@@ -1,6 +1,7 @@
 import type { MaterialRecord } from './dataContracts';
 import { readLocalValue, writeLocalValue } from './localDataAdapter';
 import { currentAccessToken, readAuthSession } from './authSession';
+import type { StyleRecommendationProfile } from './styleRecommendation';
 
 export type BusinessRecordStatus = 'draft' | 'published';
 
@@ -54,10 +55,20 @@ export interface CompanyCertificationRecord {
   updatedAt: string;
 }
 
+export interface CompanyStyleProfileRecord {
+  companyId: string;
+  companyName: string | null;
+  profiles: StyleRecommendationProfile[];
+  version: number;
+  updatedAt: string | null;
+}
+
 export interface BusinessDataAdapter {
   readonly mode: 'local' | 'api';
   loadProfile(): Promise<CompanyProfileRecord>;
   saveProfile(profile: CompanyProfileRecord): Promise<CompanyProfileRecord>;
+  loadStyleProfiles(): Promise<CompanyStyleProfileRecord>;
+  saveStyleProfiles(profiles: StyleRecommendationProfile[]): Promise<CompanyStyleProfileRecord>;
   loadCases(): Promise<BusinessCaseRecord[]>;
   createCase(record: Omit<BusinessCaseRecord, 'id' | 'updatedAt'>): Promise<BusinessCaseRecord>;
   updateCase(record: BusinessCaseRecord): Promise<BusinessCaseRecord>;
@@ -81,6 +92,7 @@ export const businessLocalKeys = {
   cases: 'decoration-business-cases',
   materials: 'decoration-business-materials',
   workers: 'decoration-business-workers',
+  styleProfiles: 'decoration-business-style-profiles',
 } as const;
 
 const emptyProfile: CompanyProfileRecord = { name: '', city: '', services: '', intro: '' };
@@ -159,6 +171,19 @@ function localAdapter(): BusinessDataAdapter {
     },
     async deleteWorker(record) {
       writeLocalValue(businessLocalKeys.workers, localWorkers().filter((item) => item.id !== record.id));
+    },
+    async loadStyleProfiles() {
+      return {
+        companyId: '',
+        companyName: null,
+        profiles: readLocalValue<StyleRecommendationProfile[]>(businessLocalKeys.styleProfiles, []),
+        version: 0,
+        updatedAt: null,
+      };
+    },
+    async saveStyleProfiles(profiles) {
+      writeLocalValue(businessLocalKeys.styleProfiles, profiles);
+      return { companyId: '', companyName: null, profiles, version: 0, updatedAt: now() };
     },
     async loadCertification() { return null; },
     async submitCertification(record) {
@@ -250,6 +275,14 @@ function apiAdapter(baseUrl: string): BusinessDataAdapter {
     async createWorker(record) { const data = await request<ApiWorker>('/api/v1/business/labor-quotes', { method: 'POST', headers: { 'Idempotency-Key': key() }, body: JSON.stringify({ ...record, price: Number(record.price) }) }); return workerFromApi(data); },
     async updateWorker(record) { const data = await request<ApiWorker>(`/api/v1/business/labor-quotes/${record.id}`, { method: 'PATCH', body: JSON.stringify({ type: record.type, unit: record.unit, price: Number(record.price), region: record.region, validUntil: record.validUntil, version: record.version ?? 0 }) }); return workerFromApi(data); },
     async deleteWorker(record) { await request<void>(`/api/v1/business/labor-quotes/${record.id}?version=${record.version ?? 0}`, { method: 'DELETE' }); },
+    async loadStyleProfiles() {
+      const data = await request<CompanyStyleProfileRecord>('/api/v1/business/style-profiles');
+      return { ...data, profiles: data.profiles ?? [] };
+    },
+    async saveStyleProfiles(profiles) {
+      const data = await request<CompanyStyleProfileRecord>('/api/v1/business/style-profiles', { method: 'PUT', body: JSON.stringify({ profiles }) });
+      return { ...data, profiles: data.profiles ?? [] };
+    },
     async loadCertification() { return request<CompanyCertificationRecord | null>('/api/v1/business/certification'); },
     async submitCertification(record) { return request<CompanyCertificationRecord>('/api/v1/business/certification', { method: 'PUT', body: JSON.stringify(record) }); },
     uploadAsset,

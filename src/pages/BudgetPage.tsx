@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppStore } from '../stores/appStore';
-import { recommendStyles } from '../services/styleRecommendation';
+import { fallbackStyleProfiles, recommendStyles, type StyleRecommendationProfile } from '../services/styleRecommendation';
+import { loadPlatformStyleProfiles } from '../services/styleProfileSource';
+import { styleCatalogByKey } from '../services/styleCatalog';
 import './BudgetPage.css';
 
 type FinishLevel = 'basic' | 'standard' | 'premium';
@@ -32,6 +34,14 @@ export default function BudgetPage() {
   const [region, setRegion] = useState('');
   const [budgetInput, setBudgetInput] = useState('');
   const [finishLevel, setFinishLevel] = useState<FinishLevel>('standard');
+  const [platformProfiles, setPlatformProfiles] = useState<StyleRecommendationProfile[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadPlatformStyleProfiles()
+      .then((profiles) => { if (!cancelled) setPlatformProfiles(profiles); })
+      .catch(() => { /* 回退到内置风格资料 */ });
+    return () => { cancelled = true; };
+  }, []);
   const selectedProject = projects.find((project) => project.id === projectId);
   const area = Number(areaInput);
   const targetBudget = Number(budgetInput) * 10000;
@@ -63,7 +73,18 @@ export default function BudgetPage() {
     ? targetBudget < estimate.low ? 'low' : targetBudget > estimate.high ? 'high' : 'within'
     : null;
   const recommendationBudget = Number.isFinite(Number(budgetInput)) && Number(budgetInput) > 0 ? Number(budgetInput) : null;
-  const recommendedStyleProfiles = recommendationBudget ? recommendStyles({ budgetWan: recommendationBudget, area, region }) : [];
+
+  // 企业资料优先，但不足 3 条时用内置风格补齐：
+  // 消费者不该因为某家企业只录了 1 条资料，就只看到 1 个可选方向。
+  const displayStyleProfiles = useMemo(() => {
+    if (!recommendationBudget) return [];
+    const platform = recommendStyles({ budgetWan: recommendationBudget, area, region }, platformProfiles ?? fallbackStyleProfiles);
+    if (!platformProfiles) return platform;
+    const usedStyles = new Set(platform.map((item) => item.style));
+    const supplements = recommendStyles({ budgetWan: recommendationBudget, area, region }, fallbackStyleProfiles)
+      .filter((item) => !usedStyles.has(item.style));
+    return [...platform, ...supplements].slice(0, 3);
+  }, [area, platformProfiles, recommendationBudget, region]);
 
   return <main className="budget-page">
     <header className="budget-header">
@@ -100,14 +121,15 @@ export default function BudgetPage() {
           </p>}
           <div className="style-recommendations">
             <div className="style-recommendations-heading"><div><h2>按预算推荐风格</h2><p>{recommendationBudget ? `根据 ${recommendationBudget} 万元计划预算，优先考虑这些方向。` : '填写计划总预算后，可查看更匹配的风格方向。'}</p></div>{recommendationBudget && <span>{recommendationBudget < 10 ? '预算较紧' : recommendationBudget < 25 ? '舒适区间' : '品质空间'}</span>}</div>
-            {recommendationBudget ? <div className="style-recommendation-list">{recommendedStyleProfiles.map((style, index) => {
+            {recommendationBudget ? <div className="style-recommendation-list">{displayStyleProfiles.map((style, index) => {
               // 工作台通过 query 参数接收风格与提示词（它只读 useSearchParams），
               // 所以这里必须落到 URL 上，不能用 state —— 否则点击后风格不会切换。
-              const workspaceParams = new URLSearchParams({ style: style.style, prompt: `预算约 ${recommendationBudget} 万元，倾向${style.name}风格。` });
+              const styleName = styleCatalogByKey.get(style.style)?.name ?? style.name;
+              const workspaceParams = new URLSearchParams({ style: style.style, prompt: `预算约 ${recommendationBudget} 万元，倾向${styleName}风格。` });
               if (area > 0) workspaceParams.set('area', String(area));
               if (region.trim()) workspaceParams.set('region', region.trim());
               workspaceParams.set('budget', String(recommendationBudget));
-              return <article className={`style-recommendation ${index === 0 ? 'primary' : ''}`} key={style.style}><div className="style-recommendation-copy"><div><strong>{style.name}</strong>{index === 0 && <em>优先推荐</em>}</div><span>{style.note}</span><p>{style.reason}</p></div><Link to={`/workspace?${workspaceParams.toString()}`}>采用此风格</Link></article>;
+              return <article className={`style-recommendation ${index === 0 ? 'primary' : ''}`} key={`${style.style}-${style.companyName ?? 'platform'}`}><div className="style-recommendation-copy"><div><strong>{styleName}</strong>{index === 0 && <em>{style.companyName ? '企业优先' : '优先推荐'}</em>}{style.companyName && <i className="style-recommendation-source">合作企业 · {style.companyName}</i>}</div><span>{style.note}</span><p>{style.reason}</p></div><Link to={`/workspace?${workspaceParams.toString()}`}>采用此风格</Link></article>;
             })}</div> : <div className="style-recommendation-empty">先填写预算金额，再查看风格建议。</div>}
           </div>
           <div className="estimate-breakdown"><h2>分项参考</h2>{estimate.breakdown.map((item) => <div className="estimate-row" key={item.label}><span>{item.label}</span><strong>¥{formatMoney(item.low)} - ¥{formatMoney(item.high)} 万</strong></div>)}</div>

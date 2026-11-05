@@ -37,6 +37,9 @@ class BusinessDataControllerTest {
     @MockBean
     private BusinessDataService service;
 
+    @MockBean
+    private StyleProfileService styleProfileService;
+
     @Test
     void requiresAuthenticationForBusinessRoutes() throws Exception {
         mockMvc.perform(get("/api/v1/business/cases"))

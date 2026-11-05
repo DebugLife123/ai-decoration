@@ -9,6 +9,8 @@ export interface StyleRecommendationProfile {
   maxBudgetWan?: number;
   regions?: string[];
   priority?: number;
+  // 来自企业风格资料时标注来源，便于预算页说明「这是哪家企业提供的方向」。
+  companyName?: string;
 }
 
 export interface StyleRecommendationInput {
@@ -50,6 +52,15 @@ function matchesRegion(profile: StyleRecommendationProfile, region?: string) {
   return profile.regions.some((item) => region.includes(item) || item.includes(region));
 }
 
+// 预算命中但地区不匹配时不能与「预算+地区双命中」并列，否则广州的用户也会
+// 看到只在上海落地的企业方案，并且它在同分下还会按 priority 挤掉本地风格。
+const REGION_MISS_PENALTY = 1;
+
+function hitScore(profile: StyleRecommendationProfile, input: StyleRecommendationInput) {
+  if (!matchesBudget(profile, input.budgetWan)) return 0;
+  return matchesRegion(profile, input.region) ? 2 : REGION_MISS_PENALTY;
+}
+
 const RECOMMENDATION_LIMIT = 3;
 const UNBOUNDED_DISTANCE = 10_000;
 
@@ -66,13 +77,9 @@ export function recommendStyles(input: StyleRecommendationInput, profiles = fall
   if (!Number.isFinite(input.budgetWan) || input.budgetWan <= 0 || !profiles.length) return [];
   // 同时对预算和地区命中的优先；不足 3 条时用其余风格按预算距离补齐，
   // 避免出现"只推荐 1-2 条"或"推荐集合与可用风格不交集"的情况。
-  const ranked = [...profiles].sort((a, b) => {
-    const aHit = Number(matchesBudget(a, input.budgetWan) && matchesRegion(a, input.region));
-    const bHit = Number(matchesBudget(b, input.budgetWan) && matchesRegion(b, input.region));
-    return bHit - aHit
-      || budgetDistance(a, input.budgetWan) - budgetDistance(b, input.budgetWan)
-      || (b.priority || 0) - (a.priority || 0);
-  });
+  const ranked = [...profiles].sort((a, b) => hitScore(b, input) - hitScore(a, input)
+    || budgetDistance(a, input.budgetWan) - budgetDistance(b, input.budgetWan)
+    || (b.priority || 0) - (a.priority || 0));
   return ranked.slice(0, RECOMMENDATION_LIMIT);
 }
 

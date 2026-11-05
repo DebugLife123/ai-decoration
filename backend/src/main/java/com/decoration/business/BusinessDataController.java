@@ -29,15 +29,19 @@ import java.net.URI;
 import java.util.UUID;
 
 import static com.decoration.business.BusinessDtos.*;
+import static com.decoration.business.StyleDtos.CompanyStyleProfile;
+import static com.decoration.business.StyleDtos.StyleProfileUpdateRequest;
 
 @RestController
 @Validated
 @RequestMapping("/api/v1/business")
 public class BusinessDataController {
     private final BusinessDataService service;
+    private final StyleProfileService styleProfiles;
 
-    public BusinessDataController(BusinessDataService service) {
+    public BusinessDataController(BusinessDataService service, StyleProfileService styleProfiles) {
         this.service = service;
+        this.styleProfiles = styleProfiles;
     }
 
     @GetMapping("/profile")
@@ -174,6 +178,18 @@ public class BusinessDataController {
                                                   @RequestParam @Min(0) int version) {
         service.deleteLaborQuote(companyId(jwt), quoteId, version);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/style-profiles")
+    public ApiResponse<CompanyStyleProfile> getStyleProfiles(@AuthenticationPrincipal Jwt jwt) {
+        return ApiResponse.success(styleProfiles.get(companyId(jwt)));
+    }
+
+    @PutMapping("/style-profiles")
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR')")
+    public ApiResponse<CompanyStyleProfile> putStyleProfiles(@AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody StyleProfileUpdateRequest request) {
+        return ApiResponse.success(styleProfiles.replace(companyId(jwt), request.profiles()));
     }
 
     private static UUID companyId(Jwt jwt) {

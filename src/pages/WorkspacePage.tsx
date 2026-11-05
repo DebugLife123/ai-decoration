@@ -4,7 +4,8 @@ import { useAppStore, type DesignStyle } from '../stores/appStore';
 import { analyzeFloorPlan, generateDesign, type IdentifiedRoom, type PlanSource } from '../services/aiClient';
 import { deleteDesignHistory, listDesignHistory, saveDesignHistory, type DesignHistoryRecord } from '../services/designHistory';
 import { templates } from './HomePage';
-import { recommendStyles } from '../services/styleRecommendation';
+import { recommendStyles, type StyleRecommendationProfile } from '../services/styleRecommendation';
+import { loadPlatformStyleProfiles } from '../services/styleProfileSource';
 import { styleCatalog } from '../services/styleCatalog';
 import type { Project } from '../services/dataContracts';
 import './WorkspacePage.css';
@@ -129,6 +130,15 @@ export default function WorkspacePage() {
   const workflowStyle = styleOverride?.route === requestedStyle ? styleOverride.value : routeStyle ?? selectedStyle;
   const activeStyle = useMemo(() => styleOptions.find((style) => style.key === workflowStyle) ?? styleOptions[0], [workflowStyle]);
   const preferences = [['色调', searchParams.get('tone')], ['光线', searchParams.get('light')], ['材质', searchParams.get('material')]].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  // 平台已有的企业风格资料优先；读不到（未接入平台或暂无企业配置）时回退内置资料。
+  const [platformStyleProfiles, setPlatformStyleProfiles] = useState<StyleRecommendationProfile[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadPlatformStyleProfiles()
+      .then((profiles) => { if (!cancelled) setPlatformStyleProfiles(profiles); })
+      .catch(() => { /* 回退到内置风格资料 */ });
+    return () => { cancelled = true; };
+  }, []);
   const recommendedStyleKeys = useMemo(() => {
     const budgetWan = Number(budgetInput);
     const area = Number(areaInput);
@@ -136,8 +146,8 @@ export default function WorkspacePage() {
       budgetWan: Number.isFinite(budgetWan) ? budgetWan : 0,
       area: Number.isFinite(area) && area > 0 ? area : undefined,
       region: regionInput.trim() || undefined,
-    }).map((profile) => profile.style);
-  }, [areaInput, budgetInput, regionInput]);
+    }, platformStyleProfiles ?? undefined).map((profile) => profile.style);
+  }, [areaInput, budgetInput, platformStyleProfiles, regionInput]);
   const orderedStyleOptions = recommendedStyleKeys.length
     ? [...styleOptions.filter((style) => recommendedStyleKeys.includes(style.key)), ...styleOptions.filter((style) => !recommendedStyleKeys.includes(style.key))]
     : styleOptions;

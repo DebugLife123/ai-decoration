@@ -4,6 +4,9 @@
 .business-styles-header h1 { margin-top: 8px; color: var(--color-text); font-family: var(--font-display); font-size: 35px; }
 .business-styles-header p { margin-top: 8px; color: var(--color-text-secondary); font-size: 13px; }
 .styles-local-badge { padding: 7px 10px; color: var(--color-text-muted); background: #f4f1eb; border-radius: 5px; font-size: 10px; }
+.styles-header-side { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.styles-platform-badge { padding: 7px 10px; color: var(--color-success); background: #eef5ee; border-radius: 5px; font-size: 10px; }
+.styles-feedback-error { color: #a26055; }
 .business-styles-layout { display: grid; grid-template-columns: minmax(300px, .75fr) minmax(420px, 1.25fr); gap: 28px; margin-top: 32px; align-items: start; }
 .styles-form, .styles-list { padding: 22px; background: var(--color-bg-card); border: 1px solid var(--color-border-light); border-radius: 8px; }
 .styles-form { display: grid; gap: 15px; }

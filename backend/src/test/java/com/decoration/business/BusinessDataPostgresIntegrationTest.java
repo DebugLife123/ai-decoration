@@ -64,6 +64,7 @@ class BusinessDataPostgresIntegrationTest {
         jdbc.update("delete from labor_quotes");
         jdbc.update("delete from company_profiles");
         jdbc.update("delete from company_certifications");
+        jdbc.update("delete from company_style_profiles");
     }
 
     @Test
@@ -416,9 +417,120 @@ class BusinessDataPostgresIntegrationTest {
     }
 
     @Test
+    void publishesOnlyCertifiedStyleProfilesToRecommendationFeed() throws Exception {
+        var certifiedCompany = UUID.randomUUID();
+        var pendingCompany = UUID.randomUUID();
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, ?, now())", certifiedCompany, "Certified Studio");
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, ?, now())", pendingCompany, "Pending Studio");
+
+        mockMvc.perform(pu("/api/v1/business/style-profiles").with(token(certifiedCompany, "COMPANY_EDITOR"))
+                        .contentType("application/json")
+                        .content("""
+                                {"profiles":[{"style":"chinese","name":"Certified New Chinese","note":"wood","reason":"fits","minBudgetWan":18,"maxBudgetWan":40,"regions":["Shanghai"," Shanghai "],"priority":2}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.version").value(0))
+                .andExpect(jsonPath("$.data.profiles[0].regions.length()").value(1));
+
+        mockMvc.perform(pu("/api/v1/business/style-profiles").with(token(pendingCompany, "COMPANY_ADMIN"))
+                        .contentType("application/json")
+                        .content("""
+                                {"profiles":[{"style":"modern","name":"Pending Modern","minBudgetWan":0,"maxBudgetWan":12}]}
+                                """))
+                .andExpect(status().isOk());
+
+        // 未认证企业不对外发布：推荐源里查不到待认证企业的资料。
+        mockMvc.perform(get("/api/v1/styles/recommendations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.style == 'modern')]").isEmpty());
+
+        // 提交认证申请（PUT 要求 COMPANY_ADMIN，EDITOR 会被拒），再走管理员审核流程。
+        mockMvc.perform(pu("/api/v1/business/certification").with(token(certifiedCompany, "COMPANY_ADMIN"))
+                        .contentType("application/json")
+                        .content("""
+                                {"companyName":"Certified Studio","contactName":"C Admin","contactInfo":"c@example.test","serviceAreas":["Shanghai"],"documentRefs":[]}
+                                """))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("PENDING"));
+
+        var certification = mockMvc.perform(get("/api/v1/business/certification").with(token(certifiedCompany, "COMPANY_VIEWER")))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var version = com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(certification).path("data").path("version").asInt();
+        mockMvc.perform(post("/api/v1/admin/certifications/{companyId}/review", certifiedCompany)
+                        .with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString())
+                                        .claim("roles", java.util.List.of("PLATFORM_ADMIN")))
+                                .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")))
+                        .contentType("application/json")
+                        .content("{\"status\":\"APPROVED\",\"reviewNote\":\"ok\",\"version\":%d}".formatted(version)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/styles/recommendations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.style == 'chinese')].companyName").value("Certified Studio"))
+                .andExpect(jsonPath("$.data[?(@.style == 'modern')]").isEmpty())
+                .andExpect(jsonPath("$.data[?(@.style == 'chinese')].minBudgetWan").value(18));
+
+        jdbc.update("delete from company_style_profiles where company_id in (?, ?)", certifiedCompany, pendingCompany);
+        jdbc.update("delete from company_certifications where company_id = ?", certifiedCompany);
+        jdbc.update("delete from auth_companies where id in (?, ?)", certifiedCompany, pendingCompany);
+    }
+
+    @Test
+    void replacesStyleProfilesForTheSignedInCompanyOnly() throws Exception {
+        var company = UUID.randomUUID();
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, ?, now())", company, "Isolated Studio");
+
+        mockMvc.perform(pu("/api/v1/business/style-profiles").with(token(company, "COMPANY_ADMIN"))
+                        .contentType("application/json")
+                        .content("""
+                                {"profiles":[{"style":"modern","name":"Modern A","minBudgetWan":0,"maxBudgetWan":12}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.companyName").value("Isolated Studio"));
+
+        mockMvc.perform(pu("/api/v1/business/style-profiles").with(token(company, "COMPANY_ADMIN"))
+                        .contentType("application/json")
+                        .content("""
+                                {"profiles":[{"style":"cream","name":"Cream B","minBudgetWan":10,"maxBudgetWan":30},{"style":"wabi","name":"Wabi C","minBudgetWan":8}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.version").value(1))
+                .andExpect(jsonPath("$.data.profiles.length()").value(2))
+                .andExpect(jsonPath("$.data.profiles[0].style").value("cream"));
+
+        // 只读角色不能写入。
+        mockMvc.perform(pu("/api/v1/business/style-profiles").with(token(company, "COMPANY_VIEWER"))
+                        .contentType("application/json")
+                        .content("{\"profiles\":[]}"))
+                .andExpect(status().isForbidden());
+
+        // 同一风格重复、预算区间颠倒都要被拒绝。
+        mockMvc.perform(pu("/api/v1/business/style-profiles").with(token(company, "COMPANY_ADMIN"))
+                        .contentType("application/json")
+                        .content("""
+                                {"profiles":[{"style":"modern","name":"A","minBudgetWan":0},{"style":"modern","name":"B","minBudgetWan":0}]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        mockMvc.perform(pu("/api/v1/business/style-profiles").with(token(company, "COMPANY_ADMIN"))
+                        .contentType("application/json")
+                        .content("""
+                                {"profiles":[{"style":"modern","name":"A","minBudgetWan":30,"maxBudgetWan":10}]}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        jdbc.update("delete from company_style_profiles where company_id = ?", company);
+        jdbc.update("delete from auth_companies where id = ?", company);
+    }
+
+    @Test
     void rejectsAnonymousAccessToMaterialCatalog() throws Exception {
         mockMvc.perform(get("/api/v1/materials"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder pu(String path) {
+        return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(path);
     }
 
     private static JwtRequestPostProcessor token(UUID companyId, String role) {
