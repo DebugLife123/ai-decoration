@@ -6,9 +6,10 @@ import { deleteDesignHistory, listDesignHistory, saveDesignHistory, type DesignH
 import { templates } from './HomePage';
 import './WorkspacePage.css';
 
-type Stage = 1 | 2 | 4;
+type Stage = 1 | 2 | 3 | 4;
 type UploadedFile = { name: string; size: string; preview: string };
 type WorkKind = 'recognizing' | 'generating' | null;
+type GenerationInput = { analysis: string; rooms: IdentifiedRoom[]; selectedRooms: string[] };
 const styleNotes: Partial<Record<DesignStyle, string>> = {
   modern: '暖白 · 浅木 · 隐藏收纳',
   song: '深木 · 陶器 · 东方留白',
@@ -108,7 +109,6 @@ export default function WorkspacePage() {
   const [imageData, setImageData] = useState('');
   const [rooms, setRooms] = useState<IdentifiedRoom[]>([]);
   const [selectedRooms, setSelectedRooms] = useState<string[]>([]);
-  const [analysis, setAnalysis] = useState('');
   const [results, setResults] = useState<{ name: string; imageUrl: string }[]>([]);
   const [history, setHistory] = useState<DesignHistoryRecord[]>([]);
   const [historyMessage, setHistoryMessage] = useState('');
@@ -139,7 +139,7 @@ export default function WorkspacePage() {
 
   const selectFile = async (nextFile?: File) => {
     if (!nextFile) return;
-    try { const preview = await readImage(nextFile); setFile({ name: nextFile.name, size: formatSize(nextFile.size), preview }); setImageData(preview); setRooms([]); setSelectedRooms([]); setAnalysis(''); setResults([]); setStage(1); setMessage(''); }
+    try { const preview = await readImage(nextFile); setFile({ name: nextFile.name, size: formatSize(nextFile.size), preview }); setImageData(preview); setRooms([]); setSelectedRooms([]); setResults([]); setStage(1); setMessage(''); }
     catch (error) { setMessage(error instanceof Error ? error.message : '图片读取失败。'); }
   };
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => { void selectFile(event.target.files?.[0]); event.target.value = ''; };
@@ -147,27 +147,35 @@ export default function WorkspacePage() {
   const runRecognition = async () => {
     if (!imageData) { setMessage('请先上传户型图片。'); return; }
     setWorkElapsed(0); setWorkKind('recognizing'); setMessage('');
-    try { const result = await analyzeFloorPlan(imageData, sourceType); setAnalysis(result.analysis); setRooms(result.rooms); setSelectedRooms(result.rooms.map((room) => room.name)); setStage(2); }
+    try {
+      const result = await analyzeFloorPlan(imageData, sourceType);
+      const selected = result.rooms.map((room) => room.name);
+      setRooms(result.rooms);
+      setSelectedRooms(selected);
+      setStage(2);
+      await generatePlan({ analysis: result.analysis, rooms: result.rooms, selectedRooms: selected });
+    }
     catch (error) {
       console.error('Floor-plan recognition failed:', error);
+      setStage(1);
       setMessage(error instanceof Error ? `户型识别失败：${error.message}` : '户型识别失败，请检查图片后重试。');
     }
     finally { setWorkKind(null); }
   };
-  const generatePlan = async () => {
+  const generatePlan = async (input: GenerationInput) => {
     if (!imageData) { setMessage('请先上传户型图片。'); setStage(1); return; }
-    setWorkElapsed(0); setWorkKind('generating'); setMessage(''); setResults([]);
+    setWorkElapsed(0); setWorkKind('generating'); setMessage(''); setResults([]); setStage(2);
     const sourcePrompt = sourceType === 'cad' ? '输入来源为 CAD 导出的住宅平面图，严格参考图中墙体、门窗和尺寸标注。' : '输入来源为住宅户型图，严格参考图中可见的房间边界与空间连接。';
-    const prompt = [sourcePrompt, searchParams.get('prompt'), ...preferences.map(([label, value]) => `${label}:${value}`), `户型识别结果：${analysis}`, `识别空间：${rooms.map((room) => `${room.name}（${room.description}）`).join('；')}`].filter(Boolean).join('。');
+    const prompt = [sourcePrompt, searchParams.get('prompt'), ...preferences.map(([label, value]) => `${label}:${value}`), `户型识别结果：${input.analysis}`, `识别空间：${input.rooms.map((room) => `${room.name}（${room.description}）`).join('；')}`].filter(Boolean).join('。');
     try {
-      const result = await generateDesign({ mode: 'floorplan', style: workflowStyle, prompt, floorPlan: imageData, source: sourceType, analysis, rooms, selectedRooms });
+      const result = await generateDesign({ mode: 'floorplan', style: workflowStyle, prompt, floorPlan: imageData, source: sourceType, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms });
       if (result.type !== 'floorplan') throw new Error('返回结果类型不正确。');
       const generatedResults = [{ name: '全屋总览', imageUrl: result.cover }, ...result.rooms.map((room) => ({ name: room.name, imageUrl: room.imageUrl }))];
       setResults(generatedResults);
-      setAnalysis(result.analysis); setStage(4);
+       setStage(3);
       const record: DesignHistoryRecord = {
         id: crypto.randomUUID(), name: `${activeStyle.name} · ${new Date().toLocaleDateString('zh-CN')}`, createdAt: new Date().toISOString(),
-        style: workflowStyle, source: sourceType, floorPlan: imageData, analysis: result.analysis, rooms, selectedRooms, results: generatedResults,
+        style: workflowStyle, source: sourceType, floorPlan: imageData, analysis: result.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, results: generatedResults,
       };
       try {
         await saveDesignHistory(record);
@@ -176,7 +184,7 @@ export default function WorkspacePage() {
       } catch (error) {
         setHistoryMessage(error instanceof Error ? `本次方案已生成，但本地记录保存失败：${error.message}` : '本次方案已生成，但本地记录保存失败。');
       }
-    } catch (error) { console.error('Whole-home generation failed:', error); setMessage(error instanceof Error ? '方案生成失败：' + error.message : '方案生成失败，请稍后重试。'); }
+    } catch (error) { console.error('Whole-home generation failed:', error); setStage(1); setMessage(error instanceof Error ? '方案生成失败：' + error.message : '方案生成失败，请稍后重试。'); }
     finally { setWorkKind(null); }
   };
   const openHistoryRecord = (record: DesignHistoryRecord) => {
@@ -186,7 +194,6 @@ export default function WorkspacePage() {
     setImageData(record.floorPlan);
     setRooms(record.rooms);
     setSelectedRooms(record.selectedRooms);
-    setAnalysis(record.analysis);
     setResults(record.results);
     setStage(4);
     setMessage('');
@@ -199,18 +206,18 @@ export default function WorkspacePage() {
       setHistoryMessage(error instanceof Error ? error.message : '删除方案记录失败。');
     }
   };
-  const reset = () => { setFile(null); setImageData(''); setRooms([]); setSelectedRooms([]); setAnalysis(''); setResults([]); setStage(1); setMessage(''); };
+  const reset = () => { setFile(null); setImageData(''); setRooms([]); setSelectedRooms([]); setResults([]); setStage(1); setMessage(''); };
 
   return <div className="workspace-page"><main className="workspace-main">
-    <header className={`workspace-header ${stage === 4 ? 'report-workspace-header' : ''}`}><div><span className="workspace-eyebrow">{stage === 4 ? 'JIAN YI ZHUANG / WHOLE-HOME STUDY' : 'JIAN YI ZHUANG / DESIGN FLOW'}</span><h2>{stage === 1 ? sourceType === 'cad' ? 'CAD 图纸全屋渲染' : '户型图全屋设计' : stage === 2 ? '空间已识别，准备生成' : `${activeStyle.name} · 整屋设计方案`}</h2>{stage < 4 && <p>{sourceType === 'cad' ? '上传图纸、选择风格，确认空间后即可开始生成。' : '上传户型图、选择风格，确认空间后即可开始生成。'}</p>}</div><button className="reset-button" onClick={stage === 4 ? () => setStage(2) : reset}><Icon name="refresh" />{stage === 4 ? '调整方案' : '重新开始'}</button></header>
+    <header className={`workspace-header ${stage === 4 ? 'report-workspace-header' : ''}`}><div><span className="workspace-eyebrow">{stage === 4 ? 'JIAN YI ZHUANG / WHOLE-HOME STUDY' : 'JIAN YI ZHUANG / DESIGN FLOW'}</span><h2>{stage === 1 ? sourceType === 'cad' ? 'CAD 图纸全屋渲染' : '户型图全屋设计' : stage === 2 ? '正在识别并生成方案' : stage === 3 ? '方案已生成，等待查看' : `${activeStyle.name} · 整屋设计方案`}</h2>{stage < 4 && <p>{stage === 3 ? '方案已经生成并保存到当前浏览器，点击下方按钮进入完整汇报。' : sourceType === 'cad' ? '上传图纸、选择风格后，系统会自动识别空间并生成方案。' : '上传户型图、选择风格后，系统会自动识别空间并生成方案。'}</p>}</div><button className="reset-button" onClick={stage === 4 ? () => setStage(3) : reset}><Icon name="refresh" />{stage === 4 ? '返回预览' : '重新开始'}</button></header>
     {stage < 4 && searchParams.has('template') && <aside className="design-preferences"><span><strong>灵感参考已带入</strong><small>{styleOptions.find((style) => style.key === searchParams.get('style'))?.name}</small></span></aside>}
-    {stage < 4 && <div className="workspace-stepper"><span className="workspace-stepper-label">全屋方案流程</span>{[['上传资料与风格', '图片 · 风格'], ['确认空间并生成', '识别 · 效果图']].map(([label, note], index) => <div className={`workspace-step ${stage === index + 1 ? 'active' : ''} ${stage > index + 1 ? 'done' : ''}`} key={label}><span className="step-index">{stage > index + 1 ? <Icon name="check" /> : `0${index + 1}`}</span><span><strong>{label}</strong><small>{note}</small></span></div>)}</div>}
+    {stage < 4 && <div className="workspace-stepper"><span className="workspace-stepper-label">全屋方案流程</span>{[['上传资料与风格', '图片 · 风格'], ['识别空间并生成', '户型 · 效果图'], ['查看生成结果', '预览 · 汇报']].map(([label, note], index) => <div className={`workspace-step ${stage === index + 1 ? 'active' : ''} ${stage > index + 1 ? 'done' : ''}`} key={label}><span className="step-index">{stage > index + 1 ? <Icon name="check" /> : `0${index + 1}`}</span><span><strong>{label}</strong><small>{note}</small></span></div>)}</div>}
     {stage < 4 && !isWorking && <div className="flow-content">
       {stage === 1 && <section className="flow-panel"><div className="panel-title"><span><b>01</b>上传资料并选择风格</span><small>{sourceType === 'cad' ? 'CAD 图纸导出图片' : '户型平面图图片'}</small></div><div className="source-tabs" role="tablist" aria-label="识别方案"><button type="button" role="tab" aria-selected={sourceType === 'cad'} className={sourceType === 'cad' ? 'active' : ''} onClick={() => { setSourceOverride({ route: routeSourceType, value: 'cad' }); setFile(null); setImageData(''); setMessage(''); }}><Icon name="file" /><span><strong>CAD 图纸全屋渲染</strong><small>DWG / DXF 导出为图片后上传</small></span></button><button type="button" role="tab" aria-selected={sourceType === 'floorplan'} className={sourceType === 'floorplan' ? 'active' : ''} onClick={() => { setSourceOverride({ route: routeSourceType, value: 'floorplan' }); setFile(null); setImageData(''); setMessage(''); }}><Icon name="upload" /><span><strong>户型图设计</strong><small>上传户型平面图图片</small></span></button></div><div className={`upload-zone ${file ? 'has-file' : ''}`} role="button" tabIndex={0} onClick={() => inputRef.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter') inputRef.current?.click(); }} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>{file ? <><span className="file-preview"><img src={file.preview} alt={sourceType === 'cad' ? 'CAD 平面图预览' : '户型图预览'} /></span><span className="file-info"><strong>{file.name}</strong><small>{file.size} · {sourceType === 'cad' ? 'CAD 平面图' : '户型图'}</small></span><button className="remove-file" onClick={(event) => { event.stopPropagation(); setFile(null); setImageData(''); }} aria-label="移除文件"><Icon name="close" /></button></> : <><span className="upload-zone-icon"><Icon name="upload" /></span><strong>{sourceType === 'cad' ? '拖入 CAD 导出图，或点击选择图片' : '拖入户型图，或点击选择图片'}</strong><small>{sourceType === 'cad' ? 'DWG / DXF / PDF 请先导出为 PNG、JPG 或 WEBP' : '支持 PNG、JPG、WEBP 格式的户型平面图'}</small></>}<input ref={inputRef} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={handleChange} /></div><div className="panel-tip"><span>i</span>{sourceType === 'cad' ? '按 CAD 图纸的墙体、门窗和尺寸标注识别；目前请先导出为图片，暂不直接读取 DWG / DXF / PDF 文件。' : '识别户型图中的房间、门窗和空间动线；请上传清晰、完整的平面图。'}</div><div className="style-picker-heading"><div><strong>选择空间风格</strong><small>先定下全屋的色彩与材质方向，识别后可直接生成</small></div></div><div className="workspace-style-grid">{styleOptions.map((style) => <button type="button" key={style.key} aria-pressed={workflowStyle === style.key} className={`workspace-style-card ${workflowStyle === style.key ? 'selected' : ''}`} onClick={() => { setStyleOverride({ route: requestedStyle, value: style.key }); setSelectedStyle(style.key); }}><span className="workspace-style-image"><img src={style.image} alt={`${style.name}风格参考`} /></span><span className="workspace-style-meta"><strong>{style.name}</strong><small>{style.note}</small></span>{workflowStyle === style.key && <span className="style-check"><Icon name="check" /></span>}</button>)}</div><div className="upload-actions"><span className="style-current">当前风格：<strong>{activeStyle.name}</strong></span><button className="continue-button" onClick={() => void runRecognition()} disabled={isWorking || !imageData}>{isWorking ? <><span className="spinner" />正在识别…</> : <>识别户型空间 <Icon name="arrow" /></>}</button></div>{message && <p className="flow-message">{message}</p>}</section>}
-      {stage === 2 && <section className="flow-panel recognition-panel recognition-status-panel"><div className="panel-title"><span><b>02</b>识别完成，准备生成</span><small>{sourceType === 'cad' ? 'CAD 图纸' : '户型图'} · {activeStyle.name}</small></div><div className="recognition-status-row"><span className="recognition-status-icon"><Icon name="check" /></span><div><strong>已识别 {rooms.length} 个空间</strong><p>空间关系已整理完成，确认后将按原图结构生成全屋方案。</p></div><span className="recognition-status-time">已完成</span></div><div className="recognition-summary"><div><span>设计风格</span><strong>{activeStyle.name}</strong></div><div><span>本次生成</span><strong>{selectedRooms.length} 个空间</strong></div><div><span>识别依据</span><strong>{file?.name || '上传图纸'}</strong></div></div><div className="recognition-room-tags" aria-label="已选择的空间">{selectedRooms.map((name) => <span key={name}>{name}</span>)}</div><details className="recognition-adjustments"><summary>展开查看并调整空间 <span>已选 {selectedRooms.length} / {rooms.length}</span></summary><p>可取消不需要生成的空间；未明确识别的房间名称请先在图纸中确认。</p><div className="room-list">{rooms.map((room, index) => <label className="room-row" key={`${room.name}-${index}`}><input type="checkbox" checked={selectedRooms.includes(room.name)} onChange={() => setSelectedRooms((current) => current.includes(room.name) ? current.filter((name) => name !== room.name) : [...current, room.name])} /><span><strong>{room.name}</strong><small>{room.description}</small></span></label>)}</div></details><div className="flow-actions"><button className="quiet-button" onClick={() => setStage(1)}>返回修改资料</button><button className="continue-button" onClick={() => void generatePlan()} disabled={selectedRooms.length === 0}>开始生成方案 <Icon name="spark" /></button></div>{message && <p className="flow-message">{message}</p>}</section>}
+      {stage === 3 && results.length > 0 && <section className="result-board generation-preview"><div className="result-board-head"><div><span className="panel-kicker">生成完成</span><h3>方案已经准备好</h3><p>结果已保存到当前浏览器，查看汇报前仍可回到工作区调整资料。</p></div><button className="continue-button" onClick={() => setStage(4)}>查看汇报方案 <Icon name="arrow" /></button></div><div className="result-cover"><img src={results[0].imageUrl} alt="全屋方案总览预览" /><div><span>全屋效果总览</span><strong>{activeStyle.name} · {selectedRooms.length} 个空间</strong></div></div><div className="result-room-grid">{results.slice(1).map((result) => <article key={result.name}><img src={result.imageUrl} alt={`${result.name}效果图预览`} /><div><strong>{result.name}</strong><small>空间效果已生成</small></div></article>)}</div><div className="flow-actions"><button className="quiet-button" onClick={() => setStage(1)}>重新上传资料</button><button className="continue-button" onClick={() => setStage(4)}>进入完整汇报 <Icon name="arrow" /></button></div>{message && <p className="flow-message">{message}</p>}</section>}
     </div>}
     {stage === 1 && <section className="design-history" aria-label="历史生成方案"><div className="design-history-heading"><div><span>方案记录</span><h3>最近生成</h3></div><small>仅保存在当前浏览器</small></div>{historyMessage && <p className="history-message">{historyMessage}</p>}{history.length > 0 ? <div className="design-history-list">{history.map((record) => <article className="design-history-item" key={record.id}><button className="history-open" onClick={() => openHistoryRecord(record)}><img src={record.results[0]?.imageUrl} alt="" /><span><strong>{record.name}</strong><small>{new Date(record.createdAt).toLocaleString('zh-CN')} · {record.rooms.length} 个空间</small></span></button><button className="history-delete" aria-label={`删除${record.name}`} title="删除记录" onClick={() => void removeHistoryRecord(record.id)}>×</button></article>)}</div> : !historyMessage && <p className="history-empty">完成一份全屋方案后，会保存在这里，之后可继续查看。</p>}</section>}
-    {isWorking && <section className={`working-state ${workKind === 'generating' ? 'generation-state' : ''}`} aria-live="polite"><div className="working-state-topline"><span className="live-indicator" />{workKind === 'recognizing' ? '户型识别' : '全屋方案生成'}<span className="working-elapsed">已等待 {workElapsed} 秒</span></div><div className="loading-orbit"><span /><span /><span /></div><h3>{workKind === 'recognizing' ? '正在读取户型空间' : '正在创作你的全屋方案'}</h3><p>{workKind === 'recognizing' ? '正在分析图面中的空间、墙体与开口信息。' : `已提交 ${activeStyle.name} 风格与 ${selectedRooms.length} 个空间，正在等待效果图返回。`}</p><div className="working-timeline"><div className="working-timeline-item done"><span><Icon name="check" /></span><div><strong>{workKind === 'recognizing' ? '图片已接收' : '风格与空间要求已提交'}</strong><small>{workKind === 'recognizing' ? '已开始分析你上传的图纸' : `已选择 ${activeStyle.name} · ${selectedRooms.length} 个空间`}</small></div></div><div className="working-timeline-item active"><span className="timeline-pulse" /><div><strong>{workKind === 'recognizing' ? '识别空间结构' : '生成总览与空间效果图'}</strong><small>{workKind === 'recognizing' ? '整理可辨认房间与空间关系' : '图片模型正在处理，耗时会随空间数量和上游响应变化'}</small></div></div><div className="working-timeline-item"><span /><div><strong>{workKind === 'recognizing' ? '整理识别结果' : '整理效果图并打开设计汇报'}</strong><small>{workKind === 'recognizing' ? '完成后可逐项核对识别空间' : '所有图片返回后会自动保存本次方案记录'}</small></div></div></div>{workKind === 'generating' && workElapsed >= 45 && <p className="working-long-wait">生成仍在进行中。请保持页面打开；如果上游服务超时，页面会显示具体错误，已完成的方案不会被误报为成功。</p>}<span className="working-disclaimer">当前显示的是工作流状态，不代表模型的精确百分比。</span></section>}
+    {isWorking && <section className={`working-state ${workKind === 'generating' ? 'generation-state' : ''}`} aria-live="polite"><div className="working-state-topline"><span className="live-indicator" />{workKind === 'recognizing' ? '户型识别' : '全屋方案生成'}<span className="working-elapsed">已等待 {workElapsed} 秒</span></div><div className="loading-orbit"><span /><span /><span /></div><h3>{workKind === 'recognizing' ? '正在读取户型空间' : '正在创作你的全屋方案'}</h3><p>{workKind === 'recognizing' ? '正在分析图面中的空间、墙体与开口信息。' : `已提交 ${activeStyle.name} 风格与 ${selectedRooms.length} 个空间，正在等待效果图返回。`}</p><div className="working-timeline"><div className="working-timeline-item done"><span><Icon name="check" /></span><div><strong>{workKind === 'recognizing' ? '图片已接收' : '风格与空间要求已提交'}</strong><small>{workKind === 'recognizing' ? '已开始分析你上传的图纸' : `已选择 ${activeStyle.name} · ${selectedRooms.length} 个空间`}</small></div></div><div className="working-timeline-item active"><span className="timeline-pulse" /><div><strong>{workKind === 'recognizing' ? '识别空间结构' : '生成总览与空间效果图'}</strong><small>{workKind === 'recognizing' ? '整理可辨认房间与空间关系' : '图片模型正在处理，耗时会随空间数量和上游响应变化'}</small></div></div><div className="working-timeline-item"><span /><div><strong>{workKind === 'recognizing' ? '整理识别结果' : '保存生成结果'}</strong><small>{workKind === 'recognizing' ? '完成后会展示空间识别状态' : '图片返回后会先停留在工作区，点击后再进入设计汇报'}</small></div></div></div>{workKind === 'generating' && workElapsed >= 45 && <p className="working-long-wait">生成仍在进行中。请保持页面打开；如果上游服务超时，页面会显示具体错误，已完成的方案不会被误报为成功。</p>}<span className="working-disclaimer">当前显示的是工作流状态，不代表模型的精确百分比。</span></section>}
     {stage === 4 && results.length > 0 && <div className="whole-home-report">
       <nav className="report-nav" aria-label="汇报目录"><a href="#report-overview">方案概览</a><a href="#report-style">风格说明</a><a href="#report-board">全屋设计</a><a href="#report-rooms">空间方案</a><a href="#report-notes">设计考量</a><button className="report-history-return" onClick={() => setStage(1)}>返回方案记录</button><span><i />已生成方案</span></nav>
       <section className="report-hero" id="report-overview"><div className="report-hero-copy"><span className="report-kicker">全屋设计 · 方案概览</span><p className="report-title-style">{activeStyle.name}</p><h1>整屋设计方案</h1><p className="report-hero-summary">{activeStyle.details.subtitle}</p><div className="report-tags">{activeStyle.note.split(' · ').map((tag) => <span key={tag}>{tag}</span>)}</div><a className="report-primary-link" href="#report-rooms">浏览空间方案 <Icon name="arrow" /></a></div><figure className="report-plan-figure"><img src={imageData} alt="本方案对应的原始户型图" /><figcaption><span>原始户型依据</span><strong>{rooms.length} 个识别空间</strong></figcaption></figure></section>
