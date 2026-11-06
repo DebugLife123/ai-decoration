@@ -17,15 +17,79 @@ export type FloorPlanAnalysis = { analysis: string; rooms: IdentifiedRoom[] };
 export type FloorPlanGeneration = { type: 'floorplan'; cover: string; analysis: string; rooms: RoomGeneration[] };
 export type GenerationResult = PhotoGeneration | FloorPlanGeneration;
 export type PlanSource = 'cad' | 'floorplan';
-export async function analyzeFloorPlan(floorPlan: string, source: PlanSource = 'floorplan'): Promise<FloorPlanAnalysis> {
-  const response = await fetch('/api/ai/analyze-floorplan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ floorPlan, source }) });
-  const payload = await response.json() as FloorPlanAnalysis & { error?: string };
-  if (!response.ok) throw new Error(payload.error || '户型识别失败，请检查接口配置。');
+export type PlanImageMeta = { sourceWidth: number; sourceHeight: number; sentWidth: number; sentHeight: number; sourceBytes: number };
+export type GenerationJob = {
+  id: string;
+  requestId: string;
+  status: 'queued' | 'running' | 'completed' | 'partial' | 'failed';
+  stage: string;
+  message: string;
+  completedRooms: number;
+  totalRooms: number;
+  coverReady?: boolean;
+  completedRoomNames?: string[];
+  cover?: string;
+  analysis?: string;
+  rooms?: RoomGeneration[];
+  failedRooms?: string[];
+  error?: string;
+};
+export async function editRoomImage(input: { image: string; mask: string; instruction: string; roomName: string; style: string }): Promise<{ imageUrl: string; model: string }> {
+  const response = await fetch('/api/ai/edit-room-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+  const payload = await response.json() as { imageUrl?: string; model?: string; error?: string };
+  if (!response.ok || !payload.imageUrl) throw new Error(payload.error || '局部编辑失败，请稍后重试。');
+  return { imageUrl: payload.imageUrl, model: payload.model || 'configured-image-model' };
+}
+export async function analyzeFloorPlan(floorPlan: string, source: PlanSource = 'floorplan', imageMeta?: PlanImageMeta): Promise<FloorPlanAnalysis> {
+  const response = await fetch('/api/ai/analyze-floorplan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ floorPlan, source, imageMeta }) });
+  const payload = await response.json() as FloorPlanAnalysis & { error?: string; requestId?: string };
+  if (!response.ok) throw new Error([payload.error || '户型识别失败，请检查接口配置。', payload.requestId ? `请求编号：${payload.requestId}` : ''].filter(Boolean).join(' '));
   return payload;
 }
-export async function generateDesign(input: { mode: DesignMode; style: DesignStyle; prompt: string; photo?: string; photos?: string[]; floorPlan?: string; source?: PlanSource; analysis?: string; rooms?: IdentifiedRoom[]; selectedRooms?: string[]; roomReferenceImages?: { name: string; image: string }[] }): Promise<GenerationResult> {
+export async function generateDesign(input: { mode: DesignMode; style: DesignStyle; prompt: string; photo?: string; photos?: string[]; floorPlan?: string; imageMeta?: PlanImageMeta; source?: PlanSource; analysis?: string; rooms?: IdentifiedRoom[]; selectedRooms?: string[]; roomReferenceImages?: { name: string; image: string }[] }, onProgress?: (job: GenerationJob) => void): Promise<GenerationResult & { warning?: string; jobId?: string }> {
   const response = await fetch('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
-  const payload = await response.json() as GenerationResult & { error?: string };
+  const payload = await response.json() as GenerationResult & { error?: string; jobId?: string };
   if (!response.ok) throw new Error(payload.error || 'AI 生成失败，请检查接口配置。');
-  return payload;
+  if (!payload.jobId) return payload;
+  return pollGenerationJob(payload.jobId, input.analysis || '', onProgress);
+}
+
+export async function retryGenerationRooms(jobId: string, previous: FloorPlanGeneration, onProgress?: (job: GenerationJob) => void) {
+  const response = await fetch(`/api/ai/generation-jobs/${encodeURIComponent(jobId)}/retry`, { method: 'POST' });
+  const payload = await response.json() as { error?: string };
+  if (!response.ok) throw new Error(payload.error || '空间重试暂不可用。');
+  return pollGenerationJob(jobId, previous.analysis, onProgress, previous.rooms, previous.cover);
+}
+
+async function pollGenerationJob(jobId: string, initialAnalysis: string, onProgress?: (job: GenerationJob) => void, previousRooms: RoomGeneration[] = [], previousCover = ''): Promise<FloorPlanGeneration & { warning?: string; jobId: string }> {
+  const startedAt = Date.now();
+  let consecutiveErrors = 0;
+  let receivedRooms = previousRooms.length;
+  let includeCover = !previousCover;
+  let cover = previousCover;
+  let analysis = initialAnalysis;
+  const rooms: RoomGeneration[] = [...previousRooms];
+  while (Date.now() - startedAt < 30 * 60 * 1000) {
+    await new Promise((resolve) => window.setTimeout(resolve, 2000));
+    let job: GenerationJob;
+    try {
+      const query = new URLSearchParams({ summary: '1', afterRooms: String(receivedRooms), includeCover: includeCover ? '1' : '0' });
+      const statusResponse = await fetch(`/api/ai/generation-jobs/${encodeURIComponent(jobId)}?${query}`, { cache: 'no-store' });
+      if (!statusResponse.ok) throw new Error(statusResponse.status === 404 ? '生成任务已过期或服务已重启。' : '暂时无法获取生成进度。');
+      job = await statusResponse.json() as GenerationJob;
+      consecutiveErrors = 0;
+    } catch (error) {
+      if (++consecutiveErrors < 4) continue;
+      throw error;
+    }
+    if (job.cover) { cover = job.cover; includeCover = false; }
+    if (job.analysis) analysis = job.analysis;
+    if (job.rooms?.length) { rooms.push(...job.rooms); receivedRooms += job.rooms.length; }
+    onProgress?.({ ...job, cover: cover || undefined, analysis, rooms: [...rooms] });
+    if (job.status === 'completed' || job.status === 'partial' || job.status === 'failed') {
+      if (cover) return { type: 'floorplan', cover, analysis, rooms, jobId, warning: job.error ? `${job.error}（请求编号：${job.requestId}）` : undefined };
+      throw new Error(`${job.error || '生成失败，请稍后重试。'}（任务编号：${job.requestId}）`);
+    }
+  }
+  throw new Error(`生成任务等待超过 30 分钟，请记录任务编号 ${jobId} 并联系管理员排查。`);
 }

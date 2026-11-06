@@ -142,6 +142,13 @@
 .working-timeline-item div { display: flex; flex-direction: column; gap: 4px; padding: 1px 0 14px; }
 .working-timeline-item strong { color: #4d5046; font-size: 14px; font-weight: 650; }
 .working-timeline-item small { color: #77776f; font-size: 12px; line-height: 1.6; }
+.working-results { display: grid; width: min(100%, 570px); grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-top: 20px; text-align: left; }
+.working-result-item { min-width: 0; }
+.working-result-item img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #e5e0d9; background: #f7f7f2; }
+.working-result-item small { display: block; overflow: hidden; margin-top: 5px; color: #595950; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.report-generation-warning { position: relative; z-index: 2; margin: 0; padding: 12px 5vw; color: #745226; background: #f6edda; font-size: 13px; line-height: 1.6; }
+.report-generation-warning .quiet-button { margin-left: 16px; }
+.retry-failed-rooms { display: flex; justify-content: flex-end; margin-top: 12px; }
 .working-long-wait { max-width: 570px !important; margin-top: 4px !important; padding: 12px 14px; color: #765f3a !important; background: #f8f4e9; border-left: 2px solid #b49a66; font-size: 12px !important; text-align: left; }
 .working-disclaimer { margin-top: 12px; color: #929188; font-size: 11px; }
 @keyframes live-pulse { 50% { opacity: .55; box-shadow: 0 0 0 7px #7686650d; } }
@@ -309,6 +316,9 @@
 .design-board-cover img { object-fit: contain; }
 .design-board-cover > div:not(.plan-comparison) { pointer-events: none; }
 .report-room-image { aspect-ratio: 4 / 3; background: #e9e8e1; }
+.report-room-list button.report-room-image { width: 100%; padding: 0; border: 0; text-align: left; cursor: pointer; }
+.report-room-list button.report-room-image:hover img { filter: brightness(.88); }
+.report-room-list button.report-room-image:focus-visible { outline: 3px solid #667a5b; outline-offset: 3px; }
 .report-room-image img { object-fit: contain; }
 .report-room-copy h5 { margin-top: 8px; }
 .report-room-copy p { max-width: 52ch; }
