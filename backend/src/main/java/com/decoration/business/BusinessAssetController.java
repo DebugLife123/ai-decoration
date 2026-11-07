@@ -10,6 +10,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,8 +39,28 @@ public class BusinessAssetController {
     @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR', 'COMPANY_VIEWER')")
     public ResponseEntity<Resource> download(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
         var asset = service.get(companyId(jwt), assetId);
-        return ResponseEntity.ok().contentType(MediaType.APPLICATION_OCTET_STREAM)
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(asset.mediaType()))
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header("X-Content-Type-Options", "nosniff")
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(asset.fileName(), StandardCharsets.UTF_8).build().toString())
+                .body(asset.resource());
+    }
+
+    @DeleteMapping("/{assetId}")
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR')")
+    public ResponseEntity<Void> delete(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID assetId) {
+        service.delete(companyId(jwt), assetId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/public/materials/{quoteId}/images/{imageId}")
+    @PreAuthorize("hasAnyRole('PERSONAL_USER', 'COMPANY_ADMIN', 'COMPANY_EDITOR', 'COMPANY_VIEWER')")
+    public ResponseEntity<Resource> materialImage(@PathVariable UUID quoteId, @PathVariable UUID imageId) {
+        var asset = service.getPublicMaterialImage(quoteId, imageId);
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(asset.mediaType()))
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
                         .filename(asset.fileName(), StandardCharsets.UTF_8).build().toString())
                 .body(asset.resource());
     }

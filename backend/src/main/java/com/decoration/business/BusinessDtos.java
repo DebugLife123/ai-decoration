@@ -25,10 +25,18 @@ public final class BusinessDtos {
             @Size(max = 80) String city,
             @Size(max = 500) String services,
             @Size(max = 2000) String intro,
+            @Size(max = 120) String publicContactName,
+            @Size(max = 160) String publicContactInfo,
+            @Size(max = 500) String serviceAreas,
+            @Size(max = 240) String businessHours,
+            UUID logoAssetId,
+            UUID storefrontAssetId,
             Integer version) {
     }
 
     public record Profile(UUID id, String name, String city, String services, String intro,
+                          String publicContactName, String publicContactInfo,
+                          String serviceAreas, String businessHours, UUID logoAssetId, UUID storefrontAssetId,
                           int version, Instant createdAt, Instant updatedAt) {
     }
 
@@ -66,7 +74,10 @@ public final class BusinessDtos {
             @NotNull @Digits(integer = 12, fraction = 2) @DecimalMin(value = "0.01") BigDecimal price,
             @NotBlank @Size(max = 80) String category,
             @NotBlank @Size(max = 80) String region,
-            @NotNull LocalDate validUntil) {
+            @NotNull LocalDate validUntil,
+            UUID imageId,
+            @Size(max = 120) String brand,
+            @Size(max = 8) List<@NotNull UUID> imageIds) {
     }
 
     public record MaterialQuotePatch(
@@ -77,14 +88,18 @@ public final class BusinessDtos {
             @Size(max = 80) String category,
             @Size(max = 80) String region,
             LocalDate validUntil,
+            UUID imageId,
+            boolean clearImage,
+            @Size(max = 120) String brand,
+            @Size(max = 8) List<@NotNull UUID> imageIds,
             @NotNull Integer version) {
         public boolean hasChanges() {
-            return name != null || spec != null || unit != null || price != null || category != null || region != null || validUntil != null;
+            return name != null || spec != null || unit != null || price != null || category != null || region != null || validUntil != null || imageId != null || clearImage || brand != null || imageIds != null;
         }
     }
 
-    public record MaterialQuote(UUID id, String name, String spec, String unit, BigDecimal price,
-                                String category, String region, LocalDate validUntil, int version,
+    public record MaterialQuote(UUID id, String name, String spec, String unit, BigDecimal price, String brand,
+                                String category, String region, LocalDate validUntil, UUID imageId, List<UUID> imageIds, int version,
                                 Instant createdAt, Instant updatedAt) {
     }
 

@@ -41,7 +41,9 @@ const consumerNavGroups = [
   {
     label: '资源中心', items: [
       { path: '/materials', label: '材料库', icon: 'materials' as IconName },
+      { path: '/cases', label: '认证企业案例', icon: 'projects' as IconName },
       { path: '/budget', label: '预算试算', icon: 'budget' as IconName },
+      { path: '/notifications', label: '通知中心', icon: 'help' as IconName },
     ],
   },
 ];
@@ -53,6 +55,8 @@ const businessNavGroups = [
       { path: '/business?tab=cases', label: '案例资料', icon: 'projects' as IconName },
       { path: '/business?tab=materials', label: '材料报价', icon: 'materials' as IconName },
       { path: '/business?tab=workers', label: '人工报价', icon: 'workspace' as IconName },
+      { path: '/business?tab=inquiries', label: '客户咨询', icon: 'help' as IconName },
+      { path: '/business/notifications', label: '通知中心', icon: 'help' as IconName },
       { path: '/business?tab=certification', label: '认证资料', icon: 'settings' as IconName },
       { path: '/business/styles', label: '风格资料', icon: 'templates' as IconName },
     ],

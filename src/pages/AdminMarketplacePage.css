@@ -1,0 +1,66 @@
+.admin-market-toolbar { display: flex; align-items: center; gap: 12px; margin: 28px 0 14px; padding-bottom: 14px; border-bottom: 1px solid #2c2f36; }
+.admin-market-tabs { display: flex; gap: 4px; padding: 4px; background: #191b21; border: 1px solid #2d3038; border-radius: 6px; }
+.admin-market-tabs button { min-height: 34px; padding: 0 14px; color: #aaa7a0; background: transparent; border: 0; border-radius: 4px; font: inherit; font-size: 12px; cursor: pointer; }
+.admin-market-tabs button.active { color: #17181c; background: #eabf78; }
+.admin-market-toolbar form { display: flex; flex: 1; min-width: 180px; max-width: 460px; margin-left: auto; }
+.admin-market-toolbar input, .admin-market-toolbar select { height: 40px; color: #e8e4dc; background: #191b21; border: 1px solid #353840; border-radius: 5px; font: inherit; font-size: 12px; }
+.admin-market-toolbar input { flex: 1; min-width: 0; padding: 0 12px; border-radius: 5px 0 0 5px; outline: none; }
+.admin-market-toolbar input:focus { border-color: #eabf78; }
+.admin-market-toolbar form button { padding: 0 15px; color: #17181c; background: #eabf78; border: 1px solid #eabf78; border-radius: 0 5px 5px 0; font: inherit; font-size: 12px; cursor: pointer; }
+.admin-market-toolbar select { min-width: 145px; padding: 0 10px; }
+.admin-market-panel { overflow: hidden; background: #191b21; border: 1px solid #2d3038; border-radius: 6px; }
+.admin-market-panel-head { display: flex; align-items: end; justify-content: space-between; gap: 14px; min-height: 76px; padding: 16px 20px; border-bottom: 1px solid #2c2f36; }
+.admin-market-panel-head h2 { margin-top: 5px; color: #f1eee7; font-size: 17px; font-weight: 500; }
+.admin-market-panel-head h2 small { margin-left: 6px; color: #eabf78; font-size: 12px; }
+.admin-market-panel-head > span { color: #85868d; font-size: 11px; }
+.admin-market-table-wrap { overflow-x: auto; }
+.admin-market-table { width: 100%; border-collapse: collapse; text-align: left; }
+.admin-market-table th { padding: 12px 14px; color: #85868d; background: #16181d; font-size: 10px; font-weight: 500; white-space: nowrap; }
+.admin-market-table td { max-width: 280px; padding: 13px 14px; color: #b9b6ae; border-top: 1px solid #292c33; font-size: 11px; vertical-align: middle; }
+.admin-market-table td strong, .admin-market-table td small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-market-table td strong { color: #e4e0d8; font-size: 12px; font-weight: 500; }
+.admin-market-table td small { max-width: 260px; margin-top: 4px; color: #808188; font-size: 10px; }
+.admin-market-table .admin-status { display: inline-flex; white-space: nowrap; }
+.admin-company-row { cursor: pointer; }
+.admin-company-row:hover { background: #22242b; }
+.admin-company-row:focus-visible { outline: 2px solid #eabf78; outline-offset: -2px; }
+.admin-market-table td.expired { color: #eda9a2; }
+.admin-market-visibility { display: inline-block; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.admin-market-visibility.public { color: #8ed2a9; }
+.admin-market-visibility.hidden, .admin-market-visibility.blocked { color: #eda9a2; }
+.admin-market-visibility.expired { color: #eabf78; }
+.admin-market-action { min-height: 30px; padding: 0 10px; border-radius: 4px; font: inherit; font-size: 10px; cursor: pointer; white-space: nowrap; }
+.admin-market-action:disabled { opacity: .55; cursor: wait; }
+.admin-market-action.hide { color: #eda9a2; background: transparent; border: 1px solid #754247; }
+.admin-market-action.restore { color: #8ed2a9; background: transparent; border: 1px solid #3c6b50; }
+.admin-market-backdrop { position: fixed; z-index: 12; inset: 0; display: grid; place-items: center; padding: 24px; background: rgb(5 6 8 / 78%); backdrop-filter: blur(5px); }
+.admin-market-dialog { width: min(100%, 440px); padding: 24px; background: #1d2027; border: 1px solid #424752; border-radius: 8px; box-shadow: 0 24px 70px rgb(0 0 0 / 42%); }
+.admin-market-dialog h2 { margin: 0; color: #f5f1e8; font-size: 20px; font-weight: 650; letter-spacing: .01em; }
+.admin-market-dialog p { margin: 10px 0 18px; color: #aaa7a0; font-size: 12px; line-height: 1.6; }
+.admin-market-dialog label { color: #c7c3ba; font-size: 11px; }
+.admin-market-dialog textarea { display: block; width: 100%; min-height: 92px; margin-top: 7px; padding: 10px; color: #e9e5dd; background: #14161b; border: 1px solid #3d4048; border-radius: 5px; font: inherit; font-size: 12px; resize: vertical; }
+.admin-market-dialog > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.admin-market-dialog > div button { min-height: 34px; padding: 0 12px; color: #aaa7a0; background: transparent; border: 1px solid #41434b; border-radius: 4px; font: inherit; font-size: 11px; cursor: pointer; }
+.admin-market-dialog > div button:last-child { color: #17181c; background: #eabf78; border-color: #eabf78; }
+.admin-market-dialog > div button:disabled { opacity: .55; cursor: wait; }
+@media (max-width: 780px) { .admin-market-toolbar { align-items: stretch; flex-wrap: wrap; } .admin-market-tabs { flex: 1 0 100%; } .admin-market-toolbar form { max-width: none; margin-left: 0; } .admin-market-toolbar select { flex: 0 0 145px; } .admin-market-panel-head { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 520px) { .admin-market-toolbar form { flex: 1 0 100%; } .admin-market-toolbar select { flex: 1; } .admin-market-panel-head { padding: 14px; } }
+.admin-import-form { max-width: 780px; max-height: min(860px, calc(100vh - 48px)); overflow: auto; padding: 30px; }
+.admin-import-form p { max-width: 620px; margin: 9px 0 24px; color: #9da3ae; font-size: 13px; }
+.admin-import-grid { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; margin-bottom: 18px; }
+.admin-import-grid label, .admin-import-form > label { display: grid; gap: 7px; color: #c8cdd6; font-size: 12px; font-weight: 550; }
+.admin-import-form input, .admin-import-form textarea { width: 100%; box-sizing: border-box; color: #eef0f3; background: #15181e; border: 1px solid #3a404b; border-radius: 5px; outline: none; font: inherit; font-size: 13px; transition: border-color .16s, box-shadow .16s; }
+.admin-import-form input { height: 40px; padding: 0 11px; }
+.admin-import-form textarea { min-height: 88px; padding: 10px 11px; resize: vertical; }
+.admin-import-form input:focus, .admin-import-form textarea:focus { border-color: #d6a85f; box-shadow: 0 0 0 3px rgb(214 168 95 / 14%); }
+.admin-import-form details { margin-top: 18px; border-top: 1px solid #343943; padding-top: 15px; }
+.admin-import-upload { margin-top: 2px; }
+.admin-import-upload input[type='file'] { height: auto; padding: 8px 10px; cursor: pointer; }
+.admin-import-upload small { color: #858c98; font-size: 11px; font-weight: 400; }
+.admin-import-material-dock { position: fixed; z-index: 14; right: 28px; bottom: 28px; display: grid; gap: 7px; width: min(300px, calc(100vw - 32px)); padding: 14px; color: #c8cdd6; background: #1d2027; border: 1px solid #4a5361; border-radius: 7px; box-shadow: 0 18px 50px rgb(0 0 0 / 35%); font-size: 12px; font-weight: 600; }
+.admin-import-material-dock input { width: 100%; box-sizing: border-box; padding: 8px; color: #eef0f3; background: #15181e; border: 1px solid #3a404b; border-radius: 5px; }
+.admin-import-material-dock small { color: #858c98; font-size: 11px; font-weight: 400; line-height: 1.45; }
+.admin-import-form summary { color: #e7e8eb; cursor: pointer; font-size: 13px; font-weight: 650; }
+.admin-import-form > div:last-child { display: flex; justify-content: flex-end; gap: 10px; margin-top: 26px; }
+.admin-import-form > div:last-child button { min-height: 38px; padding: 0 16px; }
+@media (max-width: 700px) { .admin-market-backdrop { padding: 12px; } .admin-import-form { padding: 22px; } .admin-import-grid { grid-template-columns: 1fr; } }

@@ -15,13 +15,18 @@ public final class MaterialCatalogDtos {
             UUID id,
             UUID companyId,
             String companyName,
+            String companyContactName,
+            String companyContactInfo,
             String name,
             String spec,
             String unit,
             BigDecimal price,
+            String brand,
             String category,
             String region,
             LocalDate validUntil,
+            UUID imageId,
+            List<UUID> imageIds,
             Instant updatedAt) {
     }
 

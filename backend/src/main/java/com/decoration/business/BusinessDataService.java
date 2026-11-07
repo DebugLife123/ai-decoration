@@ -30,7 +30,10 @@ import static com.decoration.business.BusinessDtos.*;
 public class BusinessDataService {
     private static final RowMapper<Profile> PROFILE_MAPPER = (rs, row) -> new Profile(
             rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("city"),
-            rs.getString("services"), rs.getString("intro"), rs.getInt("version"),
+            rs.getString("services"), rs.getString("intro"), rs.getString("public_contact_name"),
+            rs.getString("public_contact_info"), rs.getString("service_areas"),
+            rs.getString("business_hours"), rs.getObject("logo_asset_id", UUID.class),
+            rs.getObject("storefront_asset_id", UUID.class), rs.getInt("version"),
             instant(rs, "created_at"), instant(rs, "updated_at"));
     private static final RowMapper<BusinessCase> CASE_MAPPER = (rs, row) -> new BusinessCase(
             rs.getObject("id", UUID.class), rs.getString("title"), rs.getBigDecimal("area"),
@@ -38,8 +41,8 @@ public class BusinessDataService {
             List.of(), rs.getInt("version"), instant(rs, "created_at"), instant(rs, "updated_at"));
     private static final RowMapper<MaterialQuote> MATERIAL_MAPPER = (rs, row) -> new MaterialQuote(
             rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("specification"),
-            rs.getString("unit"), rs.getBigDecimal("price"), rs.getString("category"),
-            rs.getString("region"), rs.getObject("valid_until", LocalDate.class), rs.getInt("version"),
+            rs.getString("unit"), rs.getBigDecimal("price"), rs.getString("brand"), rs.getString("category"),
+            rs.getString("region"), rs.getObject("valid_until", LocalDate.class), rs.getObject("image_id", UUID.class), List.of(), rs.getInt("version"),
             instant(rs, "created_at"), instant(rs, "updated_at"));
     private static final RowMapper<LaborQuote> LABOR_MAPPER = (rs, row) -> new LaborQuote(
             rs.getObject("id", UUID.class), rs.getString("labor_type"), rs.getString("unit"),
@@ -66,22 +69,39 @@ public class BusinessDataService {
         if (current == null) {
             var id = UUID.randomUUID();
             jdbc.update("""
-                    insert into company_profiles(company_id, id, name, city, services, intro, version, created_at, updated_at)
-                    values (?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    insert into company_profiles(company_id, id, name, city, services, intro,
+                        public_contact_name, public_contact_info, service_areas, business_hours,
+                        logo_asset_id, storefront_asset_id, version, created_at, updated_at)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                     """, companyId, id, clean(request.name()), clean(request.city()), clean(request.services()),
-                    clean(request.intro()), now, now);
+                    clean(request.intro()), clean(request.publicContactName()), clean(request.publicContactInfo()),
+                    clean(request.serviceAreas()), clean(request.businessHours()),
+                    validateProfileImage(companyId, request.logoAssetId()), validateProfileImage(companyId, request.storefrontAssetId()), now, now);
         } else {
             if (request.version() == null || request.version() != current.version()) {
                 throw versionConflict();
             }
             var changed = jdbc.update("""
                     update company_profiles set name = ?, city = ?, services = ?, intro = ?,
+                    public_contact_name = ?, public_contact_info = ?, service_areas = ?, business_hours = ?,
+                    logo_asset_id = ?, storefront_asset_id = ?,
                     version = version + 1, updated_at = ? where company_id = ? and version = ?
                     """, clean(request.name()), clean(request.city()), clean(request.services()), clean(request.intro()),
-                    now, companyId, request.version());
+                    clean(request.publicContactName()), clean(request.publicContactInfo()), clean(request.serviceAreas()),
+                    clean(request.businessHours()), validateProfileImage(companyId, request.logoAssetId()),
+                    validateProfileImage(companyId, request.storefrontAssetId()), now, companyId, request.version());
             if (changed == 0) throw versionConflict();
         }
         return getProfile(companyId);
+    }
+
+    private UUID validateProfileImage(UUID companyId, UUID assetId) {
+        if (assetId == null) return null;
+        var valid = jdbc.queryForObject("select exists(select 1 from business_assets where company_id = ? and id = ? and (media_type like 'image/%' or lower(file_name) like '%.bmp'))", Boolean.class, companyId, assetId);
+        if (!Boolean.TRUE.equals(valid)) {
+            throw new BusinessApiException(HttpStatus.BAD_REQUEST, "INVALID_PROFILE_IMAGE", "Logo 或门店图片必须是当前企业已上传的图片");
+        }
+        return assetId;
     }
 
     public Page<BusinessCase> listCases(UUID companyId, CaseStatus status, int page, int size, String sort) {
@@ -106,6 +126,7 @@ public class BusinessDataService {
     @Transactional
     public Created<BusinessCase> createCase(UUID companyId, String key, CaseRequest request) {
         ensureDistinct(request.fileIds());
+        if (request.status() == CaseStatus.published) requireApprovedCertification(companyId);
         var id = UUID.randomUUID();
         var actualId = idempotentResource(companyId, key, "case", request, id);
         if (!actualId.equals(id)) return new Created<>(getCase(companyId, actualId), false);
@@ -124,6 +145,8 @@ public class BusinessDataService {
         if (!patch.hasChanges()) throw invalid("At least one case field must be supplied");
         var current = getCase(companyId, id);
         if (patch.version() != current.version()) throw versionConflict();
+        if (patch.status() == CaseStatus.published && current.status() != CaseStatus.published)
+            requireApprovedCertification(companyId);
         var changed = jdbc.update("""
                 update business_cases set title = ?, area = ?, style = ?, budget = ?, status = ?,
                 version = version + 1, updated_at = ? where company_id = ? and id = ? and version = ?
@@ -141,6 +164,23 @@ public class BusinessDataService {
     }
 
     @Transactional
+    public BusinessCase publishCase(UUID companyId, UUID id, int version) {
+        var current = getCase(companyId, id);
+        if (current.status() == CaseStatus.published) return current;
+        requireApprovedCertification(companyId);
+        return patchCase(companyId, id, new CasePatch(null, null, null, null,
+                CaseStatus.published, null, version));
+    }
+
+    private void requireApprovedCertification(UUID companyId) {
+        var certified = Boolean.TRUE.equals(jdbc.queryForObject(
+                "select exists(select 1 from company_certifications where company_id = ? and status = 'APPROVED')",
+                Boolean.class, companyId));
+        if (!certified) throw new BusinessApiException(HttpStatus.CONFLICT, "CERTIFICATION_REQUIRED",
+                "企业认证通过后才能发布案例");
+    }
+
+    @Transactional
     public void deleteCase(UUID companyId, UUID id, int version) {
         deleteVersioned("business_cases", companyId, id, version);
     }
@@ -153,26 +193,41 @@ public class BusinessDataService {
         if (region != null && !region.isBlank()) { where.append(" and region = ?"); args.add(clean(region)); }
         if (category != null && !category.isBlank()) { where.append(" and category = ?"); args.add(clean(category)); }
         if (!includeExpired) where.append(" and valid_until >= current_date");
-        return materialPage(where.toString(), args, page, size, quoteSort(sort));
+        return withMaterialImages(materialPage(where.toString(), args, page, size, quoteSort(sort)));
+    }
+
+    private Page<MaterialQuote> withMaterialImages(Page<MaterialQuote> page) {
+        return new Page<>(page.items().stream().map(this::withMaterialImages).toList(), page.page());
+    }
+
+    private MaterialQuote withMaterialImages(MaterialQuote quote) {
+        var ids = jdbc.query("select image_id from material_quote_images where quote_id = ? order by position",
+                (rs, row) -> rs.getObject(1, UUID.class), quote.id());
+        return new MaterialQuote(quote.id(), quote.name(), quote.spec(), quote.unit(), quote.price(), quote.brand(),
+                quote.category(), quote.region(), quote.validUntil(), ids.isEmpty() ? quote.imageId() : ids.getFirst(),
+                ids, quote.version(), quote.createdAt(), quote.updatedAt());
     }
 
     public MaterialQuote getMaterialQuote(UUID companyId, UUID id) {
-        return getOne("material_quotes", companyId, id, MATERIAL_MAPPER, "Material quote");
+        return withMaterialImages(getOne("material_quotes", companyId, id, MATERIAL_MAPPER, "Material quote"));
     }
 
     @Transactional
     public Created<MaterialQuote> createMaterialQuote(UUID companyId, String key, MaterialQuoteRequest request) {
         validateDate(request.validUntil());
+        var imageIds = requestedImages(request.imageIds(), request.imageId());
+        validateMaterialImages(companyId, imageIds);
         var id = UUID.randomUUID();
         var actualId = idempotentResource(companyId, key, "material-quote", request, id);
         if (!actualId.equals(id)) return new Created<>(getMaterialQuote(companyId, actualId), false);
         var now = Timestamp.from(Instant.now());
         jdbc.update("""
-                insert into material_quotes(id, company_id, name, specification, unit, price, category, region,
-                    valid_until, created_at, updated_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, id, companyId, clean(request.name()), clean(request.spec()), clean(request.unit()), request.price(),
-                clean(request.category()), clean(request.region()), request.validUntil(), now, now);
+                insert into material_quotes(id, company_id, name, specification, unit, price, brand, category, region,
+                    valid_until, image_id, created_at, updated_at)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, id, companyId, clean(request.name()), clean(request.spec()), clean(request.unit()), request.price(), clean(request.brand()),
+                clean(request.category()), clean(request.region()), request.validUntil(), imageIds.isEmpty() ? null : imageIds.getFirst(), now, now);
+        saveMaterialImages(companyId, id, imageIds);
         return new Created<>(getMaterialQuote(companyId, id), true);
     }
 
@@ -182,16 +237,26 @@ public class BusinessDataService {
         var current = getMaterialQuote(companyId, id);
         if (patch.version() != current.version()) throw versionConflict();
         if (patch.validUntil() != null) validateDate(patch.validUntil());
+        if (!patch.clearImage()) validateMaterialImage(companyId, patch.imageId());
+        var imageIds = patch.imageIds() != null ? patch.imageIds()
+                : patch.clearImage() ? List.<UUID>of()
+                : patch.imageId() != null ? List.of(patch.imageId()) : null;
+        if (imageIds != null) validateMaterialImages(companyId, imageIds);
         var changed = jdbc.update("""
-                update material_quotes set name = ?, specification = ?, unit = ?, price = ?, category = ?, region = ?,
-                    valid_until = ?, version = version + 1, updated_at = ?
+                update material_quotes set name = ?, specification = ?, unit = ?, price = ?, brand = ?, category = ?, region = ?,
+                    valid_until = ?, image_id = ?, version = version + 1, updated_at = ?
                 where company_id = ? and id = ? and version = ?
                 """, patch.name() == null ? current.name() : clean(patch.name()),
                 patch.spec() == null ? current.spec() : clean(patch.spec()), patch.unit() == null ? current.unit() : clean(patch.unit()),
-                patch.price() == null ? current.price() : patch.price(), patch.category() == null ? current.category() : clean(patch.category()),
+                patch.price() == null ? current.price() : patch.price(), patch.brand() == null ? current.brand() : clean(patch.brand()),
+                patch.category() == null ? current.category() : clean(patch.category()),
                 patch.region() == null ? current.region() : clean(patch.region()),
-                patch.validUntil() == null ? current.validUntil() : patch.validUntil(), Timestamp.from(Instant.now()), companyId, id, patch.version());
+                patch.validUntil() == null ? current.validUntil() : patch.validUntil(),
+                imageIds != null ? (imageIds.isEmpty() ? null : imageIds.getFirst())
+                        : patch.clearImage() ? null : patch.imageId() == null ? current.imageId() : patch.imageId(),
+                Timestamp.from(Instant.now()), companyId, id, patch.version());
         if (changed == 0) throw versionConflict();
+        if (imageIds != null) saveMaterialImages(companyId, id, imageIds);
         return getMaterialQuote(companyId, id);
     }
 
@@ -297,6 +362,33 @@ public class BusinessDataService {
             jdbc.update("insert into business_case_files(company_id, case_id, file_id, position) values (?, ?, ?, ?)",
                     companyId, caseId, fileIds.get(index), index);
         }
+    }
+
+    private void validateMaterialImage(UUID companyId, UUID imageId) {
+        if (imageId == null) return;
+        var ownedImages = jdbc.queryForObject("select count(*) from business_assets where company_id = ? and id = ? and media_type like 'image/%'",
+                Long.class, companyId, imageId);
+        if (ownedImages == null || ownedImages == 0) throw invalid("Material image must be an image uploaded by this company");
+    }
+
+    private void validateMaterialImages(UUID companyId, List<UUID> imageIds) {
+        if (imageIds == null) return;
+        if (imageIds.size() > 8 || imageIds.stream().distinct().count() != imageIds.size()) throw invalid("Material images must be unique and limited to 8");
+        for (var imageId : imageIds) validateMaterialImage(companyId, imageId);
+    }
+
+    private void saveMaterialImages(UUID companyId, UUID quoteId, List<UUID> imageIds) {
+        validateMaterialImages(companyId, imageIds);
+        jdbc.update("delete from material_quote_images where quote_id = ?", quoteId);
+        for (int position = 0; position < imageIds.size(); position++) {
+            jdbc.update("insert into material_quote_images(company_id, quote_id, image_id, position) values (?, ?, ?, ?)",
+                    companyId, quoteId, imageIds.get(position), position);
+        }
+    }
+
+    private static List<UUID> requestedImages(List<UUID> imageIds, UUID legacyImageId) {
+        if (imageIds != null) return imageIds;
+        return legacyImageId == null ? List.<UUID>of() : List.of(legacyImageId);
     }
 
     private UUID idempotentResource(UUID companyId, String key, String type, Object request, UUID proposedId) {

@@ -9,13 +9,18 @@ interface ApiCatalogMaterial {
   id: string;
   companyId: string;
   companyName: string | null;
+  companyContactName: string | null;
+  companyContactInfo: string | null;
   name: string;
   spec: string;
   unit: string;
   price: number;
+  brand: string | null;
   category: string;
   region: string;
   validUntil: string;
+  imageId: string | null;
+  imageIds: string[];
   updatedAt: string;
 }
 
@@ -52,5 +57,19 @@ export async function loadCatalogMaterials(): Promise<MaterialRecord[]> {
     updatedAt: item.updatedAt,
     companyId: item.companyId,
     companyName: item.companyName || undefined,
+    companyContactName: item.companyContactName || undefined,
+    companyContactInfo: item.companyContactInfo || undefined,
+    imageId: item.imageId || undefined,
+    imageIds: item.imageIds?.length ? item.imageIds : item.imageId ? [item.imageId] : [],
+    brand: item.brand || undefined,
   }));
+}
+
+export async function loadCatalogMaterialImage(quoteId: string, imageId: string): Promise<Blob> {
+  const base = businessApiConfig.baseUrl.replace(/\/$/, '');
+  const response = await fetch(`${base}/api/v1/business/assets/public/materials/${encodeURIComponent(quoteId)}/images/${encodeURIComponent(imageId)}`, {
+    headers: { Authorization: `Bearer ${currentAccessToken()}` },
+  });
+  if (!response.ok) throw new Error(`材料图片读取失败（${response.status}）`);
+  return response.blob();
 }

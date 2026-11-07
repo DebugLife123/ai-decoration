@@ -19,10 +19,12 @@ import static com.decoration.business.CertificationDtos.*;
 public class CertificationService {
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final AdminAuditLogService auditLogService;
 
-    public CertificationService(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+    public CertificationService(JdbcTemplate jdbc, ObjectMapper objectMapper, AdminAuditLogService auditLogService) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.auditLogService = auditLogService;
     }
 
     public Certification get(UUID companyId) {
@@ -34,26 +36,41 @@ public class CertificationService {
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
-    public List<AdminCertification> listForAdmin(CertificationStatus status) {
+    public List<AdminCertification> listForAdmin(CertificationStatus status, String query) {
+        return listForAdmin(status, query, "ALL");
+    }
+
+    public List<AdminCertification> listForAdmin(CertificationStatus status, String query, String kind) {
+        var hasStatus = status != null;
+        var hasQuery = query != null && !query.isBlank();
         var sql = """
-                select cc.company_id, ac.name as registered_company_name,
+                select cc.company_id, ac.name as registered_company_name, ac.is_demo,
                     (select u.email from auth_users u where u.company_id = cc.company_id order by u.created_at limit 1) as account_email,
                     cc.id, cc.company_name, cc.contact_name, cc.contact_info, cc.service_areas, cc.document_refs,
                     cc.status, cc.review_note, cc.reviewed_by, cc.reviewed_at, cc.version, cc.submitted_at, cc.updated_at
                 from company_certifications cc
                 join auth_companies ac on ac.id = cc.company_id
-                """ + (status == null ? "" : " where cc.status = ? ") + " order by cc.submitted_at asc, cc.company_id";
-        if (status == null) {
-            return jdbc.query(sql, (rs, row) -> new AdminCertification(rs.getObject("company_id", UUID.class),
-                    rs.getString("registered_company_name"), rs.getString("account_email"), map(rs)));
+                """;
+        var where = new java.util.ArrayList<String>();
+        var args = new java.util.ArrayList<Object>();
+        if (hasStatus) { where.add("cc.status = ?"); args.add(status.name()); }
+        if (hasQuery) {
+            where.add("(lower(coalesce(cc.company_name, ac.name, '')) like ? or lower(ac.name) like ? or lower(coalesce((select u.email from auth_users u where u.company_id = cc.company_id order by u.created_at limit 1), '')) like ?)");
+            var pattern = "%" + query.trim().toLowerCase() + "%";
+            args.add(pattern); args.add(pattern); args.add(pattern);
         }
+        if ("REAL".equals(kind)) where.add("ac.is_demo = false");
+        if ("DEMO".equals(kind)) where.add("ac.is_demo = true");
+        if (!where.isEmpty()) sql += " where " + String.join(" and ", where);
+        sql += " order by cc.submitted_at asc, cc.company_id";
         return jdbc.query(sql, (rs, row) -> new AdminCertification(rs.getObject("company_id", UUID.class),
-                rs.getString("registered_company_name"), rs.getString("account_email"), map(rs)), status.name());
+                rs.getString("registered_company_name"), rs.getString("account_email"), rs.getBoolean("is_demo"), map(rs)), args.toArray());
     }
 
     @Transactional
     public Certification submit(UUID companyId, CertificationRequest request) {
         requireCompany(companyId);
+        requireOwnedDocuments(companyId, request.documentRefs());
         var current = get(companyId);
         var now = Timestamp.from(Instant.now());
         var areas = json(request.serviceAreas());
@@ -75,6 +92,12 @@ public class CertificationService {
                     """, clean(request.companyName()), clean(request.contactName()), clean(request.contactInfo()),
                     areas, documents, now, now, companyId, request.version());
         }
+        for (var documentRef : request.documentRefs().stream().map(String::trim).filter(value -> !value.isBlank()).distinct().toList()) {
+            jdbc.update("""
+                    insert into company_certification_documents(company_id, asset_id, submitted_at)
+                    values (?, ?, ?) on conflict (company_id, asset_id) do nothing
+                    """, companyId, UUID.fromString(documentRef), now);
+        }
         return get(companyId);
     }
 
@@ -90,7 +113,10 @@ public class CertificationService {
                 """, request.status().name(), cleanNullable(request.reviewNote()), reviewerId,
                 Timestamp.from(Instant.now()), Timestamp.from(Instant.now()), companyId, request.version());
         if (changed == 0) throw versionConflict();
-        return get(companyId);
+        var reviewed = get(companyId);
+        auditLogService.record(reviewerId, "CERTIFICATION_REVIEW", "COMPANY", companyId,
+                (request.status() == CertificationStatus.APPROVED ? "通过" : "驳回") + "企业认证：" + current.companyName());
+        return reviewed;
     }
 
     private Certification map(java.sql.ResultSet rs) throws java.sql.SQLException {
@@ -113,7 +139,24 @@ public class CertificationService {
     }
 
     private void requireCompany(UUID companyId) {
-        if (!Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from auth_companies where id = ?)", Boolean.class, companyId))) throw notFound();
+        var rows = jdbc.query("select id from auth_companies where id = ? for update", (rs, row) -> rs.getObject(1, UUID.class), companyId);
+        if (rows.isEmpty()) throw notFound();
+    }
+
+    private void requireOwnedDocuments(UUID companyId, List<String> documentRefs) {
+        var ids = documentRefs.stream().map(String::trim).filter(value -> !value.isBlank()).distinct()
+                .map(value -> {
+                    try { return UUID.fromString(value); }
+                    catch (IllegalArgumentException exception) { throw invalid("认证材料必须是已上传文件"); }
+                }).toList();
+        if (ids.isEmpty()) return;
+        var placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+        var args = new java.util.ArrayList<Object>();
+        args.add(companyId);
+        args.addAll(ids);
+        var count = jdbc.queryForObject("select count(*) from business_assets where company_id = ? and id in (" + placeholders + ")",
+                Long.class, args.toArray());
+        if (count == null || count != ids.size()) throw invalid("认证材料必须是本企业已上传的文件");
     }
 
     private static Instant instant(Timestamp timestamp) { return timestamp == null ? null : timestamp.toInstant(); }

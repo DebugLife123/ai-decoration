@@ -89,6 +89,13 @@ public class BusinessDataController {
         return ApiResponse.success(service.patchCase(companyId(jwt), caseId, patch));
     }
 
+    @PostMapping("/cases/{caseId}/publish")
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR')")
+    public ApiResponse<BusinessCase> publishCase(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID caseId,
+            @Valid @RequestBody PublishCaseRequest request) {
+        return ApiResponse.success(service.publishCase(companyId(jwt), caseId, request.version()));
+    }
+
     @DeleteMapping("/cases/{caseId}")
     @PreAuthorize("hasRole('COMPANY_ADMIN')")
     public ResponseEntity<Void> deleteCase(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID caseId,
@@ -210,4 +217,6 @@ public class BusinessDataController {
     private static BusinessApiException forbidden() {
         return new BusinessApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Company identity or role is not permitted");
     }
+
+    public record PublishCaseRequest(@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.Min(0) Integer version) { }
 }

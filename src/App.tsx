@@ -6,13 +6,20 @@ import InspirationPage from './pages/InspirationPage';
 import WorkspacePage from './pages/WorkspacePage';
 import ProjectsPage from './pages/ProjectsPage';
 import MaterialsPage from './pages/MaterialsPage';
+import CaseCatalogPage from './pages/CaseCatalogPage';
 import BudgetPage from './pages/BudgetPage';
 import BusinessPage from './pages/BusinessPage';
 import LoginPage from './pages/LoginPage';
 import AdminLoginPage from './pages/AdminLoginPage';
 import AdminPage from './pages/AdminPage';
+import AdminAssetsPage from './pages/AdminAssetsPage';
+import AdminAuditPage from './pages/AdminAuditPage';
+import AdminMarketplacePage from './pages/AdminMarketplacePage';
+import AdminCompanyDetailPage from './pages/AdminCompanyDetailPage';
+import CompanyPage from './pages/CompanyPage';
 import BusinessStylesPage from './pages/BusinessStylesPage';
 import CadWorkflowPage from './pages/CadWorkflowPage';
+import NotificationsPage from './pages/NotificationsPage';
 import { useAppStore } from './stores/appStore';
 import './App.css';
 
@@ -59,10 +66,19 @@ function App() {
           <Route path="/cad-workflow" element={<RoleRoute role="consumer"><CadWorkflowPage /></RoleRoute>} />
           <Route path="/projects" element={<RoleRoute role="consumer"><ProjectsPage /></RoleRoute>} />
           <Route path="/materials" element={<RoleRoute role="consumer"><MaterialsPage /></RoleRoute>} />
+          <Route path="/cases" element={<RoleRoute role="consumer"><CaseCatalogPage /></RoleRoute>} />
+          <Route path="/companies/:companyId" element={<RoleRoute role="consumer"><CompanyPage /></RoleRoute>} />
+          <Route path="/notifications" element={<RoleRoute role="consumer"><NotificationsPage /></RoleRoute>} />
+          <Route path="/business/notifications" element={<RoleRoute role="business"><NotificationsPage /></RoleRoute>} />
           <Route path="/budget" element={<RoleRoute role="consumer"><BudgetPage /></RoleRoute>} />
           <Route path="/business" element={<RoleRoute role="business"><BusinessPage /></RoleRoute>} />
           <Route path="/business/styles" element={<RoleRoute role="business"><BusinessStylesPage /></RoleRoute>} />
           <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
+          <Route path="/admin/assets" element={<AdminRoute><AdminAssetsPage /></AdminRoute>} />
+          <Route path="/admin/marketplace" element={<AdminRoute><AdminMarketplacePage /></AdminRoute>} />
+          <Route path="/admin/marketplace/companies/:companyId" element={<AdminRoute><AdminCompanyDetailPage /></AdminRoute>} />
+          <Route path="/admin/audit" element={<AdminRoute><AdminAuditPage /></AdminRoute>} />
+          <Route path="/admin/notifications" element={<AdminRoute><NotificationsPage /></AdminRoute>} />
           <Route path="*" element={<Navigate to={role === 'business' ? '/business' : role === 'admin' ? '/admin' : '/'} replace />} />
         </Routes>
       </main>

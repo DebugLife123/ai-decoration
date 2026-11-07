@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { apiRequest } from '../services/authSession';
+import { Link, useNavigate } from 'react-router-dom';
+import { apiDownload, apiRequest } from '../services/authSession';
 import { useAppStore } from '../stores/appStore';
 import './AdminPage.css';
 
@@ -60,7 +60,13 @@ export default function AdminPage() {
   const [reviewDraft, setReviewDraft] = useState({ companyId: '', value: '' });
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState(false);
+  const [openingDocument, setOpeningDocument] = useState('');
+  const [documentPreview, setDocumentPreview] = useState<{ url: string; type: string; name: string } | null>(null);
   const [error, setError] = useState('');
+
+  useEffect(() => () => {
+    if (documentPreview) URL.revokeObjectURL(documentPreview.url);
+  }, [documentPreview]);
 
   const loadApplications = async () => {
     setLoading(true);
@@ -108,6 +114,20 @@ export default function AdminPage() {
     }
   }
 
+  async function previewDocument(companyId: string, documentId: string, index: number) {
+    setOpeningDocument(documentId);
+    setError('');
+    try {
+      const blob = await apiDownload(`/api/v1/admin/certifications/${companyId}/documents/${documentId}`);
+      const extension = blob.type === 'application/pdf' ? 'pdf' : blob.type === 'image/jpeg' ? 'jpg' : blob.type.startsWith('image/') ? blob.type.slice('image/'.length) : 'bin';
+      setDocumentPreview({ url: URL.createObjectURL(blob), type: blob.type, name: `认证材料-${index + 1}.${extension}` });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : '认证材料读取失败。');
+    } finally {
+      setOpeningDocument('');
+    }
+  }
+
   function logout() {
     signOut();
     navigate('/login', { replace: true });
@@ -118,7 +138,11 @@ export default function AdminPage() {
       <aside className="admin-rail">
         <div className="admin-brand"><span className="admin-brand-mark"><Icon name="shield" /></span><span><strong>简艺装</strong><small>CONTROL ROOM</small></span></div>
         <div className="admin-rail-label">平台治理</div>
-        <div className="admin-rail-current" aria-current="page"><span className="admin-rail-icon"><Icon name="building" /></span><span><strong>企业认证</strong><small>准入审核队列</small></span></div>
+        <Link className="admin-rail-current" aria-current="page" to="/admin"><span className="admin-rail-icon"><Icon name="building" /></span><span><strong>企业认证</strong><small>准入审核队列</small></span></Link>
+        <Link className="admin-rail-link" to="/admin/marketplace"><span className="admin-rail-icon"><Icon name="building" /></span><span><strong>企业与材料</strong><small>企业状态与公开报价</small></span></Link>
+        <Link className="admin-rail-link" to="/admin/assets"><span className="admin-rail-icon"><Icon name="file" /></span><span><strong>图片清理</strong><small>未关联图片管理</small></span></Link>
+        <Link className="admin-rail-link" to="/admin/audit"><span className="admin-rail-icon"><Icon name="shield" /></span><span><strong>操作日志</strong><small>管理员操作记录</small></span></Link>
+        <Link className="admin-rail-link" to="/admin/notifications"><span className="admin-rail-icon"><Icon name="shield" /></span><span><strong>审核通知</strong><small>新的认证待办</small></span></Link>
         <div className="admin-rail-footer"><i />运行正常<span>INTERNAL CONSOLE</span></div>
       </aside>
 
@@ -154,13 +178,14 @@ export default function AdminPage() {
               <div className="admin-detail-heading"><div><span className="admin-kicker">APPLICATION DETAIL</span><h2>{selected.certification.companyName}</h2><p>{selected.registeredCompanyName} · {selected.accountEmail || '未提供账号邮箱'}</p></div><span className={`admin-status ${selected.certification.status.toLowerCase()}`}>{statusLabels[selected.certification.status]}</span></div>
               <div className="admin-detail-grid"><div><small>联系人</small><strong>{selected.certification.contactName}</strong></div><div><small>联系方式</small><strong>{selected.certification.contactInfo}</strong></div><div><small>提交时间</small><strong>{dateLabel(selected.certification.submittedAt)}</strong></div><div><small>资料版本</small><strong>v{selected.certification.version}</strong></div></div>
               <div className="admin-detail-section"><small>服务范围</small><div className="admin-tags">{selected.certification.serviceAreas.length ? selected.certification.serviceAreas.map((area) => <span key={area}>{area}</span>) : <em>未填写</em>}</div></div>
-              <div className="admin-detail-section"><small>材料引用</small><div className="admin-documents">{selected.certification.documentRefs.length ? selected.certification.documentRefs.map((document) => <span key={document}><Icon name="file" />{document}</span>) : <em>未上传材料引用</em>}</div></div>
+              <div className="admin-detail-section"><small>认证材料</small><div className="admin-documents">{selected.certification.documentRefs.length ? selected.certification.documentRefs.map((document, index) => <div className="admin-document-row" key={document}><span><Icon name="file" />材料 {index + 1}</span><button type="button" onClick={() => void previewDocument(selected.companyId, document, index)} disabled={Boolean(openingDocument)}>{openingDocument === document ? '读取中…' : '查看材料'}</button></div>) : <em>企业尚未上传认证材料</em>}</div></div>
               {selected.certification.status === 'PENDING' ? <div className="admin-review"><label htmlFor="review-note">审核备注 <span>可选</span></label><textarea id="review-note" value={reviewNote} onChange={(event) => setReviewDraft({ companyId: selected.companyId, value: event.target.value })} maxLength={1000} placeholder="填写给企业的补充说明或通过备注" /><div className="admin-review-actions"><button type="button" className="admin-reject" disabled={reviewing} onClick={() => void decide('REJECTED')}>驳回申请</button><button type="button" className="admin-approve" disabled={reviewing} onClick={() => void decide('APPROVED')}>{reviewing ? '提交中…' : '通过认证'}</button></div></div> : <div className="admin-reviewed-note"><small>审核备注</small><p>{selected.certification.reviewNote || '本次审核未填写备注。'}</p></div>}
             </> : <div className="admin-empty admin-empty-detail"><Icon name="file" /><strong>选择一条申请</strong><span>从左侧队列打开企业认证资料。</span></div>}
           </aside>
         </section>
         </main>
       </div>
+      {documentPreview && <div className="admin-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDocumentPreview(null); }}><section className="admin-preview-dialog" role="dialog" aria-modal="true" aria-label={documentPreview.name}><header><strong>{documentPreview.name}</strong><div><a href={documentPreview.url} download={documentPreview.name}>下载</a><button type="button" onClick={() => setDocumentPreview(null)}>关闭</button></div></header><div className="admin-preview-content">{documentPreview.type.startsWith('image/') ? <img src={documentPreview.url} alt={documentPreview.name} /> : documentPreview.type === 'application/pdf' ? <iframe src={documentPreview.url} title={documentPreview.name} /> : <p>该文件格式无法预览，请下载查看。</p>}</div></section></div>}
     </div>
   );
 }

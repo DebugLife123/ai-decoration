@@ -30,7 +30,7 @@ public class StyleProfileService {
             join company_certifications cert
               on cert.company_id = sp.company_id and cert.status = 'APPROVED'
             left join company_profiles p on p.company_id = sp.company_id
-            left join auth_companies c on c.id = sp.company_id
+            left join auth_companies c on c.id = sp.company_id and c.is_demo = false
             """;
 
     private final JdbcTemplate jdbc;
@@ -81,7 +81,7 @@ public class StyleProfileService {
 
     /** C 端推荐候选集合：只取已认证企业的资料。 */
     public List<RecommendationProfile> publishedProfiles() {
-        return jdbc.query("select sp.profiles, sp.company_id, coalesce(p.name, c.name) as company_name " + BASE_FROM,
+        return jdbc.query("select sp.profiles, sp.company_id, coalesce(p.name, c.name) as company_name " + BASE_FROM + " where c.is_demo = false",
                 (rs, row) -> {
                     var companyId = rs.getObject("company_id", UUID.class);
                     var companyName = rs.getString("company_name");

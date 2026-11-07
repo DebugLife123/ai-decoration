@@ -76,6 +76,22 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   return payload.data;
 }
 
+export async function apiDownload(path: string): Promise<Blob> {
+  let response: Response;
+  try {
+    response = await fetch(`${authApiBaseUrl}${path}`, {
+      headers: { Authorization: `Bearer ${currentAccessToken()}` },
+    });
+  } catch {
+    throw new Error('无法连接服务，请确认后端已启动。');
+  }
+  if (!response.ok) {
+    const payload = await response.json() as ApiEnvelope<unknown>;
+    throw new Error(payload.message || `文件读取失败（${response.status}）`);
+  }
+  return response.blob();
+}
+
 export async function authRequest<T>(path: string, body?: unknown): Promise<T> {
   let response: Response;
   try {

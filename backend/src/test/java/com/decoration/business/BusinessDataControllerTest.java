@@ -78,6 +78,22 @@ class BusinessDataControllerTest {
     }
 
     @Test
+    void allowsCompanyAdminToPublishOwnCase() throws Exception {
+        var caseId = UUID.fromString("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+        var published = new BusinessDtos.BusinessCase(caseId, "Living Room", null, null, null,
+                BusinessDtos.CaseStatus.published, List.of(), 2, null, null);
+        given(service.publishCase(COMPANY_A, caseId, 1)).willReturn(published);
+
+        mockMvc.perform(post("/api/v1/business/cases/{caseId}/publish", caseId)
+                        .with(jwt().jwt(token -> token.claim("companyId", COMPANY_A.toString()).claim("roles", List.of("COMPANY_ADMIN")))
+                                .authorities(new SimpleGrantedAuthority("ROLE_COMPANY_ADMIN")))
+                        .contentType("application/json").content("{\"version\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("published"));
+        verify(service).publishCase(COMPANY_A, caseId, 1);
+    }
+
+    @Test
     void rejectsUnknownFieldsAndInvalidAmounts() throws Exception {
         mockMvc.perform(post("/api/v1/business/material-quotes")
                         .with(jwt().jwt(token -> token.claim("companyId", COMPANY_A.toString()).claim("roles", List.of("COMPANY_ADMIN")))

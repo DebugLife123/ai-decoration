@@ -68,6 +68,11 @@ export interface MaterialRecord {
   /** 报价来源企业；来自平台材料目录时由后端补全。 */
   companyId?: string;
   companyName?: string;
+  companyContactName?: string;
+  companyContactInfo?: string;
+  imageId?: string | null;
+  imageIds?: string[];
+  brand?: string;
 }
 
 export interface WorkspaceDataAdapter {

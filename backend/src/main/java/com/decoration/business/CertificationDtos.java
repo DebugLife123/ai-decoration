@@ -32,5 +32,5 @@ public final class CertificationDtos {
                                 Instant submittedAt, Instant updatedAt) { }
 
     public record AdminCertification(UUID companyId, String registeredCompanyName, String accountEmail,
-                                     Certification certification) { }
+                                     boolean demo, Certification certification) { }
 }

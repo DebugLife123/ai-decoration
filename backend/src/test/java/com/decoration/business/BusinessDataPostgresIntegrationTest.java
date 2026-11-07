@@ -14,10 +14,15 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 
 import java.sql.DriverManager;
+import java.sql.Timestamp;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -29,6 +34,7 @@ class BusinessDataPostgresIntegrationTest {
     private static final UUID COMPANY_A = UUID.fromString("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     private static final UUID COMPANY_B = UUID.fromString("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
     private static final String TEST_SCHEMA = "decoration_test_" + UUID.randomUUID().toString().replace("-", "");
+    private static final Path CLEANUP_STORAGE_ROOT = Path.of(System.getProperty("java.io.tmpdir"), TEST_SCHEMA + "-uploads");
     private static final String DATABASE_URL = env("DATABASE_TEST_URL", "jdbc:postgresql://localhost:5432/decoration");
     private static final String DATABASE_USERNAME = env("DATABASE_TEST_USERNAME", env("DATABASE_USERNAME", "decoration"));
     private static final String DATABASE_PASSWORD = env("DATABASE_TEST_PASSWORD", env("DATABASE_PASSWORD", "decoration"));
@@ -41,6 +47,7 @@ class BusinessDataPostgresIntegrationTest {
         registry.add("spring.datasource.password", () -> DATABASE_PASSWORD);
         registry.add("spring.flyway.schemas", () -> TEST_SCHEMA);
         registry.add("spring.flyway.default-schema", () -> TEST_SCHEMA);
+        registry.add("app.storage.local-dir", () -> CLEANUP_STORAGE_ROOT.toString());
     }
 
     @AfterAll
@@ -54,10 +61,14 @@ class BusinessDataPostgresIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private JwtDecoder jwtDecoder;
+    @Autowired private BusinessAssetCleanupService assetCleanup;
+    @Autowired private AdminAuditLogService auditLogService;
 
     @BeforeEach
     void clearRows() {
+        jdbc.update("delete from admin_audit_logs");
         jdbc.update("delete from business_idempotency_keys");
+        jdbc.update("delete from company_inquiries");
         jdbc.update("delete from business_case_files");
         jdbc.update("delete from business_cases");
         jdbc.update("delete from material_quotes");
@@ -73,10 +84,12 @@ class BusinessDataPostgresIntegrationTest {
                         .with(token(COMPANY_A, "COMPANY_ADMIN"))
                         .contentType("application/json")
                         .content("""
-                                {"name":"Company A","city":"Shanghai","services":"design","intro":"A"}
+                                {"name":"Company A","city":"Shanghai","services":"design","intro":"A","publicContactName":"Sales","publicContactInfo":"sales@example.test"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.name").value("Company A"))
+                .andExpect(jsonPath("$.data.publicContactName").value("Sales"))
+                .andExpect(jsonPath("$.data.publicContactInfo").value("sales@example.test"))
                 .andExpect(jsonPath("$.data.version").value(0));
 
         mockMvc.perform(get("/api/v1/business/profile").with(token(COMPANY_B, "COMPANY_VIEWER")))
@@ -131,13 +144,14 @@ class BusinessDataPostgresIntegrationTest {
     @Test
     void scopesQuotesAndReplaysIdempotentCreate() throws Exception {
         var body = """
-                {"name":"oak","spec":"solid","unit":"sqm","price":12.50,"category":"floor","region":"Shanghai","validUntil":"%s"}
+                {"name":"oak","brand":"Oak & Co","spec":"solid","unit":"sqm","price":12.50,"category":"floor","region":"Shanghai","validUntil":"%s"}
                 """.formatted(futureDate());
         var first = mockMvc.perform(post("/api/v1/business/material-quotes")
                         .with(token(COMPANY_A, "COMPANY_EDITOR"))
                         .header("Idempotency-Key", "material-key-0001")
                         .contentType("application/json").content(body))
                 .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.brand").value("Oak & Co"))
                 .andReturn().getResponse().getContentAsString();
         var id = com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
                 .readTree(first).path("data").path("id").asText();
@@ -165,6 +179,207 @@ class BusinessDataPostgresIntegrationTest {
         mockMvc.perform(get("/api/v1/business/material-quotes/{id}", id).with(token(COMPANY_B, "COMPANY_ADMIN")))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
+    void materialQuotesCanReferenceAndRemoveCompanyImages() throws Exception {
+        var imageId = UUID.randomUUID();
+        var secondImageId = UUID.randomUUID();
+        jdbc.update("""
+                insert into business_assets(company_id, id, file_name, object_key, media_type, created_at)
+                values (?, ?, ?, ?, ?, now()), (?, ?, ?, ?, ?, now())
+                """, COMPANY_A, imageId, "oak-floor.png", COMPANY_A + "/" + imageId, "image/png",
+                COMPANY_A, secondImageId, "oak-floor-detail.png", COMPANY_A + "/" + secondImageId, "image/png");
+        var body = """
+                {"name":"Oak floor","spec":"solid","unit":"sqm","price":12.50,"category":"floor","region":"Shanghai","validUntil":"%s","imageIds":["%s","%s"]}
+                """.formatted(futureDate(), imageId, secondImageId);
+
+        var response = mockMvc.perform(post("/api/v1/business/material-quotes")
+                        .with(token(COMPANY_A, "COMPANY_EDITOR"))
+                        .header("Idempotency-Key", "material-image-0001")
+                        .contentType("application/json").content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.imageId").value(imageId.toString()))
+                .andExpect(jsonPath("$.data.imageIds[0]").value(imageId.toString()))
+                .andExpect(jsonPath("$.data.imageIds[1]").value(secondImageId.toString()))
+                .andReturn().getResponse().getContentAsString();
+        var quoteId = com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(response).path("data").path("id").asText();
+
+        mockMvc.perform(patch("/api/v1/business/material-quotes/{id}", quoteId)
+                        .with(token(COMPANY_A, "COMPANY_EDITOR"))
+                        .contentType("application/json")
+                        .content("""
+                                {"imageIds":["%s","%s"],"version":0}
+                                """.formatted(secondImageId, imageId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.imageId").value(secondImageId.toString()))
+                .andExpect(jsonPath("$.data.imageIds[0]").value(secondImageId.toString()))
+                .andExpect(jsonPath("$.data.imageIds[1]").value(imageId.toString()));
+
+        mockMvc.perform(patch("/api/v1/business/material-quotes/{id}", quoteId)
+                        .with(token(COMPANY_A, "COMPANY_EDITOR"))
+                        .contentType("application/json")
+                        .content("""
+                                {"imageIds":["%s"],"version":1}
+                                """.formatted(imageId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.imageId").value(imageId.toString()))
+                .andExpect(jsonPath("$.data.imageIds.length()").value(1));
+
+        var foreignImage = UUID.randomUUID();
+        mockMvc.perform(post("/api/v1/business/material-quotes")
+                        .with(token(COMPANY_B, "COMPANY_EDITOR"))
+                        .header("Idempotency-Key", "foreign-image-0001")
+                        .contentType("application/json")
+                        .content(body.replace(imageId.toString(), foreignImage.toString()).replace("Oak floor", "Pine floor")))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void cleanupRemovesOnlyOldUnreferencedImages() throws Exception {
+        var companyId = UUID.randomUUID();
+        var now = Instant.now();
+        var old = now.minusSeconds(10L * 24 * 60 * 60);
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, ?, ?)", companyId, "Cleanup Studio", Timestamp.from(now));
+
+        var orphanId = UUID.randomUUID();
+        var recentId = UUID.randomUUID();
+        var caseImageId = UUID.randomUUID();
+        var materialImageId = UUID.randomUUID();
+        var certificationId = UUID.randomUUID();
+        var previouslySubmittedCertificationId = UUID.randomUUID();
+        var pdfId = UUID.randomUUID();
+        insertCleanupAsset(companyId, orphanId, "orphan.png", "image/png", old);
+        insertCleanupAsset(companyId, recentId, "recent.png", "image/png", now);
+        insertCleanupAsset(companyId, caseImageId, "case.png", "image/png", old);
+        insertCleanupAsset(companyId, materialImageId, "material.png", "image/png", old);
+        insertCleanupAsset(companyId, certificationId, "certificate.png", "image/png", old);
+        insertCleanupAsset(companyId, previouslySubmittedCertificationId, "previous-certificate.png", "image/png", old);
+        insertCleanupAsset(companyId, pdfId, "certificate.pdf", "application/pdf", old);
+
+        var caseId = UUID.randomUUID();
+        jdbc.update("""
+                insert into business_cases(id, company_id, title, status, version, created_at, updated_at)
+                values (?, ?, 'Case', 'draft', 0, ?, ?)
+                """, caseId, companyId, Timestamp.from(now), Timestamp.from(now));
+        jdbc.update("insert into business_case_files(company_id, case_id, file_id, position) values (?, ?, ?, 0)",
+                companyId, caseId, caseImageId);
+
+        var quoteId = UUID.randomUUID();
+        jdbc.update("""
+                insert into material_quotes(id, company_id, name, specification, unit, price, category, region,
+                    valid_until, version, created_at, updated_at)
+                values (?, ?, 'Oak', 'Solid', 'sqm', 100, 'floor', 'Shanghai', current_date + 30, 0, ?, ?)
+                """, quoteId, companyId, Timestamp.from(now), Timestamp.from(now));
+        jdbc.update("insert into material_quote_images(company_id, quote_id, image_id, position) values (?, ?, ?, 0)",
+                companyId, quoteId, materialImageId);
+        jdbc.update("""
+                insert into company_certifications(company_id, id, company_name, contact_name, contact_info,
+                    service_areas, document_refs, status, version, submitted_at, updated_at)
+                values (?, ?, 'Cleanup Studio', 'Contact', 'contact@example.test', '[]'::jsonb, ?::jsonb, 'PENDING', 0, ?, ?)
+                """, companyId, UUID.randomUUID(), "[\"" + certificationId + "\"]", Timestamp.from(now), Timestamp.from(now));
+        jdbc.update("""
+                insert into company_certification_documents(company_id, asset_id, submitted_at)
+                values (?, ?, ?)
+                """, companyId, previouslySubmittedCertificationId, Timestamp.from(old));
+
+        for (var id : java.util.List.of(orphanId, recentId, caseImageId, materialImageId, certificationId,
+                previouslySubmittedCertificationId, pdfId)) {
+            var file = CLEANUP_STORAGE_ROOT.resolve(companyId.toString()).resolve(id.toString());
+            Files.createDirectories(file.getParent());
+            Files.write(file, new byte[]{1, 2, 3});
+        }
+
+        var preview = assetCleanup.preview();
+        org.assertj.core.api.Assertions.assertThat(preview.eligibleImageCount()).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(preview.estimatedBytes()).isEqualTo(3);
+        org.assertj.core.api.Assertions.assertThat(preview.candidates()).singleElement()
+                .satisfies(candidate -> {
+                    org.assertj.core.api.Assertions.assertThat(candidate.assetId()).isEqualTo(orphanId);
+                    org.assertj.core.api.Assertions.assertThat(candidate.companyName()).isEqualTo("Cleanup Studio");
+                    org.assertj.core.api.Assertions.assertThat(candidate.fileName()).isEqualTo("orphan.png");
+                    org.assertj.core.api.Assertions.assertThat(candidate.byteSize()).isEqualTo(3);
+                });
+        var previewImage = assetCleanup.getPreviewImage(orphanId);
+        org.assertj.core.api.Assertions.assertThat(previewImage.fileName()).isEqualTo("orphan.png");
+        org.assertj.core.api.Assertions.assertThat(previewImage.resource().getInputStream().readAllBytes()).containsExactly(1, 2, 3);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> assetCleanup.getPreviewImage(caseImageId))
+                .isInstanceOf(com.decoration.shared.api.BusinessApiException.class);
+
+        // This attachment was submitted previously and then replaced in the current certification request.
+        org.assertj.core.api.Assertions.assertThat(assetCleanup.cleanSelected(java.util.List.of(previouslySubmittedCertificationId)))
+                .isZero();
+        org.assertj.core.api.Assertions.assertThat(Files.exists(CLEANUP_STORAGE_ROOT.resolve(companyId.toString())
+                .resolve(previouslySubmittedCertificationId.toString()))).isTrue();
+
+        var removed = assetCleanup.cleanSelected(java.util.List.of(orphanId));
+
+        org.assertj.core.api.Assertions.assertThat(removed).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(Files.exists(CLEANUP_STORAGE_ROOT.resolve(companyId.toString()).resolve(orphanId.toString()))).isFalse();
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("select count(*) from business_assets where company_id = ?", Integer.class, companyId)).isEqualTo(6);
+        for (var retained : java.util.List.of(recentId, caseImageId, materialImageId, certificationId,
+                previouslySubmittedCertificationId, pdfId)) {
+            org.assertj.core.api.Assertions.assertThat(Files.exists(CLEANUP_STORAGE_ROOT.resolve(companyId.toString()).resolve(retained.toString()))).isTrue();
+        }
+    }
+
+    @Test
+    void companyCanRemoveMistakenUnsubmittedCertificationFilesButNotSubmittedFiles() throws Exception {
+        var companyId = UUID.randomUUID();
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, ?, now())", companyId, "Certification Studio");
+        var uploaded = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .multipart("/api/v1/business/assets")
+                        .file(new org.springframework.mock.web.MockMultipartFile("file", "wrong-license.png", "image/png", new byte[]{1, 2, 3}))
+                        .with(token(companyId, "COMPANY_ADMIN")))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        var mapper = com.fasterxml.jackson.databind.json.JsonMapper.builder().build();
+        var assetId = UUID.fromString(mapper.readTree(uploaded).path("data").path("id").asText());
+        var filePath = CLEANUP_STORAGE_ROOT.resolve(companyId.toString()).resolve(assetId.toString());
+        org.assertj.core.api.Assertions.assertThat(Files.exists(filePath)).isTrue();
+
+        mockMvc.perform(delete("/api/v1/business/assets/{assetId}", assetId)
+                        .with(token(companyId, "COMPANY_ADMIN")))
+                .andExpect(status().isNoContent());
+        org.assertj.core.api.Assertions.assertThat(Files.exists(filePath)).isFalse();
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "select count(*) from business_assets where company_id = ? and id = ?", Integer.class, companyId, assetId)).isZero();
+
+        var submitted = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .multipart("/api/v1/business/assets")
+                        .file(new org.springframework.mock.web.MockMultipartFile("file", "license.png", "image/png", new byte[]{4, 5, 6}))
+                        .with(token(companyId, "COMPANY_ADMIN")))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        var submittedAssetId = UUID.fromString(mapper.readTree(submitted).path("data").path("id").asText());
+        var submittedPath = CLEANUP_STORAGE_ROOT.resolve(companyId.toString()).resolve(submittedAssetId.toString());
+        mockMvc.perform(get("/api/v1/business/assets/{assetId}", submittedAssetId)
+                        .with(token(companyId, "COMPANY_ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentType("image/png"));
+        mockMvc.perform(pu("/api/v1/business/certification")
+                        .with(token(companyId, "COMPANY_ADMIN"))
+                        .contentType("application/json")
+                        .content("""
+                                {"companyName":"Certification Studio","contactName":"Contact","contactInfo":"contact@example.test","serviceAreas":[],"documentRefs":["%s"]}
+                                """.formatted(submittedAssetId)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/api/v1/business/assets/{assetId}", submittedAssetId)
+                        .with(token(companyId, "COMPANY_ADMIN")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ASSET_ALREADY_IN_USE"));
+        org.assertj.core.api.Assertions.assertThat(Files.exists(submittedPath)).isTrue();
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "select count(*) from business_assets where company_id = ? and id = ?", Integer.class, companyId, submittedAssetId)).isEqualTo(1);
+    }
+
+    private void insertCleanupAsset(UUID companyId, UUID assetId, String name, String mediaType, Instant createdAt) {
+        jdbc.update("""
+                insert into business_assets(company_id, id, file_name, object_key, media_type, created_at)
+                values (?, ?, ?, ?, ?, ?)
+                """, companyId, assetId, name, companyId + "/" + assetId, mediaType, Timestamp.from(createdAt));
     }
 
     @Test
@@ -272,6 +487,196 @@ class BusinessDataPostgresIntegrationTest {
     }
 
     @Test
+    void personalUserCanSubmitInquiryAndOnlyOwningCompanyCanFollowItUp() throws Exception {
+        var mapper = com.fasterxml.jackson.databind.json.JsonMapper.builder().build();
+        var consumerEmail = "inquiry-user-" + UUID.randomUUID() + "@example.test";
+        var consumerRegistration = mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType("application/json")
+                        .content("""
+                                {"email":"%s","password":"password-123","displayName":"Inquiry User","accountType":"PERSONAL"}
+                                """.formatted(consumerEmail)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        var consumerToken = mapper.readTree(consumerRegistration).path("data").path("accessToken").asText();
+
+        var ownerRegistration = mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType("application/json")
+                        .content("""
+                                {"email":"owner-%s@example.test","password":"password-123","displayName":"Owner","accountType":"BUSINESS","companyName":"Inquiry Studio"}
+                                """.formatted(UUID.randomUUID())))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        var ownerData = mapper.readTree(ownerRegistration).path("data");
+        var ownerId = UUID.fromString(ownerData.path("user").path("companyId").asText());
+        var ownerToken = ownerData.path("accessToken").asText();
+
+        var otherRegistration = mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType("application/json")
+                        .content("""
+                                {"email":"other-%s@example.test","password":"password-123","displayName":"Other","accountType":"BUSINESS","companyName":"Other Studio"}
+                                """.formatted(UUID.randomUUID())))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        var otherToken = mapper.readTree(otherRegistration).path("data").path("accessToken").asText();
+
+        var now = Timestamp.from(Instant.now());
+        var materialId = UUID.randomUUID();
+        jdbc.update("""
+                insert into material_quotes(id, company_id, name, specification, unit, price, category, region,
+                    valid_until, version, created_at, updated_at)
+                values (?, ?, 'Oak Flooring', 'Solid oak', 'sqm', 100, 'floor', 'Shanghai', current_date + 30, 0, ?, ?)
+                """, materialId, ownerId, now, now);
+        jdbc.update("""
+                insert into company_certifications(company_id, id, company_name, contact_name, contact_info,
+                    service_areas, document_refs, status, reviewed_by, reviewed_at, version, submitted_at, updated_at)
+                values (?, ?, 'Inquiry Studio', 'Owner', 'owner@example.test', '[]'::jsonb, '[]'::jsonb,
+                    'APPROVED', ?, ?, 1, ?, ?)
+                """, ownerId, UUID.randomUUID(), UUID.randomUUID(), now, now, now);
+
+        var response = mockMvc.perform(post("/api/v1/inquiries")
+                        .header("Authorization", "Bearer " + consumerToken)
+                        .contentType("application/json")
+                        .content("""
+                                {"materialId":"%s","contactName":"Lin","contactInfo":"13800000000","message":"Please send a quote."}
+                                """.formatted(materialId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.materialName").value("Oak Flooring"))
+                .andExpect(jsonPath("$.data.status").value("NEW"))
+                .andReturn().getResponse().getContentAsString();
+        var inquiryId = mapper.readTree(response).path("data").path("id").asText();
+
+        mockMvc.perform(get("/api/v1/business/inquiries").header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].contactInfo").value("13800000000"));
+        mockMvc.perform(get("/api/v1/business/inquiries").header("Authorization", "Bearer " + otherToken))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data").isEmpty());
+        mockMvc.perform(patch("/api/v1/business/inquiries/{id}/status", inquiryId)
+                        .header("Authorization", "Bearer " + ownerToken).contentType("application/json")
+                        .content("{\"status\":\"CONTACTED\",\"version\":0}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("CONTACTED"))
+                .andExpect(jsonPath("$.data.version").value(1));
+        mockMvc.perform(patch("/api/v1/business/inquiries/{id}/status", inquiryId)
+                        .header("Authorization", "Bearer " + otherToken).contentType("application/json")
+                        .content("{\"status\":\"CLOSED\",\"version\":1}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void reportsCertificationContactAndActualCaseImageCompleteness() throws Exception {
+        var companyId = UUID.randomUUID();
+        var now = Timestamp.from(Instant.now());
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, 'Completeness Studio', ?)", companyId, now);
+        jdbc.update("""
+                insert into company_profiles(company_id, id, name, city, services, intro, version, created_at, updated_at)
+                values (?, ?, 'Completeness Studio', '', '', '', 0, ?, ?)
+                """, companyId, UUID.randomUUID(), now, now);
+        var certificateId = UUID.randomUUID();
+        jdbc.update("insert into business_assets(company_id, id, file_name, object_key, media_type, created_at) values (?, ?, 'license.pdf', ?, 'application/pdf', ?)",
+                companyId, certificateId, companyId + "/" + certificateId, now);
+        var pdfId = UUID.randomUUID();
+        jdbc.update("insert into business_assets(company_id, id, file_name, object_key, media_type, created_at) values (?, ?, 'plans.pdf', ?, 'application/pdf', ?)",
+                companyId, pdfId, companyId + "/" + pdfId, now);
+        var imageId = UUID.randomUUID();
+        jdbc.update("insert into business_assets(company_id, id, file_name, object_key, media_type, created_at) values (?, ?, 'project.jpg', ?, 'image/jpeg', ?)",
+                companyId, imageId, companyId + "/" + imageId, now);
+        jdbc.update("""
+                insert into company_certifications(company_id, id, company_name, contact_name, contact_info,
+                    service_areas, document_refs, status, version, submitted_at, updated_at)
+                values (?, ?, 'Completeness Studio', 'Owner', 'owner@example.test', '[]'::jsonb, ?::jsonb,
+                    'PENDING', 0, ?, ?)
+                """, companyId, UUID.randomUUID(), "[\"" + certificateId + "\"]", now, now);
+        var caseId = UUID.randomUUID();
+        jdbc.update("""
+                insert into business_cases(id, company_id, title, status, version, created_at, updated_at)
+                values (?, ?, 'Living Room', 'draft', 0, ?, ?)
+                """, caseId, companyId, now, now);
+        jdbc.update("insert into business_case_files(company_id, case_id, file_id, position) values (?, ?, ?, 0)", companyId, caseId, pdfId);
+
+        mockMvc.perform(get("/api/v1/business/completeness").with(token(companyId, "COMPANY_ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.certificationMaterialCount").value(1))
+                .andExpect(jsonPath("$.data.caseCount").value(1))
+                .andExpect(jsonPath("$.data.casesWithImages").value(0))
+                .andExpect(jsonPath("$.data.hasPublicContact").value(false));
+
+        jdbc.update("insert into business_case_files(company_id, case_id, file_id, position) values (?, ?, ?, 1)", companyId, caseId, imageId);
+        jdbc.update("update company_profiles set public_contact_name = 'Sales', public_contact_info = '13800000000' where company_id = ?", companyId);
+        mockMvc.perform(get("/api/v1/business/completeness").with(token(companyId, "COMPANY_ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.casesWithImages").value(1))
+                .andExpect(jsonPath("$.data.hasPublicContact").value(true));
+    }
+
+    @Test
+    void listsOnlyPublishedCasesFromApprovedCompaniesForPersonalUsers() throws Exception {
+        var approvedCompany = UUID.randomUUID();
+        var pendingCompany = UUID.randomUUID();
+        var now = Timestamp.from(Instant.now());
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, 'Approved Studio', ?)", approvedCompany, now);
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, 'Pending Studio', ?)", pendingCompany, now);
+        jdbc.update("""
+                insert into company_certifications(company_id, id, company_name, contact_name, contact_info,
+                    service_areas, document_refs, status, reviewed_by, reviewed_at, version, submitted_at, updated_at)
+                values (?, ?, 'Approved Studio', 'Owner', 'owner@approved.test', '[]'::jsonb, '[]'::jsonb,
+                    'APPROVED', ?, ?, 0, ?, ?)
+                """, approvedCompany, UUID.randomUUID(), UUID.randomUUID(), now, now, now);
+        jdbc.update("""
+                insert into company_certifications(company_id, id, company_name, contact_name, contact_info,
+                    service_areas, document_refs, status, version, submitted_at, updated_at)
+                values (?, ?, 'Pending Studio', 'Owner', 'owner@pending.test', '[]'::jsonb, '[]'::jsonb,
+                    'PENDING', 0, ?, ?)
+                """, pendingCompany, UUID.randomUUID(), now, now);
+        jdbc.update("""
+                insert into business_cases(id, company_id, title, style, status, version, created_at, updated_at)
+                values (?, ?, 'Approved Living Room', '现代', 'published', 0, ?, ?)
+                """, UUID.randomUUID(), approvedCompany, now, now);
+        jdbc.update("""
+                insert into business_cases(id, company_id, title, style, status, version, created_at, updated_at)
+                values (?, ?, 'Pending Living Room', '现代', 'published', 0, ?, ?)
+                """, UUID.randomUUID(), pendingCompany, now, now);
+        jdbc.update("""
+                insert into business_cases(id, company_id, title, style, status, version, created_at, updated_at)
+                values (?, ?, 'Draft Living Room', '现代', 'draft', 0, ?, ?)
+                """, UUID.randomUUID(), approvedCompany, now, now);
+
+        mockMvc.perform(get("/api/v1/cases").with(token(UUID.randomUUID(), "PERSONAL_USER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].title").value("Approved Living Room"));
+        mockMvc.perform(get("/api/v1/cases").with(token(approvedCompany, "COMPANY_ADMIN")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/cases"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void companyAdminCanPublishOwnCaseAfterCertificationApproval() throws Exception {
+        var companyId = UUID.randomUUID();
+        var now = Timestamp.from(Instant.now());
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, 'Publish Studio', ?)", companyId, now);
+        jdbc.update("""
+                insert into company_certifications(company_id, id, company_name, contact_name, contact_info,
+                    service_areas, document_refs, status, reviewed_by, reviewed_at, version, submitted_at, updated_at)
+                values (?, ?, 'Publish Studio', 'Owner', 'owner@publish.test', '[]'::jsonb, '[]'::jsonb,
+                    'APPROVED', ?, ?, 0, ?, ?)
+                """, companyId, UUID.randomUUID(), UUID.randomUUID(), now, now, now);
+        var caseId = UUID.randomUUID();
+        jdbc.update("""
+                insert into business_cases(id, company_id, title, status, version, created_at, updated_at)
+                values (?, ?, 'Draft Case', 'draft', 0, ?, ?)
+                """, caseId, companyId, now, now);
+
+        mockMvc.perform(post("/api/v1/business/cases/{caseId}/publish", caseId)
+                        .with(token(companyId, "COMPANY_ADMIN"))
+                        .contentType("application/json").content("{\"version\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("published"))
+                .andExpect(jsonPath("$.data.version").value(1));
+
+        mockMvc.perform(get("/api/v1/cases").with(token(UUID.randomUUID(), "PERSONAL_USER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].title").value("Draft Case"));
+    }
+
+    @Test
     void retriesFailedTaskAndCreatesVersionOnCompletion() throws Exception {
         var email = "task-" + UUID.randomUUID() + "@example.test";
         var registration = mockMvc.perform(post("/api/v1/auth/register")
@@ -331,12 +736,15 @@ class BusinessDataPostgresIntegrationTest {
         var authData = mapper.readTree(registration).path("data");
         var companyId = UUID.fromString(authData.path("user").path("companyId").asText());
         var companyToken = authData.path("accessToken").asText();
+        var documentId = UUID.randomUUID();
+        jdbc.update("insert into business_assets(company_id, id, file_name, object_key, media_type, created_at) values (?, ?, ?, ?, ?, now())",
+                companyId, documentId, "license.pdf", companyId + "/" + documentId, "application/pdf");
         var certification = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(
                         "/api/v1/business/certification")
                         .header("Authorization", "Bearer " + companyToken).contentType("application/json")
                         .content("""
-                                {"companyName":"Cert Studio","contactName":"Test Admin","contactInfo":"admin@example.test","serviceAreas":["Shanghai"],"documentRefs":["company/license.pdf"]}
-                                """))
+                                {"companyName":"Cert Studio","contactName":"Test Admin","contactInfo":"admin@example.test","serviceAreas":["Shanghai"],"documentRefs":["%s"]}
+                                """.formatted(documentId)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("PENDING"))
                 .andReturn().getResponse().getContentAsString();
         var version = mapper.readTree(certification).path("data").path("version").asInt();
@@ -348,6 +756,7 @@ class BusinessDataPostgresIntegrationTest {
                         .content("{\"status\":\"APPROVED\",\"reviewNote\":\"Verified\",\"version\":%d}".formatted(version)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("APPROVED"))
                 .andExpect(jsonPath("$.data.reviewedBy").value(adminId.toString()));
+        org.assertj.core.api.Assertions.assertThat(auditLogService.list(1, 20, "CERTIFICATION_REVIEW").total()).isEqualTo(1);
     }
 
     @Test
@@ -356,6 +765,10 @@ class BusinessDataPostgresIntegrationTest {
         var pendingCompany = UUID.randomUUID();
         jdbc.update("insert into auth_companies(id, name, created_at) values (?, ?, now())", certifiedCompany, "Certified Studio");
         jdbc.update("insert into auth_companies(id, name, created_at) values (?, ?, now())", pendingCompany, "Pending Studio");
+        jdbc.update("""
+                insert into company_profiles(company_id, id, name, public_contact_name, public_contact_info, version, created_at, updated_at)
+                values (?, ?, ?, ?, ?, 0, now(), now())
+                """, certifiedCompany, UUID.randomUUID(), "Certified Studio", "Sales Team", "sales@example.test");
 
         mockMvc.perform(post("/api/v1/business/material-quotes")
                         .with(token(certifiedCompany, "COMPANY_ADMIN"))
@@ -405,6 +818,8 @@ class BusinessDataPostgresIntegrationTest {
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].name").value("oak floor"))
                 .andExpect(jsonPath("$.data.items[0].companyName").value("Certified Studio"))
+                .andExpect(jsonPath("$.data.items[0].companyContactName").value("Sales Team"))
+                .andExpect(jsonPath("$.data.items[0].companyContactInfo").value("sales@example.test"))
                 .andExpect(jsonPath("$.data.page.total").value(1));
 
         mockMvc.perform(get("/api/v1/materials").param("region", "Beijing").with(token(UUID.randomUUID(), "PERSONAL_USER")))
