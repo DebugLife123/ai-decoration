@@ -8,6 +8,8 @@
   margin-left: 244px;
 }
 
+.auth-app .app-main { margin-left: 0; }
+.admin-app .app-main { margin-left: 0; }
 .app:has(.whole-home-report) .app-main { margin-left: 0; }
 .app:has(.whole-home-report) .navbar,
 .app:has(.whole-home-report) .mobile-nav-toggle { display: none; }

@@ -445,3 +445,19 @@
   .working-timeline-item strong { font-size: 13px; }
   .working-timeline-item small { font-size: 11px; }
 }
+
+/* ===== 预算资料与风格选择（BUS-02 增量） ===== */
+.budget-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; padding-top: 18px; border-top: 1px solid #e8e2dc; }
+.budget-fields label { display: flex; flex-direction: column; gap: 6px; color: #8f8883; font-size: 10px; font-weight: 700; }
+.budget-fields input { padding: 9px 11px; color: #3e3a3e; background: #fbfaf7; border: 1px solid #e2dbd4; font-size: 12px; font-family: inherit; }
+.budget-fields input:focus { outline: none; border-color: #b6acd1; background: #fff; }
+.budget-hint { margin-top: 10px; color: #aaa29c; font-size: 10px; line-height: 1.6; }
+.style-picker-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; padding-top: 18px; border-top: 1px solid #e8e2dc; }
+.style-chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; color: #7f777c; background: #fbfaf7; border: 1px solid #e2dbd4; font-size: 11px; font-weight: 600; transition: color .2s ease, border-color .2s ease, background .2s ease; }
+.style-chip:hover { color: #554a74; border-color: #b6acd1; background: #f1edf8; }
+.style-chip.selected { color: #fff; background: #71649d; border-color: #71649d; }
+.style-chip em { padding: 1px 5px; color: #8a6d3b; background: #f7ecd9; border-radius: 3px; font-size: 9px; font-style: normal; }
+.style-chip.recommended:not(.selected) { border-color: #d9c9a8; }
+
+@media (max-width: 760px) { .budget-fields { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .budget-fields { grid-template-columns: 1fr; } }

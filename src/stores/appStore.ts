@@ -1,94 +1,122 @@
 import { create } from 'zustand';
+import { workspaceDataAdapter } from '../services/workspaceData';
+import type { DesignStyle, Project } from '../services/dataContracts';
+import { clearAuthSession, readAuthSession, saveAuthSession, type AuthSession } from '../services/authSession';
 
-export type UserRole = 'guest' | 'consumer' | 'business';
-export type DesignStyle = 'modern' | 'song' | 'smallAmerican' | 'minimal' | 'chinese' | 'cream' | 'european' | 'wabi';
+export type { DesignImage, DesignStyle, DesignVersion, GenerationTask, MaterialRecord, Project } from '../services/dataContracts';
 
-export interface Project {
-  id: string;
-  name: string;
-  spaceType: string;
-  style: DesignStyle;
-  budget: number;
-  area: number;
-  city: string;
-  createdAt: string;
-  status: 'draft' | 'generating' | 'completed';
-  thumbnail?: string;
-  floorPlanUrl?: string;
-  photoUrls: string[];
-  generatedResults: GeneratedResult[];
-}
+export type UserRole = 'guest' | 'consumer' | 'business' | 'admin';
 
-export interface GeneratedResult {
-  id: string;
-  style: DesignStyle;
-  imageUrl: string;
-  prompt: string;
-  createdAt: string;
-}
-
-export interface Company {
-  id: string;
-  name: string;
-  logo: string;
-  rating: number;
-  reviewCount: number;
-  city: string;
-  styles: DesignStyle[];
-  minBudget: number;
-  maxBudget: number;
-  cases: number;
-  verified: boolean;
-  description: string;
+function roleFromSession(session: AuthSession | null): UserRole {
+  if (session?.user.role === 'PLATFORM_ADMIN') return 'admin';
+  return session?.user.accountType === 'business' ? 'business' : session ? 'consumer' : 'guest';
 }
 
 interface AppState {
+  authSession: AuthSession | null;
+  setAuthSession: (session: AuthSession) => void;
+  signOut: () => void;
   role: UserRole;
-  setRole: (role: UserRole) => void;
   currentProject: Project | null;
   setCurrentProject: (p: Project | null) => void;
   projects: Project[];
-  addProject: (p: Project) => void;
+  projectsStatus: 'loading' | 'ready' | 'error';
+  projectsError: string;
+  loadProjects: () => Promise<void>;
+  storageWarning: string;
+  saveProject: (p: Project) => void;
+  removeProject: (id: string) => void;
+  toggleProjectMaterial: (projectId: string, materialId: string) => void;
   selectedStyle: DesignStyle;
   setSelectedStyle: (s: DesignStyle) => void;
-  companies: Company[];
   isGenerating: boolean;
   setIsGenerating: (v: boolean) => void;
 }
 
-const mockCompanies: Company[] = [
-  {
-    id: '1', name: '美家装饰设计', logo: '', rating: 4.8, reviewCount: 326,
-    city: '上海', styles: ['modern', 'minimal'], minBudget: 80000, maxBudget: 500000,
-    cases: 156, verified: true, description: '专注现代简约与轻奢风格，提供全案设计服务'
-  },
-  {
-    id: '2', name: '雅舍空间设计', logo: '', rating: 4.9, reviewCount: 512,
-    city: '北京', styles: ['chinese', 'wabi'], minBudget: 120000, maxBudget: 800000,
-    cases: 234, verified: true, description: '新中式与侘寂美学专家，注重材质与光影表达'
-  },
-  {
-    id: '3', name: '欧陆经典装饰', logo: '', rating: 4.6, reviewCount: 189,
-    city: '广州', styles: ['european', 'cream'], minBudget: 100000, maxBudget: 600000,
-    cases: 98, verified: false, description: '欧式古典与法式奶油风格，进口主材直供'
-  },
-  {
-    id: '4', name: '极简生活研究所', logo: '', rating: 4.7, reviewCount: 445,
-    city: '深圳', styles: ['minimal', 'modern'], minBudget: 60000, maxBudget: 300000,
-    cases: 178, verified: true, description: '极简主义倡导者，用最少元素创造最大空间感'
-  },
-];
+let projectsLoadPromise: Promise<void> | null = null;
 
-export const useAppStore = create<AppState>((set) => ({
-  role: 'guest',
-  setRole: (role) => set({ role }),
+const initialSession = typeof window === 'undefined' ? null : readAuthSession();
+
+export const useAppStore = create<AppState>((set, get) => ({
+  authSession: initialSession,
+  setAuthSession: (authSession) => {
+    saveAuthSession(authSession);
+    projectsLoadPromise = null;
+    set({ authSession, role: roleFromSession(authSession), projects: [], currentProject: null, projectsStatus: 'loading', projectsError: '', storageWarning: '' });
+  },
+  signOut: () => {
+    clearAuthSession();
+    projectsLoadPromise = null;
+    set({ authSession: null, role: 'guest', projects: [], currentProject: null, projectsStatus: 'ready', projectsError: '' });
+  },
+  role: roleFromSession(initialSession),
   currentProject: null,
   setCurrentProject: (currentProject) => set({ currentProject }),
   projects: [],
-  addProject: (p) => set((s) => ({ projects: [...s.projects, p] })),
+  projectsStatus: 'loading',
+  projectsError: '',
+  loadProjects: () => {
+    if (projectsLoadPromise) return projectsLoadPromise;
+    const requestedUserId = get().authSession?.user.id;
+    set({ projectsStatus: 'loading', projectsError: '' });
+    const loadPromise = workspaceDataAdapter.loadProjects()
+      .then((projects) => {
+        if (get().authSession?.user.id === requestedUserId) set({ projects, projectsStatus: 'ready' });
+      })
+      .catch(() => {
+        if (get().authSession?.user.id === requestedUserId) set({ projectsStatus: 'error', projectsError: '项目暂时无法加载，请重试。' });
+      })
+      .finally(() => {
+        if (projectsLoadPromise === loadPromise) projectsLoadPromise = null;
+      });
+    projectsLoadPromise = loadPromise;
+    return loadPromise;
+  },
+  storageWarning: '',
+  saveProject: (project) => {
+    const projects = get().projects;
+    const nextProjects = projects.some((item) => item.id === project.id)
+      ? projects.map((item) => item.id === project.id ? project : item)
+      : [project, ...projects];
+    set({ projects: nextProjects, currentProject: project, projectsStatus: 'ready', storageWarning: '' });
+    const persist = workspaceDataAdapter.saveProject
+      ? workspaceDataAdapter.saveProject(project).then(() => true)
+      : workspaceDataAdapter.saveProjects(nextProjects);
+    void persist.then((persisted) => {
+      if (!persisted) set({ storageWarning: '本次内容已暂存于当前页面，但浏览器存储空间不足，刷新后可能无法恢复。' });
+    }).catch((error: unknown) => set({ storageWarning: error instanceof Error ? `项目保存失败：${error.message}` : '项目变更未能保存，请稍后重试。' }));
+  },
+  removeProject: (id) => {
+    const nextProjects = get().projects.filter((item) => item.id !== id);
+    set({ projects: nextProjects, currentProject: get().currentProject?.id === id ? null : get().currentProject, storageWarning: '' });
+    const persist = workspaceDataAdapter.deleteProject
+      ? workspaceDataAdapter.deleteProject(id).then(() => true)
+      : workspaceDataAdapter.saveProjects(nextProjects);
+    void persist.then((persisted) => {
+      if (!persisted) set({ storageWarning: '项目已从当前页面移除，但浏览器存储空间不足，刷新后可能恢复。' });
+    }).catch((error: unknown) => set({ storageWarning: error instanceof Error ? `项目删除失败：${error.message}` : '项目变更未能保存，请稍后重试。' }));
+  },
+  toggleProjectMaterial: (projectId, materialId) => {
+    const projects = get().projects;
+    const nextProjects = projects.map((project) => {
+      if (project.id !== projectId) return project;
+      const materialIds = project.materialIds.includes(materialId)
+        ? project.materialIds.filter((id) => id !== materialId)
+        : [...project.materialIds, materialId];
+      return { ...project, materialIds, updatedAt: new Date().toISOString() };
+    });
+    const currentProject = nextProjects.find((project) => project.id === get().currentProject?.id) || get().currentProject;
+    set({ projects: nextProjects, currentProject, storageWarning: '' });
+    const updatedProject = nextProjects.find((project) => project.id === projectId);
+    const persist = updatedProject && workspaceDataAdapter.saveProject
+      ? workspaceDataAdapter.saveProject(updatedProject).then(() => true)
+      : workspaceDataAdapter.saveProjects(nextProjects);
+    void persist.then((persisted) => {
+      if (!persisted) set({ storageWarning: '材料关联已暂存于当前页面，但浏览器存储空间不足，刷新后可能无法恢复。' });
+    }).catch((error: unknown) => set({ storageWarning: error instanceof Error ? `材料关联保存失败：${error.message}` : '材料关联未能保存，请稍后重试。' }));
+  },
   selectedStyle: 'modern',
   setSelectedStyle: (selectedStyle) => set({ selectedStyle }),
-  companies: mockCompanies,
   isGenerating: false,
   setIsGenerating: (isGenerating) => set({ isGenerating }),
 }));

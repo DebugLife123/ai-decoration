@@ -9,13 +9,24 @@ npm install
 Copy-Item .env.example .env
 ```
 
-在 `.env` 中填写 `CODEX2API_API_KEY`，然后启动开发服务：
+在 `.env` 中填写 `CODEX2API_API_KEY`。集成分支的业务 API 默认连接 `8091`，个人/企业登录、企业资料与业务管理页面均由该后端提供。启动隔离的 PostgreSQL 和后端：
 
-```bash
-npm run dev
+```powershell
+docker compose -f backend/docker-compose.yml -p integration-business-data up -d
+$env:SERVER_PORT = '8091'
+$env:DATABASE_URL = 'jdbc:postgresql://localhost:55432/decoration'
+Push-Location backend
+mvn spring-boot:run
+Pop-Location
 ```
 
-默认开发地址为 `http://localhost:5173`。AI 请求由 Vite 服务端网关转发，密钥仅保存在本地 `.env`，不要提交密钥文件。
+另开终端启动前端（默认 5173；本集成环境建议指定 5177）：
+
+```bash
+npm run dev -- --host 127.0.0.1 --port 5177 --strictPort
+```
+
+打开 `http://localhost:5177`，在登录页选择个人或企业账号；新用户可在登录页创建账号。企业用户登录后进入企业工作区，个人用户进入个人工作区。这个端口与原有 `5176` 项目、后端 `8091`、数据库 `55432` 相互独立。AI 请求由 Vite 服务端网关转发，密钥仅保存在本地 `.env`，不要提交密钥文件。
 
 ## 模型配置
 

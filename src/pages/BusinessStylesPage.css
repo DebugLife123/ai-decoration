@@ -1,0 +1,39 @@
+.business-styles-page { width: min(1160px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0 80px; }
+.business-styles-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.business-styles-eyebrow, .styles-form-heading > div > span, .styles-list-heading > div > span { color: var(--color-primary); font-size: 10px; font-weight: 750; letter-spacing: .14em; }
+.business-styles-header h1 { margin-top: 8px; color: var(--color-text); font-family: var(--font-display); font-size: 35px; }
+.business-styles-header p { margin-top: 8px; color: var(--color-text-secondary); font-size: 13px; }
+.styles-local-badge { padding: 7px 10px; color: var(--color-text-muted); background: #f4f1eb; border-radius: 5px; font-size: 10px; }
+.styles-header-side { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.styles-platform-badge { padding: 7px 10px; color: var(--color-success); background: #eef5ee; border-radius: 5px; font-size: 10px; }
+.styles-feedback-error { color: #a26055; }
+.business-styles-layout { display: grid; grid-template-columns: minmax(300px, .75fr) minmax(420px, 1.25fr); gap: 28px; margin-top: 32px; align-items: start; }
+.styles-form, .styles-list { padding: 22px; background: var(--color-bg-card); border: 1px solid var(--color-border-light); border-radius: 8px; }
+.styles-form { display: grid; gap: 15px; }
+.styles-form-heading, .styles-list-heading { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 14px; border-bottom: 1px solid var(--color-border-light); }
+.styles-form-heading h2, .styles-list-heading h2 { margin-top: 6px; color: var(--color-text); font-family: var(--font-display); font-size: 19px; }
+.styles-form label { display: grid; gap: 6px; color: var(--color-text-secondary); font-size: 11px; }
+.styles-form input, .styles-form select, .styles-form textarea { width: 100%; min-width: 0; padding: 9px 10px; color: var(--color-text); background: #fff; border: 1px solid var(--color-border); border-radius: 5px; font: inherit; font-size: 12px; }
+.styles-form textarea { resize: vertical; line-height: 1.5; }
+.styles-form input:focus, .styles-form select:focus, .styles-form textarea:focus { outline: 2px solid color-mix(in srgb, var(--color-primary) 22%, transparent); border-color: var(--color-primary); }
+.styles-two-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.styles-form-actions { display: flex; gap: 8px; padding-top: 2px; }
+.styles-primary, .styles-secondary { min-height: 34px; padding: 0 12px; border-radius: 5px; font-size: 11px; font-weight: 700; }
+.styles-primary { color: #fff; background: var(--color-primary); }
+.styles-secondary { color: var(--color-primary); background: transparent; border: 1px solid var(--color-border); }
+.styles-feedback { color: var(--color-success); font-size: 11px; line-height: 1.5; }
+.styles-list-heading small { color: var(--color-text-muted); font-size: 11px; }
+.styles-records { display: grid; gap: 8px; margin-top: 14px; }
+.styles-record { display: flex; justify-content: space-between; gap: 14px; padding: 13px; border: 1px solid var(--color-border-light); border-radius: 6px; }
+.styles-record > div:first-child { min-width: 0; }
+.styles-record strong { color: var(--color-text); font-size: 13px; }
+.styles-record span, .styles-record p { display: block; margin-top: 4px; color: var(--color-text-secondary); font-size: 11px; line-height: 1.5; }
+.styles-record p { color: var(--color-text-muted); font-size: 10px; }
+.styles-record-actions { display: flex; flex: 0 0 auto; align-items: flex-start; gap: 8px; }
+.styles-record-actions button { color: var(--color-primary); background: transparent; font-size: 10px; }
+.styles-record-actions button:last-child { color: #a26055; }
+.styles-empty { padding: 58px 20px; color: var(--color-text-muted); text-align: center; }
+.styles-empty strong { color: var(--color-text); font-family: var(--font-display); font-size: 17px; }
+.styles-empty p { margin-top: 8px; font-size: 11px; }
+@media (max-width: 800px) { .business-styles-layout { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .business-styles-page { width: calc(100% - 28px); padding-top: 30px; } .business-styles-header { align-items: flex-start; flex-direction: column; } .styles-form, .styles-list { padding: 17px; } .styles-record { align-items: flex-start; flex-direction: column; } .styles-record-actions { width: 100%; justify-content: flex-end; } }
