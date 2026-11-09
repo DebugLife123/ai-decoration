@@ -58,10 +58,19 @@ public final class BudgetDtos {
             /** 板块小计的人工部分。 */
             BigDecimal laborCostLow,
             BigDecimal laborCostHigh,
+            /** 单价（元/计量单位），不含工程量与损耗，便于用户理解「一平米多少钱」。 */
+            BigDecimal materialPriceLow,
+            BigDecimal materialPriceHigh,
+            BigDecimal laborPriceLow,
+            BigDecimal laborPriceHigh,
             BigDecimal costLow,
             BigDecimal costHigh,
-            /** QUOTED / REFERENCE / DISABLED */
+            /** QUOTED / PARTIAL / REFERENCE / DISABLED —— 整项的取值口径。 */
             String source,
+            /** 材料一路的口径：QUOTED / REFERENCE / NONE。 */
+            String materialSource,
+            /** 人工一路的口径：QUOTED / REFERENCE / NONE。 */
+            String laborSource,
             /** 单位无法识别等原因导致该板块没有可用报价。 */
             List<String> skippedReasons,
             List<QuoteSample> quoteSamples) {

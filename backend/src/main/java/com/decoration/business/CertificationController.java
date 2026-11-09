@@ -7,12 +7,10 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.UUID;
 
@@ -38,13 +36,8 @@ public class CertificationController {
         return ApiResponse.success(service.submit(companyId(jwt), request));
     }
 
-    @PostMapping("/{companyId}/review")
-    @PreAuthorize("hasRole('PLATFORM_ADMIN')")
-    public ApiResponse<Certification> review(@AuthenticationPrincipal Jwt jwt,
-                                              @PathVariable UUID companyId,
-                                              @Valid @RequestBody CertificationDecision request) {
-        return ApiResponse.success(service.decide(companyId, UUID.fromString(jwt.getSubject()), request));
-    }
+    // 审核统一走平台管理员入口 POST /api/v1/admin/certifications/{companyId}/review。
+    // 旧的 /api/v1/business/certification/{companyId}/review 已下线，避免企业侧路径被误用。
 
     private static UUID companyId(Jwt jwt) {
         var value = jwt.getClaimAsString("companyId");

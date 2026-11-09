@@ -30,10 +30,19 @@ export interface BudgetItem {
   materialCostHigh: number;
   laborCostLow: number;
   laborCostHigh: number;
+  /** 单价（元/计量单位），不含工程量与损耗。 */
+  materialPriceLow: number | null;
+  materialPriceHigh: number | null;
+  laborPriceLow: number | null;
+  laborPriceHigh: number | null;
   costLow: number;
   costHigh: number;
-  /** QUOTED / REFERENCE / DISABLED */
-  source: 'QUOTED' | 'REFERENCE' | 'DISABLED';
+  /** QUOTED / PARTIAL / REFERENCE / DISABLED —— 整项口径。 */
+  source: 'QUOTED' | 'PARTIAL' | 'REFERENCE' | 'DISABLED';
+  /** 材料一路的口径：QUOTED / REFERENCE / NONE。 */
+  materialSource: 'QUOTED' | 'REFERENCE' | 'NONE';
+  /** 人工一路的口径：QUOTED / REFERENCE / NONE。 */
+  laborSource: 'QUOTED' | 'REFERENCE' | 'NONE';
   skippedReasons: string[];
   quoteSamples: BudgetQuoteSample[];
 }

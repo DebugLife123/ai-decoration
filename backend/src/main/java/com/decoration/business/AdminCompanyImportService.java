@@ -74,19 +74,29 @@ public class AdminCompanyImportService {
                     """, caseId, companyId, item.title().trim(), item.area(), clean(item.style()), item.budget(), now, now);
         }
         UUID firstQuoteId = null;
+        int skippedQuotes = 0;
         for (var item : request.materials()) {
             var quoteId = UUID.randomUUID();
             if (firstQuoteId == null) firstQuoteId = quoteId;
-            jdbc.update("""
+            // 批量录入里出现同名称同规格同品牌同单位的重复行时跳过，不让整批导入因为唯一索引失败。
+            var inserted = jdbc.update("""
                     insert into material_quotes(id, company_id, name, specification, brand, unit, price, category,
                         region, valid_until, version, created_at, updated_at)
                     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    on conflict do nothing
                     """, quoteId, companyId, item.name().trim(), item.specification().trim(), clean(item.brand()),
                     item.unit().trim(), item.price(), item.category().trim(), item.region().trim(), item.validUntil(), now, now);
+            if (inserted == 0) {
+                skippedQuotes++;
+                if (firstQuoteId.equals(quoteId)) firstQuoteId = null;
+            }
         }
         audit.record(actorId, "COMPANY_IMPORT", "COMPANY", companyId,
-                "录入真实企业：" + request.companyName().trim() + "；案例 " + request.cases().size() + " 条；报价 " + request.materials().size() + " 条");
-        return new ImportResult(companyId, email, "PENDING", request.cases().size(), request.materials().size(), firstCaseId, firstQuoteId);
+                "录入真实企业：" + request.companyName().trim() + "；案例 " + request.cases().size() + " 条；报价 "
+                        + (request.materials().size() - skippedQuotes) + " 条"
+                        + (skippedQuotes > 0 ? "（跳过重复报价 " + skippedQuotes + " 条）" : ""));
+        return new ImportResult(companyId, email, "PENDING", request.cases().size(),
+                request.materials().size() - skippedQuotes, firstCaseId, firstQuoteId);
     }
 
     @Transactional

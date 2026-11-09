@@ -78,7 +78,7 @@ class BudgetEstimateIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.dataQuality").value("REFERENCE"))
                 .andExpect(jsonPath("$.data.pricingMode").value("LIST"))
-                .andExpect(jsonPath("$.data.modelVersion").value("v3"))
+                .andExpect(jsonPath("$.data.modelVersion").value("v4"))
                 .andExpect(jsonPath("$.data.items.length()").value(9))
                 // 9 板块合计 = 1790 × 120 / 3110 × 120（守恒）
                 .andExpect(jsonPath("$.data.totalLow").value(214800))
@@ -179,6 +179,7 @@ class BudgetEstimateIntegrationTest {
 
         var saved = mockMvc.perform(post("/api/v1/budgets")
                         .with(token(ownerA, "PERSONAL_USER"))
+                        .header("Idempotency-Key", "budget-save-" + UUID.randomUUID())
                         .contentType("application/json").content(body))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.totalLow").value(179000))
@@ -216,5 +217,151 @@ class BudgetEstimateIntegrationTest {
                 // 1790 × 1.34 = 2398.6 → 239860；3110 × 1.34 = 4167.4 → 416740
                 .andExpect(jsonPath("$.data.totalLow").value(239860))
                 .andExpect(jsonPath("$.data.totalHigh").value(416740));
+    }
+
+    // ---------- 阶段 2a-3：材料与人工分离计价 ----------
+
+    /** 造一家已认证企业 + 一条 GROUND 材料报价（category 必须是「地板」，才会被 GROUND 板块匹配到）。 */
+    private UUID seedGroundMaterialQuote(String price, String materialName) {
+        var companyId = UUID.randomUUID();
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, ?, now())", companyId, "Mat " + materialName);
+        jdbc.update("""
+                insert into company_certifications(company_id, id, company_name, contact_name, contact_info,
+                    service_areas, document_refs, status, version, submitted_at, updated_at, reviewed_by, reviewed_at)
+                values (?, ?, ?, 'A', 'a@b.c', ?::jsonb, '[]'::jsonb, 'APPROVED', 0, now(), now(), ?, now())
+                """, companyId, UUID.randomUUID(), "Mat " + materialName, "[\"上海\"]", UUID.randomUUID());
+        jdbc.update("""
+                insert into material_quotes(id, company_id, name, specification, unit, price, category, region,
+                    valid_until, unit_kind, unit_unknown, item_nature, created_at, updated_at)
+                values (?, ?, ?, 'spec', '㎡', ?::numeric, '地板', '上海', current_date + 300, 'SQM', false, 'INCLUDED', now(), now())
+                """, UUID.randomUUID(), companyId, materialName, price);
+        return companyId;
+    }
+
+    /** 造一家已认证企业 + 一条 GROUND 人工报价。 */
+    private UUID seedGroundLaborQuote(String price) {
+        var companyId = UUID.randomUUID();
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, ?, now())", companyId, "Lab " + price);
+        jdbc.update("""
+                insert into company_certifications(company_id, id, company_name, contact_name, contact_info,
+                    service_areas, document_refs, status, version, submitted_at, updated_at, reviewed_by, reviewed_at)
+                values (?, ?, ?, 'A', 'a@b.c', ?::jsonb, '[]'::jsonb, 'APPROVED', 0, now(), now(), ?, now())
+                """, companyId, UUID.randomUUID(), "Lab " + price, "[\"上海\"]", UUID.randomUUID());
+        jdbc.update("""
+                insert into labor_quotes(id, company_id, labor_type, unit, price, region,
+                    valid_until, unit_kind, unit_unknown, item_nature, created_at, updated_at)
+                values (?, ?, '瓦匠工', '㎡', ?::numeric, '上海', current_date + 300, 'SQM', false, 'INCLUDED', now(), now())
+                """, UUID.randomUUID(), companyId, price);
+        return companyId;
+    }
+
+    private void dropCompany(UUID companyId) {
+        jdbc.update("delete from material_quotes where company_id = ?", companyId);
+        jdbc.update("delete from labor_quotes where company_id = ?", companyId);
+        jdbc.update("delete from company_certifications where company_id = ?", companyId);
+        jdbc.update("delete from auth_companies where id = ?", companyId);
+    }
+
+    /**
+     * 验收 1 与 3：每板块可拆材料/人工且两者之和 = 小计；
+     * 只有材料报价、没有人工报价时，人工部分走基准而不是 0。
+     */
+    @Test
+    void splitsMaterialAndLaborAndKeepsLaborOnReferenceWhenOnlyMaterialIsQuoted() throws Exception {
+        var companies = new java.util.ArrayList<UUID>();
+        try {
+            // 只有材料：3 家企业，价格 100 / 110 / 120。
+            companies.add(seedGroundMaterialQuote("100", "FloorA"));
+            companies.add(seedGroundMaterialQuote("110", "FloorB"));
+            companies.add(seedGroundMaterialQuote("120", "FloorC"));
+
+            var body = mockMvc.perform(post("/api/v1/budgets/estimate")
+                            .contentType("application/json")
+                            .content("""
+                                    {"area":120,"region":"上海","finishLevel":"STANDARD"}
+                                    """))
+                    .andExpect(status().isOk())
+                    // 材料有真报价、人工没有 → 整体是 PARTIAL，不能退化成 REFERENCE。
+                    .andExpect(jsonPath("$.data.dataQuality").value("PARTIAL"))
+                    .andExpect(jsonPath("$.data.items[?(@.itemKey == 'GROUND')].source").value("PARTIAL"))
+                    .andExpect(jsonPath("$.data.items[?(@.itemKey == 'GROUND')].materialSource").value("QUOTED"))
+                    .andExpect(jsonPath("$.data.items[?(@.itemKey == 'GROUND')].laborSource").value("REFERENCE"))
+                    // 材料单价区间就是 P25/P75（100~120 的线性插值）。
+                    .andExpect(jsonPath("$.data.items[?(@.itemKey == 'GROUND')].materialPriceLow").value(105.0))
+                    .andExpect(jsonPath("$.data.items[?(@.itemKey == 'GROUND')].materialPriceHigh").value(115.0))
+                    .andReturn().getResponse().getContentAsString();
+
+            var tree = com.fasterxml.jackson.databind.json.JsonMapper.builder().build().readTree(body);
+            var ground = tree.path("data").path("items").get(0);
+            var materialCostLow = ground.path("materialCostLow").decimalValue();
+            var laborCostLow = ground.path("laborCostLow").decimalValue();
+            var costLow = ground.path("costLow").decimalValue();
+
+            // 验收 3：人工不是 0，而是基准回填。
+            org.junit.jupiter.api.Assertions.assertTrue(laborCostLow.signum() > 0,
+                    "只有材料报价时人工部分必须走基准，实际为 " + laborCostLow);
+            // 验收 1：两路之和 = 小计。
+            org.junit.jupiter.api.Assertions.assertEquals(0,
+                    materialCostLow.add(laborCostLow).compareTo(costLow),
+                    "材料 " + materialCostLow + " + 人工 " + laborCostLow + " 应等于小计 " + costLow);
+        } finally {
+            companies.forEach(this::dropCompany);
+        }
+    }
+
+    /**
+     * 验收 2：材料报价 +10%，只有 materialCost 变，laborCost 不动。
+     *
+     * <p>人工报价固定，材料报价整体上浮一成，人工成本必须逐位不变。
+     */
+    @Test
+    void raisingMaterialPricesMovesOnlyMaterialCost() throws Exception {
+        var companies = new java.util.ArrayList<UUID>();
+        try {
+            companies.add(seedGroundLaborQuote("50"));
+            companies.add(seedGroundLaborQuote("52"));
+            companies.add(seedGroundLaborQuote("54"));
+            companies.add(seedGroundMaterialQuote("100", "BaseA"));
+            companies.add(seedGroundMaterialQuote("110", "BaseB"));
+            companies.add(seedGroundMaterialQuote("120", "BaseC"));
+
+            var before = mockMvc.perform(post("/api/v1/budgets/estimate")
+                            .contentType("application/json")
+                            .content("""
+                                    {"area":120,"region":"上海","finishLevel":"STANDARD"}
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.items[?(@.itemKey == 'GROUND')].materialSource").value("QUOTED"))
+                    .andExpect(jsonPath("$.data.items[?(@.itemKey == 'GROUND')].laborSource").value("QUOTED"))
+                    .andReturn().getResponse().getContentAsString();
+
+            // 材料整体 +10%。
+            jdbc.update("update material_quotes set price = price * 1.1 where category = '地板' and region = '上海'");
+
+            var after = mockMvc.perform(post("/api/v1/budgets/estimate")
+                            .contentType("application/json")
+                            .content("""
+                                    {"area":120,"region":"上海","finishLevel":"STANDARD"}
+                                    """))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+
+            var mapper = com.fasterxml.jackson.databind.json.JsonMapper.builder().build();
+            var beforeGround = mapper.readTree(before).path("data").path("items").get(0);
+            var afterGround = mapper.readTree(after).path("data").path("items").get(0);
+
+            // 人工成本与人工单价逐位不变。
+            org.junit.jupiter.api.Assertions.assertEquals(0, beforeGround.path("laborCostLow").decimalValue()
+                    .compareTo(afterGround.path("laborCostLow").decimalValue()), "材料涨价不应影响人工成本");
+            org.junit.jupiter.api.Assertions.assertEquals(0, beforeGround.path("laborCostHigh").decimalValue()
+                    .compareTo(afterGround.path("laborCostHigh").decimalValue()), "材料涨价不应影响人工成本（高值）");
+            org.junit.jupiter.api.Assertions.assertEquals(0, beforeGround.path("laborPriceLow").decimalValue()
+                    .compareTo(afterGround.path("laborPriceLow").decimalValue()), "材料涨价不应影响人工单价");
+            // 材料成本必须真的变了。
+            org.junit.jupiter.api.Assertions.assertTrue(afterGround.path("materialCostLow").decimalValue()
+                    .compareTo(beforeGround.path("materialCostLow").decimalValue()) > 0, "材料涨价后材料成本应上升");
+        } finally {
+            companies.forEach(this::dropCompany);
+        }
     }
 }

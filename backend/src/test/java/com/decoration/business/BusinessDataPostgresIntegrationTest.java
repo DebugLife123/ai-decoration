@@ -18,6 +18,7 @@ import java.sql.Timestamp;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.UUID;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -237,6 +238,55 @@ class BusinessDataPostgresIntegrationTest {
     }
 
     @Test
+    void rejectsDuplicateMaterialQuoteNaturalKey() throws Exception {
+        // 自然键 = 企业 + 名称 + 规格 + 品牌 + 单位；大小写和首尾空格不影响判定。
+        var body = """
+                {"name":"Quartz counter","brand":"StoneCo","spec":"20mm","unit":"sqm","price":88.00,"category":"counter","region":"Shanghai","validUntil":"%s"}
+                """.formatted(futureDate());
+        var created = mockMvc.perform(post("/api/v1/business/material-quotes")
+                        .with(token(COMPANY_A, "COMPANY_EDITOR"))
+                        .header("Idempotency-Key", "natural-key-0001")
+                        .contentType("application/json").content(body))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        var duplicate = body.replace("Quartz counter", "  quartz COUNTER  ").replace("\"StoneCo\"", "\"stoneco\"");
+
+        mockMvc.perform(post("/api/v1/business/material-quotes")
+                        .with(token(COMPANY_A, "COMPANY_EDITOR"))
+                        .header("Idempotency-Key", "natural-key-0002")
+                        .contentType("application/json").content(duplicate))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_QUOTE"));
+
+        // 换个单位就是另一条报价，允许创建。
+        mockMvc.perform(post("/api/v1/business/material-quotes")
+                        .with(token(COMPANY_A, "COMPANY_EDITOR"))
+                        .header("Idempotency-Key", "natural-key-0003")
+                        .contentType("application/json").content(body.replace("\"sqm\"", "\"m\"")))
+                .andExpect(status().isCreated());
+
+        // 把已有一条改名撞到另一条上，同样 409。
+        var otherId = com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(mockMvc.perform(post("/api/v1/business/material-quotes")
+                                .with(token(COMPANY_A, "COMPANY_EDITOR"))
+                                .header("Idempotency-Key", "natural-key-0004")
+                                .contentType("application/json")
+                                .content(body.replace("Quartz counter", "Granite counter")))
+                        .andExpect(status().isCreated())
+                        .andReturn().getResponse().getContentAsString())
+                .path("data").path("id").asText();
+        mockMvc.perform(patch("/api/v1/business/material-quotes/{id}", otherId)
+                        .with(token(COMPANY_A, "COMPANY_EDITOR"))
+                        .contentType("application/json")
+                        .content("{\"name\":\"Quartz counter\",\"unit\":\"sqm\",\"version\":0}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_QUOTE"));
+        org.assertj.core.api.Assertions.assertThat(
+                com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
+                        .readTree(created).path("data").path("name").asText()).isEqualTo("Quartz counter");
+    }
+
+    @Test
     void cleanupRemovesOnlyOldUnreferencedImages() throws Exception {
         var companyId = UUID.randomUUID();
         var now = Instant.now();
@@ -332,7 +382,7 @@ class BusinessDataPostgresIntegrationTest {
                         .multipart("/api/v1/business/assets")
                         .file(new org.springframework.mock.web.MockMultipartFile("file", "wrong-license.png", "image/png", new byte[]{1, 2, 3}))
                         .with(token(companyId, "COMPANY_ADMIN")))
-                .andExpect(status().isOk())
+                .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         var mapper = com.fasterxml.jackson.databind.json.JsonMapper.builder().build();
         var assetId = UUID.fromString(mapper.readTree(uploaded).path("data").path("id").asText());
@@ -350,7 +400,7 @@ class BusinessDataPostgresIntegrationTest {
                         .multipart("/api/v1/business/assets")
                         .file(new org.springframework.mock.web.MockMultipartFile("file", "license.png", "image/png", new byte[]{4, 5, 6}))
                         .with(token(companyId, "COMPANY_ADMIN")))
-                .andExpect(status().isOk())
+                .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         var submittedAssetId = UUID.fromString(mapper.readTree(submitted).path("data").path("id").asText());
         var submittedPath = CLEANUP_STORAGE_ROOT.resolve(companyId.toString()).resolve(submittedAssetId.toString());
@@ -532,6 +582,7 @@ class BusinessDataPostgresIntegrationTest {
 
         var response = mockMvc.perform(post("/api/v1/inquiries")
                         .header("Authorization", "Bearer " + consumerToken)
+                        .header("Idempotency-Key", "inquiry-e2e-" + UUID.randomUUID())
                         .contentType("application/json")
                         .content("""
                                 {"materialId":"%s","contactName":"Lin","contactInfo":"13800000000","message":"Please send a quote."}
@@ -749,7 +800,7 @@ class BusinessDataPostgresIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         var version = mapper.readTree(certification).path("data").path("version").asInt();
         var adminId = UUID.randomUUID();
-        mockMvc.perform(post("/api/v1/business/certification/{companyId}/review", companyId)
+        mockMvc.perform(post("/api/v1/admin/certifications/{companyId}/review", companyId)
                         .with(jwt().jwt(token -> token.subject(adminId.toString()).claim("roles", java.util.List.of("PLATFORM_ADMIN")))
                                 .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")))
                         .contentType("application/json")
@@ -804,7 +855,7 @@ class BusinessDataPostgresIntegrationTest {
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         var version = com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
                 .readTree(certification).path("data").path("version").asInt();
-        mockMvc.perform(post("/api/v1/business/certification/{companyId}/review", certifiedCompany)
+        mockMvc.perform(post("/api/v1/admin/certifications/{companyId}/review", certifiedCompany)
                         .with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString())
                                         .claim("roles", java.util.List.of("PLATFORM_ADMIN")))
                                 .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")))
@@ -1043,6 +1094,82 @@ class BusinessDataPostgresIntegrationTest {
                 .andExpect(jsonPath("$.data.adminHidden").value(false));
     }
 
+    /**
+     * 回归：NotificationService 曾用单参数 lambda 调 jdbc.query，在 Spring 6 下会被推导成
+     * ResultSetExtractor 之外的重载，结果集不被逐行循环，导致通知列表只出零星几条甚至为空，且没有任何报错。
+     * 这里刻意造多行数据（2 条报价、2 条咨询、2 条待审认证），因为单行场景下 while 循环只跑一次，测不出问题。
+     */
+    @Test
+    void notificationListReadsAllDerivedRows() throws Exception {
+        var userA = UUID.randomUUID();
+        jdbc.update("insert into auth_companies(id, name, created_at) values (?, 'Company A', now()) "
+                + "on conflict (id) do nothing", COMPANY_A);
+        jdbc.update("insert into auth_users(id, email, password_hash, display_name, account_type, company_id, role, created_at) "
+                        + "values (?, ?, ?, ?, ?, ?, ?, now())",
+                userA, "notify-a@example.test", "x", "Notify A", "BUSINESS", COMPANY_A, "COMPANY_ADMIN");
+        // 表上有 CHECK ((status = 'PENDING') = (reviewed_at IS NULL)) 及 reviewed_by 的同款约束，
+        // 因此非 PENDING 的认证必须同时写入 reviewed_at 与 reviewed_by。
+        jdbc.update("insert into company_certifications(id, company_id, company_name, contact_name, contact_info, "
+                        + "service_areas, document_refs, status, reviewed_by, reviewed_at, version, submitted_at, updated_at) "
+                        + "values (?, ?, 'Company A', 'Zhang', '13800000000', '[]'::jsonb, '[]'::jsonb, 'APPROVED', ?, now(), 1, now(), now())",
+                UUID.randomUUID(), COMPANY_A, UUID.randomUUID());
+
+        // 两条将到期的材料报价：验证报价分支确实逐行循环，而不是只读第一行。
+        var quoteIds = new ArrayList<UUID>();
+        for (var i = 0; i < 2; i++) {
+            var quoteId = UUID.randomUUID();
+            quoteIds.add(quoteId);
+            jdbc.update("insert into material_quotes(id, company_id, name, specification, unit, price, category, region, "
+                            + "valid_until, version, created_at, updated_at) "
+                            + "values (?, ?, ?, 's', 'SQM', 10, 'c', 'Shanghai', ?, 0, now(), now())",
+                    quoteId, COMPANY_A, "notify-quote-" + i, java.time.LocalDate.now().plusDays(5));
+        }
+        // 两条待处理咨询：INQUIRY 只对 status = 'NEW' 生成。consumer_id 有外键，先建一个个人用户。
+        var consumerId = UUID.randomUUID();
+        jdbc.update("insert into auth_users(id, email, password_hash, display_name, account_type, role, created_at) "
+                        + "values (?, ?, ?, ?, ?, ?, now())",
+                consumerId, "notify-consumer@example.test", "x", "Consumer", "PERSONAL", "PERSONAL_USER");
+        for (var i = 0; i < 2; i++) {
+            jdbc.update("insert into company_inquiries(id, company_id, consumer_id, material_quote_id, material_name, "
+                            + "contact_name, contact_info, message, status, version, created_at, updated_at) "
+                            + "values (?, ?, ?, ?, 'notify-mat', 'Li', '13900000000', 'q', 'NEW', 0, now(), now())",
+                    UUID.randomUUID(), COMPANY_A, consumerId, quoteIds.get(i));
+        }
+
+        mockMvc.perform(get("/api/v1/notifications").with(tokenFor(userA, COMPANY_A, "COMPANY_ADMIN")))
+                .andExpect(status().isOk())
+                // 1 条认证 + 2 条报价 + 2 条咨询
+                .andExpect(jsonPath("$.data.length()").value(5))
+                .andExpect(jsonPath("$.data[?(@.type == 'CERTIFICATION')].title")
+                        .value(org.hamcrest.Matchers.contains("企业认证已通过")))
+                .andExpect(jsonPath("$.data[?(@.type == 'QUOTE_EXPIRING')].key").value(org.hamcrest.Matchers.hasSize(2)))
+                .andExpect(jsonPath("$.data[?(@.type == 'INQUIRY')].key").value(org.hamcrest.Matchers.hasSize(2)));
+    }
+
+    /** 管理员视角：多条 PENDING 认证必须全部进通知，同样验证逐行循环。 */
+    @Test
+    void adminNotificationListReadsAllPendingCertifications() throws Exception {
+        var adminId = UUID.randomUUID();
+        jdbc.update("insert into auth_users(id, email, password_hash, display_name, account_type, role, created_at) "
+                        + "values (?, ?, ?, ?, ?, ?, now())",
+                adminId, "notify-admin@example.test", "x", "Admin", "PERSONAL", "PLATFORM_ADMIN");
+
+        for (var i = 0; i < 3; i++) {
+            var companyId = UUID.randomUUID();
+            jdbc.update("insert into auth_companies(id, name, created_at) values (?, ?, now())",
+                    companyId, "Pending Co " + i);
+            jdbc.update("insert into company_certifications(id, company_id, company_name, contact_name, contact_info, "
+                            + "service_areas, document_refs, status, version, submitted_at, updated_at) "
+                            + "values (?, ?, ?, 'Zhang', '13800000000', '[]'::jsonb, '[]'::jsonb, 'PENDING', 0, now(), now())",
+                    UUID.randomUUID(), companyId, "Pending Co " + i);
+        }
+
+        mockMvc.perform(get("/api/v1/notifications").with(tokenFor(adminId, null, "PLATFORM_ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.type == 'ADMIN_REVIEW')].key")
+                        .value(org.hamcrest.Matchers.hasSize(3)));
+    }
+
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder pu(String path) {
         return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(path);
     }
@@ -1050,6 +1177,14 @@ class BusinessDataPostgresIntegrationTest {
     private static JwtRequestPostProcessor token(UUID companyId, String role) {
         return jwt().jwt(jwt -> jwt.claim("companyId", companyId.toString()).claim("roles", java.util.List.of(role)))
                 .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + role));
+    }
+
+    /** 同上，但显式带上 subject：通知接口按 jwt.getSubject() 取 recipientId。 */
+    private static JwtRequestPostProcessor tokenFor(UUID userId, UUID companyId, String role) {
+        return jwt().jwt(jwt -> {
+            jwt.subject(userId.toString()).claim("roles", java.util.List.of(role));
+            if (companyId != null) jwt.claim("companyId", companyId.toString());
+        }).authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + role));
     }
 
     /** 报价有效期只允许“今天起 10 年内”，写死年份会随时间推移失效，因此动态生成。 */

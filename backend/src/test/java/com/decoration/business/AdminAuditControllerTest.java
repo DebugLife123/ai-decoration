@@ -53,4 +53,18 @@ class AdminAuditControllerTest {
         verify(auditLogService, never()).list(org.mockito.ArgumentMatchers.anyInt(),
                 org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any());
     }
+
+    /** 第 18 章决策 1：page/size 越界必须是 400，而不是悄悄按默认值翻整张表。 */
+    @Test
+    void rejectsOutOfRangePaging() throws Exception {
+        for (var query : List.of("page=0", "size=0", "size=101", "page=-3")) {
+            mockMvc.perform(get("/api/v1/admin/audit-logs?" + query)
+                            .with(jwt().jwt(token -> token.claim("roles", List.of("PLATFORM_ADMIN")))
+                                    .authorities(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        }
+        verify(auditLogService, never()).list(org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any());
+    }
 }

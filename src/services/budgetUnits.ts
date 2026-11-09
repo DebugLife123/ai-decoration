@@ -58,3 +58,6 @@ export function isUnitRecognized(unit: string | null | undefined): boolean {
 }
 
 export const unitUnknownHint = '单位无法识别，预算计算会跳过这条报价。请从下拉里选一个计量单位，规格尺寸填在「规格」字段。';
+
+/** 单位无法归一的报价对读者统一显示这句，企业端与 C 端共用。 */
+export const unitUnknownBadge = '单位待确认，不参与比价';

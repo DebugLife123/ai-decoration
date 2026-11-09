@@ -1,6 +1,7 @@
 package com.decoration.business;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,7 +19,7 @@ public class BusinessCompletenessService {
                 select exists(select 1 from company_profiles
                     where company_id = ? and nullif(trim(public_contact_name), '') is not null
                       and nullif(trim(public_contact_info), '') is not null)
-                """, rs -> { rs.next(); return rs.getBoolean(1); }, companyId);
+                """, (ResultSetExtractor<Boolean>) rs -> { rs.next(); return rs.getBoolean(1); }, companyId);
         var certificationAssets = jdbc.queryForObject("""
                 select count(distinct a.id) from company_certifications c
                 cross join lateral jsonb_array_elements_text(

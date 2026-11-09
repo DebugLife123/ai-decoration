@@ -1,5 +1,6 @@
 package com.decoration.budget;
 
+import com.decoration.business.IdempotencyStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -20,15 +21,19 @@ import static com.decoration.budget.BudgetDtos.SavedBudget;
 public class BudgetArchiveService {
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final IdempotencyStore idempotency;
 
-    public BudgetArchiveService(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+    public BudgetArchiveService(JdbcTemplate jdbc, ObjectMapper objectMapper, IdempotencyStore idempotency) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.idempotency = idempotency;
     }
 
     @Transactional
-    public SavedBudget save(UUID ownerId, EstimateRequest request, EstimateResult result) {
-        var id = UUID.randomUUID();
+    public SavedBudget save(UUID ownerId, String key, EstimateRequest request, EstimateResult result) {
+        var id = idempotency.reserve(ownerId, key, "budget", request, UUID.randomUUID());
+        var existing = findByOwner(ownerId, id);
+        if (existing != null) return existing;
         var now = Timestamp.from(Instant.now());
         jdbc.update("""
                 insert into project_budget_estimates(id, owner_id, project_id, pricing_mode, model_version,
@@ -38,6 +43,21 @@ public class BudgetArchiveService {
                 writeJson(request), writeJson(result), result.totalLow(), result.totalHigh(),
                 result.dataQuality(), now);
         return toSaved(id, request.projectId(), result, now.toInstant());
+    }
+
+    private SavedBudget findByOwner(UUID ownerId, UUID id) {
+        var rows = jdbc.query("""
+                select id, project_id, pricing_mode, model_version, total_low, total_high,
+                       data_quality, result_json, created_at
+                from project_budget_estimates where owner_id = ? and id = ?
+                """, (rs, n) -> {
+            var result = readResult(rs.getString("result_json"));
+            return new SavedBudget(rs.getObject("id", UUID.class), rs.getObject("project_id", UUID.class),
+                    rs.getString("pricing_mode"), rs.getString("model_version"),
+                    rs.getBigDecimal("total_low"), rs.getBigDecimal("total_high"),
+                    rs.getString("data_quality"), result, rs.getTimestamp("created_at").toInstant());
+        }, ownerId, id);
+        return rows.isEmpty() ? null : rows.getFirst();
     }
 
     public List<SavedBudget> list(UUID ownerId, UUID projectId) {

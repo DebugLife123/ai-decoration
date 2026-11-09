@@ -50,7 +50,7 @@ public class BudgetEstimateService {
     static final BigDecimal INTERIOR_RATIO = new BigDecimal("0.78");
     /** 墙面展开系数（周长 × 层高的经验值，扣门窗后约 2.55）。 */
     static final BigDecimal WALL_RATIO = new BigDecimal("2.55");
-    static final String MODEL_VERSION = "v3";
+    static final String MODEL_VERSION = "v4";
 
     private final JdbcTemplate jdbc;
 
@@ -105,6 +105,7 @@ public class BudgetEstimateService {
         var laborLow = BigDecimal.ZERO;
         var laborHigh = BigDecimal.ZERO;
         var quotedCount = 0;
+        var partialCount = 0;
 
         for (var item : items) {
             var disabled = disabledKeys.contains(item.key());
@@ -157,6 +158,12 @@ public class BudgetEstimateService {
             var materialCostHigh = BigDecimal.ZERO;
             var laborCostLow = BigDecimal.ZERO;
             var laborCostHigh = BigDecimal.ZERO;
+            BigDecimal materialPriceLow = null;
+            BigDecimal materialPriceHigh = null;
+            BigDecimal laborPriceLow = null;
+            BigDecimal laborPriceHigh = null;
+            String materialSource = "NONE";
+            String laborSource = "NONE";
             String source;
             var skipped = new ArrayList<String>();
             List<QuoteSample> samples = List.of();
@@ -165,26 +172,15 @@ public class BudgetEstimateService {
                 source = "DISABLED";
                 if (disabled) skipped.add("用户已关闭该板块");
                 if (!disabled && factor == null) skipped.add("该板块暂无工程量系数，未参与计算");
-            } else if (distinctCompanies(materialQuotes) >= MIN_COMPANY_COUNT
-                    && distinctCompanies(laborQuotes) >= MIN_COMPANY_COUNT) {
-                var materialBand = priceBand(materialQuotes);
-                var laborBand = priceBand(laborQuotes);
-                var waste = wasteRate.add(BigDecimal.ONE);
-                materialCostLow = money(qtyLow.multiply(materialBand.low()).multiply(waste));
-                materialCostHigh = money(qtyHigh.multiply(materialBand.high()).multiply(waste));
-                laborCostLow = money(qtyLow.multiply(laborBand.low()).multiply(waste));
-                laborCostHigh = money(qtyHigh.multiply(laborBand.high()).multiply(waste));
-                source = "QUOTED";
-                quotedCount++;
-                samples = mergeSamples(materialQuotes, laborQuotes);
             } else {
                 var band = referenceBand(item.key(), finishLevel);
                 if (band == null) {
                     source = "DISABLED";
                     skipped.add("该板块没有配置基准区间，未参与计算");
                 } else {
-                    // 基准回填：材料占比 × 区间 = 材料部分，其余为人工。绝不能算 0。
-                    // 按户最低计量（如水电不足 85㎡ 按 85㎡）同样要作用到基准路径。
+                    // 基准总额（元/㎡ × 计价面积）先算出来，材料/人工按占比拆分。
+                    // 这条路径是「无报价时的守恒基准」：9 板块合计必须严格等于区间 × 建筑面积，
+                    // 所以只能做「总额 → 按占比拆一次」，不能再拿单价乘回去，否则每板块多一次取整就破坏守恒。
                     var billableArea = area;
                     var houseRule = minQtyRules.get(item.key() + ":" + item.unitKind());
                     if (houseRule != null && "PER_HOUSE".equals(houseRule.scope())
@@ -196,16 +192,67 @@ public class BudgetEstimateService {
                     var totalLow = money(band.low().multiply(billableArea));
                     var totalHigh = money(band.high().multiply(billableArea));
                     var ratio = item.materialRatio();
-                    materialCostLow = money(totalLow.multiply(ratio));
-                    materialCostHigh = money(totalHigh.multiply(ratio));
-                    laborCostLow = totalLow.subtract(materialCostLow);
-                    laborCostHigh = totalHigh.subtract(materialCostHigh);
-                    source = "REFERENCE";
-                    if (!materialQuotes.isEmpty() || !laborQuotes.isEmpty()) {
-                        skipped.add("同板块仅 " + Math.max(distinctCompanies(materialQuotes), distinctCompanies(laborQuotes))
-                                + " 家企业报价，低于 " + MIN_COMPANY_COUNT + " 家门槛，按行业基准估算");
+                    var refMaterialCostLow = money(totalLow.multiply(ratio));
+                    var refMaterialCostHigh = money(totalHigh.multiply(ratio));
+                    var refLaborCostLow = totalLow.subtract(refMaterialCostLow);
+                    var refLaborCostHigh = totalHigh.subtract(refMaterialCostHigh);
+
+                    // 材料与人工各自独立判定：某一路达标就用真实报价，另一路照常走基准。
+                    // 绝不能让「人工没报价」把「材料有报价」一起拖回基准——那样用户永远看不出材料花在哪。
+                    var materialQuoted = distinctCompanies(materialQuotes) >= MIN_COMPANY_COUNT;
+                    var laborQuoted = distinctCompanies(laborQuotes) >= MIN_COMPANY_COUNT;
+                    var waste = wasteRate.add(BigDecimal.ONE);
+
+                    if (materialQuoted) {
+                        var materialBand = priceBand(materialQuotes);
+                        materialPriceLow = materialBand.low();
+                        materialPriceHigh = materialBand.high();
+                        materialCostLow = money(qtyLow.multiply(materialBand.low()).multiply(waste));
+                        materialCostHigh = money(qtyHigh.multiply(materialBand.high()).multiply(waste));
+                        materialSource = "QUOTED";
+                        samples = new ArrayList<>(mergeSamples(materialQuotes, List.of()));
                     } else {
-                        skipped.add("暂无企业报价，按行业基准估算");
+                        materialCostLow = refMaterialCostLow;
+                        materialCostHigh = refMaterialCostHigh;
+                        materialPriceLow = unitPrice(materialCostLow, qtyLow, waste);
+                        materialPriceHigh = unitPrice(materialCostHigh, qtyHigh, waste);
+                        materialSource = "REFERENCE";
+                    }
+
+                    if (laborQuoted) {
+                        var laborBand = priceBand(laborQuotes);
+                        laborPriceLow = laborBand.low();
+                        laborPriceHigh = laborBand.high();
+                        laborCostLow = money(qtyLow.multiply(laborBand.low()).multiply(waste));
+                        laborCostHigh = money(qtyHigh.multiply(laborBand.high()).multiply(waste));
+                        laborSource = "QUOTED";
+                        samples = mergeSamples(materialQuoted ? materialQuotes : List.of(), laborQuotes);
+                    } else {
+                        laborCostLow = refLaborCostLow;
+                        laborCostHigh = refLaborCostHigh;
+                        laborPriceLow = unitPrice(laborCostLow, qtyLow, waste);
+                        laborPriceHigh = unitPrice(laborCostHigh, qtyHigh, waste);
+                        laborSource = "REFERENCE";
+                    }
+
+                    if (materialQuoted && laborQuoted) {
+                        source = "QUOTED";
+                        quotedCount++;
+                    } else if (materialQuoted || laborQuoted) {
+                        source = "PARTIAL";
+                        partialCount++;
+                        skipped.add((materialQuoted ? "人工" : "材料") + "一路报价不足 "
+                                + MIN_COMPANY_COUNT + " 家企业，该路按行业基准占比估算；"
+                                + (materialQuoted ? "材料" : "人工") + "一路采用真实报价");
+                    } else {
+                        source = "REFERENCE";
+                        if (!materialQuotes.isEmpty() || !laborQuotes.isEmpty()) {
+                            skipped.add("同板块最多仅 " + Math.max(distinctCompanies(materialQuotes),
+                                    distinctCompanies(laborQuotes)) + " 家企业报价，低于 " + MIN_COMPANY_COUNT
+                                    + " 家门槛，按行业基准估算");
+                        } else {
+                            skipped.add("暂无企业报价，按行业基准估算");
+                        }
                     }
                 }
             }
@@ -218,14 +265,18 @@ public class BudgetEstimateService {
             resultItems.add(new BudgetItem(item.key(), item.label(), demandUnit, basis,
                     qtyBase, appliedMinQty, appliedMinQtyRule, wasteRate,
                     disabled, materialCostLow, materialCostHigh, laborCostLow, laborCostHigh,
+                    materialPriceLow, materialPriceHigh, laborPriceLow, laborPriceHigh,
                     materialCostLow.add(laborCostLow), materialCostHigh.add(laborCostHigh),
-                    source, skipped, samples));
+                    source, materialSource, laborSource, skipped, samples));
         }
 
         var totalLow = money(materialLow.add(laborLow));
         var totalHigh = money(materialHigh.add(laborHigh));
 
-        var dataQuality = quotedCount == 0 ? "REFERENCE" : quotedCount >= items.size() ? "QUOTED" : "PARTIAL";
+        // 只有「材料与人工两路都用真实报价」的板块才算完全 QUOTED；
+        // 只要有一路是真报价，整体就至少是 PARTIAL，不能退化成 REFERENCE。
+        var dataQuality = quotedCount >= items.size() ? "QUOTED"
+                : (quotedCount > 0 || partialCount > 0) ? "PARTIAL" : "REFERENCE";
 
         var target = request.targetBudget();
         String overBudgetStatus = null;
@@ -236,7 +287,10 @@ public class BudgetEstimateService {
 
         if (quotedCount > 0 && quotedCount < items.size()) {
             warnings.add("仅 " + quotedCount + " 个板块达到 " + MIN_COMPANY_COUNT
-                    + " 家企业门槛并采用真实报价，其余板块按行业基准估算");
+                    + " 家企业门槛并同时采用真实材料价与人工价，其余板块至少有一路按行业基准估算");
+        }
+        if (partialCount > 0) {
+            warnings.add(partialCount + " 个板块只有材料或只有人工的真实报价，另一路按行业基准占比估算");
         }
 
         return new EstimateResult(totalLow, totalHigh, target, overBudgetStatus, dataQuality,
@@ -256,31 +310,44 @@ public class BudgetEstimateService {
 
     private Map<String, Factor> loadFactors(String spaceType) {
         var map = new HashMap<String, Factor>();
+        // 必须用 ResultSetExtractor + 显式循环：Spring 6 没有 query(String, RowCallbackHandler, Object...)，
+        // 单参数 lambda 会被当成 ResultSetExtractor，rs 是单行游标而已，不循环会只读到第一行。
         jdbc.query("""
                 select item_key, basis, per_sqm, waste_rate from workload_factors
                 where space_type in (?, 'WHOLE_HOME')
                 order by case when space_type = ? then 0 else 1 end
-                """, rs -> {
-            map.putIfAbsent(rs.getString("item_key"), new Factor(rs.getString("basis"),
-                    rs.getBigDecimal("per_sqm"), rs.getBigDecimal("waste_rate")));
+                """, (org.springframework.jdbc.core.ResultSetExtractor<Void>) rs -> {
+            while (rs.next()) {
+                map.putIfAbsent(rs.getString("item_key"), new Factor(rs.getString("basis"),
+                        rs.getBigDecimal("per_sqm"), rs.getBigDecimal("waste_rate")));
+            }
+            return null;
         }, spaceType, spaceType);
         return map;
     }
 
     private Map<String, MinQty> loadMinQtyRules() {
         var map = new HashMap<String, MinQty>();
-        jdbc.query("select item_key, unit_kind, min_qty, scope, note from budget_min_qty", rs -> {
-            map.put(rs.getString("item_key") + ":" + rs.getString("unit_kind"),
-                    new MinQty(rs.getBigDecimal("min_qty"), rs.getString("scope"), rs.getString("note")));
+        jdbc.query("select item_key, unit_kind, min_qty, scope, note from budget_min_qty",
+                (org.springframework.jdbc.core.ResultSetExtractor<Void>) rs -> {
+            while (rs.next()) {
+                map.put(rs.getString("item_key") + ":" + rs.getString("unit_kind"),
+                        new MinQty(rs.getBigDecimal("min_qty"), rs.getString("scope"), rs.getString("note")));
+            }
+            return null;
         });
         return map;
     }
 
     private Map<String, List<String>> loadCategories() {
         var map = new HashMap<String, List<String>>();
-        jdbc.query("select item_key, source, category from budget_item_categories order by priority", rs -> {
-            var key = rs.getString("source") + ":" + rs.getString("item_key");
-            map.computeIfAbsent(key, k -> new ArrayList<>()).add(rs.getString("category"));
+        jdbc.query("select item_key, source, category from budget_item_categories order by priority",
+                (org.springframework.jdbc.core.ResultSetExtractor<Void>) rs -> {
+            while (rs.next()) {
+                var key = rs.getString("source") + ":" + rs.getString("item_key");
+                map.computeIfAbsent(key, k -> new ArrayList<>()).add(rs.getString("category"));
+            }
+            return null;
         });
         return map;
     }
@@ -314,7 +381,10 @@ public class BudgetEstimateService {
 
         var isLabor = "LABOR".equals(source);
         var table = isLabor ? "labor_quotes" : "material_quotes";
-        var nameCol = isLabor ? "labor_type" : "name";
+        // 匹配列必须是 budget_item_categories.category 对应的那一列：
+        // 材料是 material_quotes.category（不是 name，name 是具体型号名如「强化复合地板 A 型」），
+        // 人工是 labor_quotes.labor_type。用错列会让所有报价都匹配不上，预算永远停在 REFERENCE。
+        var matchCol = isLabor ? "labor_type" : "category";
         var placeholders = String.join(",", java.util.Collections.nCopies(categories.size(), "?"));
 
         var sql = """
@@ -329,7 +399,7 @@ public class BudgetEstimateService {
                   and q.item_nature = 'INCLUDED'
                   and q.valid_until >= current_date
                   and q.%s in (%s)
-                """.formatted(nameCol, table, nameCol, placeholders);
+                """.formatted(matchCol, table, matchCol, placeholders);
 
         var args = new ArrayList<Object>();
         args.addAll(categories);
@@ -354,6 +424,18 @@ public class BudgetEstimateService {
     private Band priceBand(List<Quote> quotes) {
         var prices = quotes.stream().map(Quote::price).sorted().toList();
         return new Band(percentile(prices, 0.25), percentile(prices, 0.75));
+    }
+
+    /**
+     * 由成本反推单价（元/计量单位），只用于展示，不参与任何成本计算。
+     *
+     * <p>成本 = 数量 × 单价 × (1 + 损耗)，所以单价 = 成本 ÷ 数量 ÷ (1 + 损耗)。
+     * 反向换算会带来 0.01 级的误差，展示上可以接受——成本本身才是守恒的对象。
+     */
+    private BigDecimal unitPrice(BigDecimal cost, BigDecimal qty, BigDecimal waste) {
+        if (cost == null || qty == null || qty.signum() <= 0) return null;
+        return cost.divide(qty, 4, RoundingMode.HALF_UP)
+                .divide(waste, 2, RoundingMode.HALF_UP);
     }
 
     /** 线性插值分位数；样本少时不引统计库。 */

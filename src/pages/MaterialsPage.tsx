@@ -5,6 +5,7 @@ import { workspaceDataAdapter } from '../services/workspaceData';
 import { loadCatalogMaterialImage } from '../services/materialCatalog';
 import { createMaterialInquiry } from '../services/inquiries';
 import type { MaterialRecord } from '../services/dataContracts';
+import { unitUnknownBadge } from '../services/budgetUnits';
 import './MaterialsPage.css';
 
 function contactHref(value: string): string | undefined {
@@ -195,6 +196,7 @@ export default function MaterialsPage() {
         <p>{material.spec || '规格未填写'}{material.unit ? ` · ${material.unit}` : ''}</p>
         {material.companyName && <p className="material-company">报价方：{material.companyId ? <Link to={`/companies/${material.companyId}`} onClick={(event) => event.stopPropagation()}>{material.companyName}</Link> : material.companyName}</p>}
         <div className="material-price">¥{material.price || '未报价'}<small> / {material.unit || '单位未填写'}</small></div>
+        {material.unitUnknown && <p className="material-unit-unknown" role="note">⚠ {unitUnknownBadge}</p>}
         <div className="material-item-actions"><button type="button" className={`material-save-button ${favorited ? 'saved' : ''}`} aria-pressed={favorited} onClick={() => toggleFavorite(material.id)}>{favorited ? '已收藏' : '收藏'}</button><button type="button" className={`material-compare-button ${compared ? 'selected' : ''}`} aria-pressed={compared} disabled={!compared && compareIds.length >= 4} onClick={() => toggleCompare(material.id)}>{compared ? '已选对比' : '加入对比'}</button></div>
         <div className="material-item-foot"><button type="button" className="material-details-button" onClick={() => openDetails(material)}>查看详情</button><button disabled={!selectedProject} className={attached ? 'attached' : ''} onClick={() => selectedProject && toggleProjectMaterial(selectedProject.id, material.id)}>{attached ? '已加入项目' : '加入项目'}</button></div>
       </article>;
@@ -218,6 +220,7 @@ export default function MaterialsPage() {
           <h2 id="material-detail-title">{detailMaterial.name}</h2>
           {detailMaterial.brand && <p className="material-detail-brand">{detailMaterial.brand}</p>}
           <div className="material-detail-price">¥{detailMaterial.price}<small> / {detailMaterial.unit || '单位未填写'}</small></div>
+          {detailMaterial.unitUnknown && <p className="material-unit-unknown" role="note">⚠ {unitUnknownBadge}</p>}
           <dl className="material-detail-specs">
             <div><dt>产品规格</dt><dd>{detailMaterial.spec || '未填写'}</dd></div>
             <div><dt>计价单位</dt><dd>{detailMaterial.unit || '未填写'}</dd></div>

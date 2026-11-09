@@ -211,12 +211,30 @@ function renderBreakdown(items: BudgetItem[] | null, localBreakdown: { label: st
       <span>{item.label}{item.disabled && <em className="estimate-row-flag">未包含</em>}
         {item.appliedMinQty && <em className="estimate-row-flag" title={item.appliedMinQtyRule ?? ''}>按最低量计</em>}
         {item.source === 'QUOTED' && <em className="estimate-row-flag quoted">企业报价</em>}
+        {item.source === 'PARTIAL' && (
+          <em
+            className="estimate-row-flag partial"
+            title={`材料参考 ${item.materialSource === 'QUOTED' ? '企业报价' : '行业基准'}，人工参考 ${item.laborSource === 'QUOTED' ? '企业报价' : '行业基准'}`}
+          >
+            部分报价
+          </em>
+        )}
       </span>
       <strong>
         {item.disabled
           ? '—'
           : <>¥{formatMoney(item.costLow)}{item.costLow !== item.costHigh && <> - ¥{formatMoney(item.costHigh)}</>} 万
             <small className="estimate-row-split">材料 {formatMoney(item.materialCostLow)}–{formatMoney(item.materialCostHigh)} · 人工 {formatMoney(item.laborCostLow)}–{formatMoney(item.laborCostHigh)}</small>
+            {(item.materialPriceLow != null || item.laborPriceLow != null) && (
+              <small className="estimate-row-unit-price">
+                {item.materialPriceLow != null && <>材料单价 ¥{formatMoney(item.materialPriceLow)}</>}
+                {item.materialPriceLow != null && item.laborPriceLow != null && ' · '}
+                {item.laborPriceLow != null && <>人工单价 ¥{formatMoney(item.laborPriceLow)}</>}
+                {item.materialPriceHigh != null && item.materialPriceHigh !== item.materialPriceLow && <>–{formatMoney(item.materialPriceHigh)}</>}
+                {item.laborPriceHigh != null && item.laborPriceHigh !== item.laborPriceLow && <>–{formatMoney(item.laborPriceHigh)}</>}
+                {' /'} {item.unitKind}
+              </small>
+            )}
           </>}
       </strong>
     </div>

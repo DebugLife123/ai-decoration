@@ -4,6 +4,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Null;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -45,6 +46,11 @@ public final class BusinessDtos {
             @Digits(integer = 8, fraction = 2) @DecimalMin("0.00") BigDecimal area,
             @Size(max = 80) String style,
             @Digits(integer = 12, fraction = 2) @DecimalMin("0.00") BigDecimal budget,
+            /**
+             * 创建只允许草稿。发布必须走 POST /api/v1/business/cases/{caseId}/publish，
+             * 这样「创建」与「发布」在审计日志里是两个可区分的事件。
+             */
+            @Null(message = "案例创建只支持草稿，发布请使用 POST /cases/{caseId}/publish")
             CaseStatus status,
             @Size(max = 30) List<@NotNull UUID> fileIds) {
     }

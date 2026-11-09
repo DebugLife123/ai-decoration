@@ -53,9 +53,11 @@ public class AdminMarketplaceController {
     }
 
     @org.springframework.web.bind.annotation.PostMapping(value = "/companies/{companyId}/assets", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ApiResponse<BusinessAssetService.BusinessAsset> uploadCompanyAsset(
+    public org.springframework.http.ResponseEntity<ApiResponse<BusinessAssetService.BusinessAsset>> uploadCompanyAsset(
             @PathVariable UUID companyId, @RequestPart("file") MultipartFile file) {
-        return ApiResponse.success(assets.upload(companyId, file));
+        // 与企业端上传保持一致：创建资源返回 201。
+        return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
+                .body(ApiResponse.success(assets.upload(companyId, file)));
     }
 
     @org.springframework.web.bind.annotation.PostMapping("/companies/{companyId}/cases/{caseId}/files")

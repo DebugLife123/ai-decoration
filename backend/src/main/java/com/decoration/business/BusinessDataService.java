@@ -2,7 +2,6 @@ package com.decoration.business;
 
 import com.decoration.budget.BudgetUnitKind;
 import com.decoration.shared.api.BusinessApiException;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -12,15 +11,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -55,10 +51,12 @@ public class BusinessDataService {
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final IdempotencyStore idempotency;
 
-    public BusinessDataService(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+    public BusinessDataService(JdbcTemplate jdbc, ObjectMapper objectMapper, IdempotencyStore idempotency) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.idempotency = idempotency;
     }
 
     public Profile getProfile(UUID companyId) {
@@ -130,7 +128,10 @@ public class BusinessDataService {
     @Transactional
     public Created<BusinessCase> createCase(UUID companyId, String key, CaseRequest request) {
         ensureDistinct(request.fileIds());
-        if (request.status() == CaseStatus.published) requireApprovedCertification(companyId);
+        // 创建一律落为草稿；发布只能走 publishCase，避免绕过认证检查与审计。
+        if (request.status() != null && request.status() != CaseStatus.draft) {
+            throw invalid("案例创建只支持草稿，发布请使用 POST /cases/{caseId}/publish");
+        }
         var id = UUID.randomUUID();
         var actualId = idempotentResource(companyId, key, "case", request, id);
         if (!actualId.equals(id)) return new Created<>(getCase(companyId, actualId), false);
@@ -139,7 +140,7 @@ public class BusinessDataService {
                 insert into business_cases(id, company_id, title, area, style, budget, status, created_at, updated_at)
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, id, companyId, clean(request.title()), request.area(), clean(request.style()), request.budget(),
-                (request.status() == null ? CaseStatus.draft : request.status()).name(), now, now);
+                CaseStatus.draft.name(), now, now);
         saveCaseFiles(companyId, id, request.fileIds());
         return new Created<>(getCase(companyId, id), true);
     }
@@ -229,13 +230,17 @@ public class BusinessDataService {
         var actualId = idempotentResource(companyId, key, "material-quote", request, id);
         if (!actualId.equals(id)) return new Created<>(getMaterialQuote(companyId, actualId), false);
         var now = Timestamp.from(Instant.now());
-        jdbc.update("""
-                insert into material_quotes(id, company_id, name, specification, unit, price, brand, category, region,
-                    valid_until, image_id, created_at, updated_at, unit_kind, unit_unknown, item_nature)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, id, companyId, clean(request.name()), clean(request.spec()), unit, request.price(), clean(request.brand()),
-                clean(request.category()), clean(request.region()), request.validUntil(), imageIds.isEmpty() ? null : imageIds.getFirst(), now, now,
-                unitKind.name(), unitKind == BudgetUnitKind.UNKNOWN, itemNature);
+        try {
+            jdbc.update("""
+                    insert into material_quotes(id, company_id, name, specification, unit, price, brand, category, region,
+                        valid_until, image_id, created_at, updated_at, unit_kind, unit_unknown, item_nature)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, id, companyId, clean(request.name()), clean(request.spec()), unit, request.price(), clean(request.brand()),
+                    clean(request.category()), clean(request.region()), request.validUntil(), imageIds.isEmpty() ? null : imageIds.getFirst(), now, now,
+                    unitKind.name(), unitKind == BudgetUnitKind.UNKNOWN, itemNature);
+        } catch (DuplicateKeyException exception) {
+            throw duplicateQuote();
+        }
         saveMaterialImages(companyId, id, imageIds);
         return new Created<>(getMaterialQuote(companyId, id), true);
     }
@@ -254,21 +259,26 @@ public class BusinessDataService {
         var nextUnit = patch.unit() == null ? current.unit() : clean(patch.unit());
         var nextUnitKind = BudgetUnitKind.fromLabel(nextUnit);
         var nextNature = patch.itemNature() == null ? current.itemNature() : validateItemNature(clean(patch.itemNature()));
-        var changed = jdbc.update("""
-                update material_quotes set name = ?, specification = ?, unit = ?, price = ?, brand = ?, category = ?, region = ?,
-                    valid_until = ?, image_id = ?, unit_kind = ?, unit_unknown = ?, item_nature = ?,
-                    version = version + 1, updated_at = ?
-                where company_id = ? and id = ? and version = ?
-                """, patch.name() == null ? current.name() : clean(patch.name()),
-                patch.spec() == null ? current.spec() : clean(patch.spec()), nextUnit,
-                patch.price() == null ? current.price() : patch.price(), patch.brand() == null ? current.brand() : clean(patch.brand()),
-                patch.category() == null ? current.category() : clean(patch.category()),
-                patch.region() == null ? current.region() : clean(patch.region()),
-                patch.validUntil() == null ? current.validUntil() : patch.validUntil(),
-                imageIds != null ? (imageIds.isEmpty() ? null : imageIds.getFirst())
-                        : patch.clearImage() ? null : patch.imageId() == null ? current.imageId() : patch.imageId(),
-                nextUnitKind.name(), nextUnitKind == BudgetUnitKind.UNKNOWN, nextNature,
-                Timestamp.from(Instant.now()), companyId, id, patch.version());
+        int changed;
+        try {
+            changed = jdbc.update("""
+                    update material_quotes set name = ?, specification = ?, unit = ?, price = ?, brand = ?, category = ?, region = ?,
+                        valid_until = ?, image_id = ?, unit_kind = ?, unit_unknown = ?, item_nature = ?,
+                        version = version + 1, updated_at = ?
+                    where company_id = ? and id = ? and version = ?
+                    """, patch.name() == null ? current.name() : clean(patch.name()),
+                    patch.spec() == null ? current.spec() : clean(patch.spec()), nextUnit,
+                    patch.price() == null ? current.price() : patch.price(), patch.brand() == null ? current.brand() : clean(patch.brand()),
+                    patch.category() == null ? current.category() : clean(patch.category()),
+                    patch.region() == null ? current.region() : clean(patch.region()),
+                    patch.validUntil() == null ? current.validUntil() : patch.validUntil(),
+                    imageIds != null ? (imageIds.isEmpty() ? null : imageIds.getFirst())
+                            : patch.clearImage() ? null : patch.imageId() == null ? current.imageId() : patch.imageId(),
+                    nextUnitKind.name(), nextUnitKind == BudgetUnitKind.UNKNOWN, nextNature,
+                    Timestamp.from(Instant.now()), companyId, id, patch.version());
+        } catch (DuplicateKeyException exception) {
+            throw duplicateQuote();
+        }
         if (changed == 0) throw versionConflict();
         if (imageIds != null) saveMaterialImages(companyId, id, imageIds);
         return getMaterialQuote(companyId, id);
@@ -416,23 +426,9 @@ public class BusinessDataService {
     }
 
     private UUID idempotentResource(UUID companyId, String key, String type, Object request, UUID proposedId) {
-        var now = Timestamp.from(Instant.now());
-        jdbc.update("delete from business_idempotency_keys where company_id = ? and idempotency_key = ? and expires_at <= ?", companyId, key, now);
-        var hash = requestHash(request);
-        jdbc.update("""
-                insert into business_idempotency_keys(company_id, idempotency_key, request_hash, resource_type, resource_id, created_at, expires_at)
-                values (?, ?, ?, ?, ?, ?, ?)
-                on conflict (company_id, idempotency_key) do nothing
-                """, companyId, key, hash, type, proposedId, now, Timestamp.from(now.toInstant().plusSeconds(86400)));
-        var existing = jdbc.query("""
-                select request_hash, resource_type, resource_id from business_idempotency_keys
-                where company_id = ? and idempotency_key = ?
-                """, (rs, row) -> new IdempotencyRecord(rs.getString(1), rs.getString(2), rs.getObject(3, UUID.class)), companyId, key).getFirst();
-        if (!existing.requestHash().equals(hash) || !existing.resourceType().equals(type)) {
-            throw new BusinessApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT", "Idempotency key was used for a different request");
-        }
-        return existing.resourceId();
+        return idempotency.reserve(companyId, key, type, request, proposedId);
     }
+
 
     private void deleteVersioned(String table, UUID companyId, UUID id, int version) {
         var changed = jdbc.update("delete from " + table + " where company_id = ? and id = ? and version = ?", companyId, id, version);
@@ -464,15 +460,6 @@ public class BusinessDataService {
             case "INCLUDED", "GIFT", "OWNER_SUPPLIED" -> nature;
             default -> throw invalid("itemNature must be one of INCLUDED, GIFT, OWNER_SUPPLIED");
         };
-    }
-
-    private String requestHash(Object request) {
-        try {
-            var digest = MessageDigest.getInstance("SHA-256").digest(objectMapper.writeValueAsBytes(request));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException | JsonProcessingException exception) {
-            throw new IllegalStateException("Unable to hash request", exception);
-        }
     }
 
     private static String clean(String value) {
@@ -530,7 +517,14 @@ public class BusinessDataService {
         return new BusinessApiException(HttpStatus.CONFLICT, "VERSION_CONFLICT", "Resource version is stale");
     }
 
-    private record IdempotencyRecord(String requestHash, String resourceType, UUID resourceId) {
+    /**
+     * 同一企业下「名称 + 规格 + 品牌 + 单位」已经存在时的响应。
+     * 数据库用 material_quotes_natural_key_idx 兜底，这里把约束冲突翻译成可读的业务错误，
+     * 而不是让前端只看到「A matching business record already exists」。
+     */
+    private static BusinessApiException duplicateQuote() {
+        return new BusinessApiException(HttpStatus.CONFLICT, "DUPLICATE_QUOTE",
+                "同名规格品牌的材料报价已存在，请直接修改那一条，或换一个规格/单位");
     }
 
     public record Created<T>(T value, boolean created) {

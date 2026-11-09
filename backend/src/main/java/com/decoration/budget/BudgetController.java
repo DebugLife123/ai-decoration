@@ -3,6 +3,8 @@ package com.decoration.budget;
 import com.decoration.shared.api.ApiResponse;
 import com.decoration.shared.api.BusinessApiException;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -52,11 +55,13 @@ public class BudgetController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<SavedBudget>> save(@AuthenticationPrincipal Jwt jwt,
-                                                          @Valid @RequestBody EstimateRequest request) {
+    public ResponseEntity<ApiResponse<SavedBudget>> save(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestHeader("Idempotency-Key") @NotBlank @Size(min = 8, max = 128) String key,
+            @Valid @RequestBody EstimateRequest request) {
         var result = estimateService.estimate(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(archiveService.save(ownerId(jwt), request, result)));
+                .body(ApiResponse.success(archiveService.save(ownerId(jwt), key, request, result)));
     }
 
     @GetMapping

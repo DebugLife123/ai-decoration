@@ -147,7 +147,7 @@ v2 里的阶段 0（部署）、阶段 1（合并 + 契约）仍然有效，本�
 - [ ] 合并后推 `main` 触发 CI，全绿再部署
 - [ ] 注意：本地 `main` 落后 `origin/main` 22 个提交，**不要**往本地旧 `main` 上合
 
-### 1.2 契约补齐（33 个 operation）
+### 1.2 契约补齐（42 个操作，累计 82 个）
 
 | 分组 | 缺失接口 |
 |---|---|
@@ -159,25 +159,31 @@ v2 里的阶段 0（部署）、阶段 1（合并 + 契约）仍然有效，本�
 | 风格 | `GET /api/v1/styles/recommendations`、`GET/PUT /api/v1/business/style-profiles` |
 | 素材 | `POST/GET/DELETE /api/v1/business/assets*`（4 个） |
 | 完备度 | `GET /api/v1/business/completeness` |
-| 管理端 | `admin/certifications`(3)、`admin/marketplace`(4)、`admin/assets`(3)、`admin/audit-logs`(1) |
+| 预算 | `POST /api/v1/budgets/estimate`、`POST/GET /api/v1/budgets`、`GET/DELETE /api/v1/budgets/{id}`（5 个） |
+| 管理端 | `admin/certifications`(3)、`admin/marketplace`(9)、`admin/assets`(3)、`admin/audit-logs`(1) |
 | 案例发布 | `POST /api/v1/business/cases/{caseId}/publish` |
 | 管理员登录 | `POST /api/v1/auth/admin/login` |
+| 健康检查 | `GET /api/v1/health` |
 
-- [ ] 逐个补 `paths` + `schemas` + 错误响应矩阵
-- [ ] `qa/contract-test-plan.md` 新增管理端、通知、询价、公开目录四章
+- [x] 逐个补 `paths` + `schemas` + 错误响应矩阵
+- [x] `qa/contract-test-plan.md` 新增管理端、通知、询价、公开目录四章
+
+**完成情况**：`contracts/openapi.yaml` 现为 81 operation / 120 schema / 11 共享 response / 0 悬空 `$ref`，19 个 tag 全部声明，6 个匿名入口显式 `security: []`，错误码补齐 `FILE_TOO_LARGE`(413) 与 415。`qa/contract-test-plan.md` 由 14 章扩为 18 章（新增第 12 管理端、13 通知、14 询价、15 公开目录），并按实际实现修正了权限矩阵、幂等语义、分页形态与空数据约定，第 18 章列出 10 条待产品确认的遗留决策。（operation 数在 1.3 收尾时为 82；随后按第 18 章决策 6 下线了企业端认证审核旧路径，降为 81。）
 
 ### 1.3 生产三角色验收
 
-- [ ] 企业注册 → 提交认证（PDF/图片）→ 管理员审核通过 → 企业收到通知
-- [ ] 企业录入材料报价（多图）+ 人工报价 + 风格资料
-- [ ] 未认证企业报价**不进入** C 端材料库
-- [ ] 管理员下架材料 → C 端立即不可见
-- [ ] 个人：浏览 → 筛选 → 收藏 → 对比 → 加入项目 → 项目详情可见
-- [ ] 个人咨询企业 → 企业端收到 → 状态流转 NEW→CONTACTED→QUOTED→CLOSED
-- [ ] 预算页风格推荐显示企业来源标记
-- [ ] 管理员审计日志可见上述审核/下架动作
+- [x] 企业注册 → 提交认证（PDF/图片）→ 管理员审核通过 → 企业收到通知
+- [x] 企业录入材料报价（多图）+ 人工报价 + 风格资料
+- [x] 未认证企业报价**不进入** C 端材料库
+- [x] 管理员下架材料 → C 端立即不可见
+- [x] 个人：浏览 → 筛选 → 收藏 → 对比 → 加入项目 → 项目详情可见
+- [x] 个人咨询企业 → 企业端收到 → 状态流转 NEW→CONTACTED→QUOTED→CLOSED
+- [x] 预算页风格推荐显示企业来源标记
+- [x] 管理员审计日志可见上述审核/下架动作
 
 **工期**：1 天
+
+**完成情况**：在真实后端 + 本机 PostgreSQL 18.4 上跑自动化验收脚本 `acceptance_1_3.py`，上面 8 条全部通过（连跑两次稳定）。验收中发现并修复了一类生产 bug：`NotificationService` 等处用单参数 lambda 调 `JdbcTemplate.query`，在 Spring 6 下被推导成 `ResultSetExtractor` 而非 RowCallbackHandler，导致通知列表静默为空、预算的工程量系数/最小起订量/类目表只读第一行。已改为显式 `(ResultSetExtractor<Void>)` + 游标循环，并补 `notificationListReadsAllDerivedRows`、`adminNotificationListReadsAllPendingCertifications` 两个多行回归测试（已验证：把 `while` 改回 `if` 时测试会失败）。后端全量测试 67 个全绿。
 
 ---
 
@@ -326,10 +332,22 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 
 模板每行是 `G = D × (E 基材单价 + F 人工单价)`，两列分开。合成一个综合单价是错的——「材料降 5%、人工涨 5%」会被抵消，用户看不出钱花在哪。
 
-- [ ] `BudgetItem` DTO 增加 `materialPriceLow/High`、`laborPriceLow/High`、`materialCostLow/High`、`laborCostLow/High`
-- [ ] 单价区间各路独立取 P25/P75（材料取材料报价，人工取人工报价）
-- [ ] 某一路无报价时：该路降级到 `budget_reference_bands` 的对应拆分占比，**另一路仍用真实报价**（不能整项降级）
-- [ ] `budget_reference_bands` 增加 `material_ratio numeric(5,4)`（材料占该板块基准的比例）
+- [x] `BudgetItem` DTO 增加 `materialPriceLow/High`、`laborPriceLow/High`、`materialCostLow/High`、`laborCostLow/High`
+- [x] 单价区间各路独立取 P25/P75（材料取材料报价，人工取人工报价）
+- [x] 某一路无报价时：该路降级到 `budget_reference_bands` 的对应拆分占比，**另一路仍用真实报价**（不能整项降级）
+- [x] 材料/人工拆分占比按板块写成代码常量 `MATERIAL_RATIO`，`budget_reference_bands` 表**不加列**
+
+> 第 4 条与原文不同：原计划给 `budget_reference_bands` 加 `material_ratio` 列，实际改成
+> `BudgetEstimateService.MATERIAL_RATIO` 里的 `Map<String, BigDecimal>`。理由——这张表是
+> `(item_key, finish_level)` 的档位表，同一板块有 BASIC/STANDARD/PREMIUM 三档，占比却与档位无关，
+> 加列会让同一板块重复三份同一数字，改占比时要同步改三行，很容易漏。占比是模型参数而不是业务数据，
+> 跟着 `MODEL_VERSION` 一起走代码更安全。（若以后要让运营在后台调占比，再加列并让它优先于常量。）
+
+实现要点：
+- 材料路与人工路各自独立判定 3 家企业门槛，一路达标就那一路用真实报价，另一路回填 `基准总额 × (1 - 材料占比)` 或 `基准总额 × 材料占比`。
+- 基准路仍只用**一次** money 取整（总额 × 占比），再反推单价供展示；若改成「单价 × 数量 × 损耗」每板块多取整一次，会破坏 2a-2 的「9 板块合计 = 区间 × 建筑面积」守恒（实测 214800 → 206479）。
+- `BudgetItem.source` 增加 `PARTIAL`；新增 `materialSource`/`laborSource`（`QUOTED`/`REFERENCE`/`NONE`）；`dataQuality` 有任一板块 PARTIAL 即为 `PARTIAL`。
+- `MODEL_VERSION` 由 `v3` 升到 **`v4`**：同为 PARTIAL 的输入在 v3 下会被整项回退，总额不同，必须能区分。
 
 材料占比初值（按模板条目粗略加权）：
 
@@ -347,9 +365,9 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 
 #### 验收
 
-1. 每个板块都能拆出 `materialCost` 与 `laborCost`，两者之和 = 该板块小计
-2. 手工把某材料报价 +10%，只有 `materialCost` 变，`laborCost` 不动
-3. 只有材料报价、无人工报价时，人工部分走基准而非 0
+1. 每个板块都能拆出 `materialCost` 与 `laborCost`，两者之和 = 该板块小计 —— `BudgetEstimateIntegrationTest.splitsMaterialAndLaborAndKeepsLaborOnReferenceWhenOnlyMaterialIsQuoted`
+2. 手工把某材料报价 +10%，只有 `materialCost` 变，`laborCost` 不动 —— 同文件 `raisingMaterialPricesMovesOnlyMaterialCost`
+3. 只有材料报价、无人工报价时，人工部分走基准而非 0 —— 同文件 `splitsMaterialAndLaborAndKeepsLaborOnReferenceWhenOnlyMaterialIsQuoted`
 
 **工期**：1 天
 
@@ -456,12 +474,13 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
   "totalHigh": 304600.00,
   "dataQuality": "PARTIAL",
   "pricingMode": "LIST",
-  "modelVersion": "v3",
+  "modelVersion": "v4",
   "items": [
     {
       "itemKey": "GROUND", "label": "地面工程",
-      "source": "QUOTED", "basis": "INTERIOR_AREA",
+      "source": "PARTIAL", "basis": "INTERIOR_AREA",
       "qty": 67.4, "unitKind": "SQM",
+      "materialSource": "QUOTED", "laborSource": "REFERENCE",
       "materialPriceLow": 268.00, "materialPriceHigh": 299.00,
       "laborPriceLow": 45.00, "laborPriceHigh": 62.00,
       "materialCostLow": 17166.00, "laborCostLow": 3033.00,
@@ -473,9 +492,13 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
     }
   ],
   "surcharges": { "management": 18240.00, "tax": 0, "remote": 0 },
-  "warnings": ["GROUND 仅 2 家企业报价，未达 3 家门槛"]
+  "warnings": ["GROUND 仅 2 家企业报价，未达 3 家门槛", "1 个板块只有材料或只有人工的真实报价，另一路按行业基准占比估算"]
 }
 ```
+
+> 2a-3 之后 `source` 有四种：`QUOTED`（两路都是企业报价）、`PARTIAL`（只有一路是）、`REFERENCE`（两路都用基准）、
+> `DISABLED`（用户关掉了这个板块）。上例地面只有 2 家企业材料报价——材料走真实 P25/P75，人工按基准
+> `190~330 × (1-0.72)` 回填，所以整体是 `PARTIAL` 而不是整项跌回 `REFERENCE`。
 
 ---
 
@@ -487,7 +510,7 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 | 2 | 60㎡ 房子水电按 85㎡ 计价（消费 `budget_min_qty`） | 2a-2 |
 | 3 | ~~`unit_unknown` 报价不参与任何计算~~ | ✅ 2a-1 已建索引与标记，2a-2 保证计算时应用 |
 | 4 | `GIFT` / `OWNER_SUPPLIED` 不计入合计但列得出来 | 2a-2 |
-| 5 | 每板块可拆材料/人工，两者之和 = 小计 | 2a-3 |
+| 5 | 每板块可拆材料/人工，两者之和 = 小计 | 2a-3 ✅ |
 | 6 | 90㎡ 与 60㎡ 套餐基础价相同 | 2a-4 |
 | 7 | 管理费 = 直接费 × 10%，与模板一致 | 2a-5 |
 | 8 | 无电梯 6 楼上楼费 = 600 × 6 | 2a-5 |
@@ -598,13 +621,13 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 阶段 1        1.0 天   ████
 阶段 2a-1     0.5 天   ✅ 已完成（78c4357）
 阶段 2a-2     1.0 天   ✅ 已完成（cd946c4）
-阶段 2a-3     1.0 天   ████
+阶段 2a-3     1.0 天   ✅ 已完成
 阶段 2a-4     1.0 天   ████
 阶段 2a-5     1.0 天   ████
 阶段 2b       2.0 天   ████████
 阶段 2c       1.0 天   ████
 ─────────────────────────────
-剩余          7.0 天
+剩余          6.0 天
 ```
 
 **依赖关系**：
@@ -628,7 +651,8 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 1. **已完成**：2a-1（单位治理 + 最低计量 + `item_nature`，78c4357）
 2. **已完成**：2a-2（板块 6 → 9 + 消费 `budget_min_qty`，cd946c4）
 3. **已完成**：阶段 0.1–0.6（后端 Dockerfile、四服务 compose、API 地址注入、备份、生产安全、CI 后端测试）
-4. **下一步建议**：阶段 1（`git fetch` → 确认 `origin/main` 仍是祖先 → fast-forward 合并 → 推 main 触发 CI 全绿）
-5. 或继续 2a-3（材料价/人工价分两路），1 天
+4. **已完成**：2a-3（材料/人工两路独立计价，`MODEL_VERSION` v3 → v4）
+5. **下一步建议**：阶段 1（`git fetch` → 确认 `origin/main` 仍是祖先 → fast-forward 合并 → 推 main 触发 CI 全绿）
+6. 或继续 2a-4（套餐式计价 `pricing_mode`），1 天。注意 2a-4 会再改一次输出总额，`MODEL_VERSION` 需要再次 bump
 
 阶段 0 已具备「干净机器 `docker compose up -d` 起四服务」的条件，但**本地无 docker，容器链路只在代码与配置层校验过**，首次真实构建发生在 CI runner 上。阶段 1 的价值是先把 19 个提交合进 main 让流水线跑一遍，把部署风险前置暴露。
