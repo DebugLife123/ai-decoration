@@ -163,12 +163,32 @@ export async function analyze(config: GatewayConfig, image: string, mode: 'photo
   return textFrom(payload);
 }
 
-function roomsFrom(text: string): IdentifiedRoom[] {
+type RoomCategory = '卧室' | '卫生间' | '厨房' | '餐厅' | '客厅' | '阳台' | '玄关' | '过道' | '功能区';
+
+const ROOM_CATEGORY_RULES: Array<{ category: RoomCategory; pattern: RegExp }> = [
+  { category: '卫生间', pattern: /卫生间|洗手间|厕所|主卫|次卫|洁具|马桶|坐便|洗手盆|淋浴|地漏|排水/ },
+  { category: '厨房', pattern: /厨房|灶具|灶台|操作台|水槽|橱柜/ },
+  { category: '餐厅', pattern: /餐厅|餐桌|餐椅/ },
+  { category: '客厅', pattern: /客厅|起居|沙发|电视|茶几/ },
+  { category: '阳台', pattern: /阳台|露台|外接空间|临外墙/ },
+  { category: '玄关', pattern: /玄关|入户/ },
+  { category: '过道', pattern: /过道|走廊|通道/ },
+  { category: '卧室', pattern: /卧室|床具|床头|床|衣柜/ },
+];
+
+function inferRoomCategory(candidate: string, description: string, evidence: RoomEvidence[]): RoomCategory {
+  const source = [candidate, description, ...evidence.map((item) => item.detail)].join(' ');
+  return ROOM_CATEGORY_RULES.find((rule) => rule.pattern.test(source))?.category || '功能区';
+}
+
+export function roomsFrom(text: string): IdentifiedRoom[] {
   let parsed: any;
   try {
     parsed = JSON.parse(text.replace(/^```json\s*/i, '').replace(/```$/i, '').trim());
   } catch { /* Fall through to an explicit model-output error. */ }
   if (Array.isArray(parsed?.rooms) && parsed.rooms.length > 0) {
+    const categoryCounts = new Map<RoomCategory, number>();
+    const usedNames = new Set<string>();
     const rooms: IdentifiedRoom[] = parsed.rooms.slice(0, 20).map((room: any, index: number) => {
       const candidate = String(room?.name || '').trim();
       const evidence: RoomEvidence[] = Array.isArray(room?.evidence) ? room.evidence.slice(0, 12).map((item: any) => ({ type: String(item?.type || 'geometry'), detail: String(item?.detail || '').trim() })).filter((item: RoomEvidence) => item.detail) : [];
@@ -176,15 +196,26 @@ function roomsFrom(text: string): IdentifiedRoom[] {
       const suiteEvidence = evidence.some((item) => item.type === 'adjacency' && /(套卫|主卫|衣帽间|套间)/.test(item.detail));
       const unsupportedBedroomRank = /^(主卧|次卧|主人房|主卧室|次卧室)$/.test(candidate) && !labelEvidence && !suiteEvidence;
       const unsupportedBathroom = /^(卫生间|主卫|次卫|公卫)$/.test(candidate) && !labelEvidence && !evidence.some((item) => item.type === 'fixture' && /(洁具|马桶|坐便|洗手盆|淋浴|地漏|排水)/.test(item.detail));
-      const uncertain = unsupportedBedroomRank || unsupportedBathroom || !candidate || /^(空间|房间|区域)\s*\d+$/.test(candidate);
+      const genericModelName = !candidate || /^(空间|房间|区域)\s*\d+$/.test(candidate) || /待确认(房间|区域)/.test(candidate);
+      const uncertain = unsupportedBedroomRank || unsupportedBathroom || genericModelName;
       const rawBounds = room?.bounds;
       const bounds = rawBounds && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(rawBounds[key])) && rawBounds.x >= 0 && rawBounds.y >= 0 && rawBounds.width > 0 && rawBounds.height > 0 && rawBounds.x + rawBounds.width <= 1.001 && rawBounds.y + rawBounds.height <= 1.001
         ? { x: rawBounds.x, y: rawBounds.y, width: rawBounds.width, height: rawBounds.height }
         : null;
-      const location = evidence.find((item) => item.type === 'geometry')?.detail || '位置待核对';
+      const category = inferRoomCategory(candidate, String(room?.description || ''), evidence);
+      let categoryIndex = (categoryCounts.get(category) || 0) + 1;
+      categoryCounts.set(category, categoryIndex);
+      let normalizedName = uncertain ? `${category}${categoryIndex}` : candidate;
+      if (!uncertain && normalizedName === category && categoryIndex > 1) normalizedName = `${category}${categoryIndex}`;
+      while (usedNames.has(normalizedName)) {
+        categoryIndex += 1;
+        categoryCounts.set(category, categoryIndex);
+        normalizedName = `${category}${categoryIndex}`;
+      }
+      usedNames.add(normalizedName);
       return {
         id: String(room?.id || `room_${index + 1}`),
-        name: uncertain ? `待确认房间（${location}）` : candidate,
+        name: normalizedName,
         ...(uncertain && candidate ? { suggestedName: candidate } : {}),
         description: String(room?.description || '根据户型图识别的空间'),
         confidence: Number.isFinite(room?.confidence) ? Math.max(0, Math.min(1, room.confidence)) : null,

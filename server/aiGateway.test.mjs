@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer, request as httpRequest } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
-import { callApi, createAiGatewayPlugin } from './aiGateway.ts';
+import { callApi, createAiGatewayPlugin, roomsFrom } from './aiGateway.ts';
 
 function jsonRequest(url, options = {}) {
   return new Promise((resolve, reject) => {
@@ -16,6 +16,25 @@ function jsonRequest(url, options = {}) {
     request.end();
   });
 }
+
+test('CAD uncertain room labels normalize to useful unique generation names and retain evidence', () => {
+  const rooms = roomsFrom(JSON.stringify({ rooms: [
+    { name: '待确认房间（左上，床具区）', description: '可见床具', confidence: 0.68, evidence: [{ type: 'fixture', detail: '可见床具和床头柜' }, { type: 'geometry', detail: '左上独立围合空间' }] },
+    { name: '待确认房间（中部，洁具区）', description: '可见洁具', confidence: 0.77, evidence: [{ type: 'fixture', detail: '可见马桶、洗手盆和淋浴设施' }] },
+    { name: '待确认区域（中部起居区）', description: '起居空间', confidence: 0.7, evidence: [{ type: 'fixture', detail: '可见沙发和电视' }] },
+    { name: '待确认区域（左下，餐桌区）', description: '餐桌空间', confidence: 0.72, evidence: [{ type: 'fixture', detail: '可见餐桌和餐椅' }] },
+    { name: '卫生间', description: '第二个卫生间', confidence: 0.95, status: 'confirmed', evidence: [{ type: 'label', detail: '原图标注卫生间' }] },
+    { name: '主卧', description: '主卧室', confidence: 0.9, status: 'confirmed', evidence: [{ type: 'label', detail: '原图标注主卧' }] },
+  ] }));
+
+  assert.deepEqual(rooms.map(({ name }) => name), ['卧室1', '卫生间1', '客厅1', '餐厅1', '卫生间2', '主卧']);
+  assert.equal(new Set(rooms.map(({ name }) => name)).size, rooms.length);
+  assert.ok(rooms.every(({ name }) => !/待确认/.test(name)));
+  assert.equal(rooms[0].suggestedName, '待确认房间（左上，床具区）');
+  assert.equal(rooms[0].status, 'unknown');
+  assert.deepEqual(rooms[0].evidence.map(({ detail }) => detail), ['可见床具和床头柜', '左上独立围合空间']);
+  assert.equal(rooms[5].name, '主卧');
+});
 
 async function waitForJob(base, id) {
   for (let index = 0; index < 40; index += 1) {
