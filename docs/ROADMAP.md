@@ -1,7 +1,7 @@
 # 后续计划 v3（据实模板校准版）
 
-> 基线：分支 `codex/business-data` @ `29d0c86 feat: 完善企业平台与通知中心`
-> 编写时间：2026-11-09
+> 基线：分支 `codex/business-data` @ `78c4357 feat(budget): 报价计量单位枚举化并引入最低计量规则（2a-1）`
+> 编写时间：2026-11-09（2a-1 完成后更新）
 > 上一版：v2（2026-11-07），差异见 §0
 > 本版新增依据：`D:\开发\预算模板表.xlsx` 实表解析结果 → [BUDGET_SECTIONS.md](BUDGET_SECTIONS.md)
 
@@ -29,24 +29,38 @@ v2 里的阶段 0（部署）、阶段 1（合并 + 契约）仍然有效，本�
 ## 1. 现状基线（可核对）
 
 ```
-分支      codex/business-data @ 29d0c86，领先 origin/main 19 个提交，工作树仅 docs/ 未跟踪
+分支      codex/business-data @ 78c4357，领先 origin/main 20 个提交
 合并      origin/main 是当前分支祖先 → fast-forward，无冲突
-前端      src/ 83 files / 4,638 行；21 条路由；tsc -b 通过，oxlint 0 error
-后端      Java 4,388 行；73 个 controller 方法级映射
-测试      10 个测试类 / 48 项，mvn -o test 全绿
-数据库    Flyway V1–V19，24 张表，下一版 V20
+前端      src/ 84 files；21 条路由；tsc -b 通过，oxlint 0 error（6 warning）
+后端      Java 4,388+ 行；74 个 controller 方法级映射
+测试      10 个测试类 / 49 项，mvn -o test 全绿
+数据库    Flyway V1–V20，25 张表，下一版 V21
 契约      contracts/openapi.yaml 仅 40 个 operationId，缺 33 个
 部署      Dockerfile 只有 vite preview；compose 只有 1 个服务，无 backend / 无 postgres
 ```
 
-四个「地基级」缺口，按严重程度排序：
+### ✅ 已完成：阶段 2a-1（提交 78c4357）
 
-| # | 缺口 | 后果 |
-|---|---|---|
-| 1 | 生产容器里没有后端 | 部署后只有前端，登录/材料/通知全不可用 |
-| 2 | `VITE_BUSINESS_API_URL` 构建期注入但 Dockerfile 无 `ARG` | 部署后浏览器请求用户自己的 `localhost:8080`，表现为「页面能开、登录转圈」 |
-| 3 | `unit` 是自由文本，33% 的现有报价单位不可用 | 预算算不出来，或放大 1000 倍 |
-| 4 | 契约落后 33 个接口 | 前后端并行开发时接口漂移 |
+| 项 | 落地情况 |
+|---|---|
+| `unit_kind` 11 类枚举 | V20 迁移 + `BudgetUnitKind.fromLabel`，两处映射一致 |
+| `unit_unknown` | 回填后 `木地板(mm)`、`墙纸(mm)` 被标记，不参与计算 |
+| `item_nature` | INCLUDED / GIFT / OWNER_SUPPLIED，非法值 400 |
+| `budget_min_qty` | 8 条规则入库（85㎡ / 90㎡ / 0.4㎡ / 1.6㎡ / 1㎡ / 20㎡ / 15㎡ / 1000mm） |
+| `labor_quotes.admin_hidden` | 已补齐，与 material_quotes 对齐 |
+| 企业端单位下拉 | 13 个选项；历史脏数据显式列出「未识别：mm（请重选）」 |
+| 报价列表提示 | `⚠ 单位待修正` + 「暂无报价参与预算估算」 |
+
+实测确认：API 创建 `㎡`→SQM、`mm`→UNKNOWN、`m/级`→LM_PER_LEVEL；PATCH 把 mm 改成 ㎡ 后 `unit_unknown` 自动转 false；赠送项落 GIFT。
+
+### 仍待解决的四个「地基级」缺口
+
+| # | 缺口 | 后果 | 归属阶段 |
+|---|---|---|---|
+| 1 | 生产容器里没有后端 | 部署后只有前端，登录/材料/通知全不可用 | 阶段 0 |
+| 2 | `VITE_BUSINESS_API_URL` 构建期注入但 Dockerfile 无 `ARG` | 部署后浏览器请求用户自己的 `localhost:8080` | 阶段 0.3 |
+| 3 | ~~`unit` 是自由文本~~ | ✅ 已由 2a-1 解决 | — |
+| 4 | 契约落后 33 个接口 | 前后端并行开发时接口漂移 | 阶段 1.2 |
 
 ---
 
@@ -177,89 +191,46 @@ v2 里的阶段 0（部署）、阶段 1（合并 + 契约）仍然有效，本�
 
 所以 2a 不能一次做完，必须按「不依赖数据 → 依赖数据」的顺序拆五步。
 
-### 2a-1 单位治理 + 最低计量（无数据依赖，最高优先级）
+### 2a-1 单位治理 + 最低计量（✅ 已完成，提交 78c4357）
 
 **这一步不改算法、不依赖任何报价数据，做完准确率立刻提升。**
 
-#### V20 迁移（第一部分）
+#### 已落地的 V20 迁移（摘要）
 
 ```sql
--- 1) 单位枚举化：11 类，覆盖实表 20 种写法
+-- 单位枚举化：11 类，覆盖实表 20 种写法
 alter table material_quotes
-    add column unit_kind    varchar(16),
+    add column unit_kind    varchar(20),
     add column unit_unknown boolean not null default false,
     add column item_nature  varchar(20) not null default 'INCLUDED';
 
 alter table labor_quotes
-    add column unit_kind    varchar(16),
+    add column unit_kind    varchar(20),
     add column unit_unknown boolean not null default false,
+    add column item_nature  varchar(20) not null default 'INCLUDED',
     add column admin_hidden boolean not null default false,
-    add column admin_hidden_reason varchar(500),
-    add column item_nature  varchar(20) not null default 'INCLUDED';
+    add column admin_hidden_reason varchar(500);
 
--- 2) 回填 unit_kind
-update material_quotes set unit_kind = case
-    when unit in ('㎡','m2','m²','平方米','平米','平方') then 'SQM'
-    when unit in ('m','米','延米')                        then 'LM'
-    when unit in ('樘','个','件','块','片','扇','盏','根') then 'PIECE'
-    when unit in ('套','项','组')                         then 'SET'
-    when unit in ('桶','袋','箱','包')                    then 'PACKAGE'
-    when unit in ('工日','人日','天')                     then 'DAY'
-    when unit in ('m/级')                                 then 'LM_PER_LEVEL'
-    when unit in ('m2/层','㎡/层')                        then 'SQM_PER_FLOOR'
-    when unit in ('m/层')                                 then 'LM_PER_FLOOR'
-    when unit in ('cm/m2')                                then 'CM_PER_SQM'
-    when unit in ('套米')                                 then 'SET_LM'
-    when unit in ('户')                                   then 'HOUSE'
-    when unit in ('间')                                   then 'ROOM'
-    else 'UNKNOWN' end;
-
-update labor_quotes set unit_kind = case
-    when unit in ('工日','人日','天')      then 'DAY'
-    when unit in ('㎡','平方米','平米')    then 'SQM'
-    when unit in ('延米','米','m')         then 'LM'
-    when unit in ('项','套')               then 'SET'
-    else 'UNKNOWN' end;
-
-update material_quotes set unit_unknown = (unit_kind = 'UNKNOWN');
-update labor_quotes    set unit_unknown = (unit_kind = 'UNKNOWN');
-
--- 3) 最低计量规则
-create table budget_min_qty (
-    item_key   varchar(32) not null,
-    unit_kind  varchar(16) not null,
-    min_qty    numeric(10,4) not null,
-    scope      varchar(16) not null default 'PER_LINE',  -- PER_LINE / PER_ROOM / PER_HOUSE
-    note       varchar(200),
-    primary key (item_key, unit_kind)
-);
-
-insert into budget_min_qty (item_key, unit_kind, min_qty, scope, note) values
-  ('CARPENTRY_DOOR',   'SQM',  0.4,   'PER_LINE',  '单扇不足 0.4㎡ 按 0.4㎡'),
-  ('CARPENTRY_TOP',    'SQM',  1.0,   'PER_LINE',  '单处不足 1㎡ 按 1㎡'),
-  ('PLUMBING_METER',   'LM',   1.0,   'PER_LINE',  '水表移位不足 1000mm 按 1000mm'),
-  ('DOOR_SLIDING',     'SQM',  1.6,   'PER_LINE',  '厨房推拉门单页不足 1.6㎡ 按 1.6㎡'),
-  ('WALL_VARNISH',     'SQM', 20.0,   'PER_LINE',  '清漆不足 20㎡ 按 20㎡'),
-  ('WALL_PAINT',       'SQM', 15.0,   'PER_LINE',  '油漆不足 15㎡ 按 15㎡'),
-  ('PLUMBING_ELEC',    'SQM', 85.0,   'PER_HOUSE', '面积不足 85㎡ 按 85㎡'),
-  ('PACKAGE_BASE',     'SQM', 90.0,   'PER_HOUSE', '套餐面积不足 90㎡ 按 90㎡');
+-- 回填后：mm 落 UNKNOWN（不再被当成 SQM），8 条最低计量规则写入 budget_min_qty
 ```
 
-- [ ] `item_nature` 枚举：`INCLUDED` / `GIFT` / `OWNER_SUPPLIED`
-- [ ] 企业端报价表单：单位改为**下拉枚举**（不再手填），提交时前后端都校验
-- [ ] 企业端对 `unit_unknown = true` 的存量报价显示修正提示
-- [ ] 后端 `BudgetEstimateService` 应用 `min_qty`（在算工程量之后、乘单价之前）
+完整迁移见 `backend/src/main/resources/db/migration/V20__add_budget_unit_and_nature.sql`，
+枚举映射见 `backend/src/main/java/com/decoration/budget/BudgetUnitKind.java`。
 
-#### 验收
+#### 验收结果
 
-| # | 判据 |
-|---|---|
-| 1 | 现有 6 条材料报价中，`木地板(mm)`、`墙纸(mm)` 被标 `unit_unknown = true`，不参与计算 |
-| 2 | 60㎡ 房子的水电板块按 85㎡ 计价，响应里带 `appliedMinQty: { qty: 85, rule: 'PLUMBING_ELEC' }` |
-| 3 | `GIFT` / `OWNER_SUPPLIED` 项目出现在明细里但不计入合计 |
-| 4 | 企业端无法再提交自由文本单位 |
+| # | 判据 | 结果 |
+|---|---|---|
+| 1 | `木地板(mm)`、`墙纸(mm)` 标 `unit_unknown = true`，不参与计算 | ✅ DB 实测 6 条中 2 条为 UNKNOWN |
+| 2 | `㎡` → SQM、`延米` → LM、`樘` → PIECE、`m/级` → LM_PER_LEVEL 等 | ✅ 单测 + API 实测 |
+| 3 | 企业改对单位后标记自动取消 | ✅ PATCH 实测 mm→㎡ 后转 SQM |
+| 4 | `GIFT` / `OWNER_SUPPLIED` 可落库，非法值 400 | ✅ 实测 |
+| 5 | 企业端无法再提交自由文本单位 | ✅ 下拉 13 选项，required |
+| 6 | 8 条最低计量规则入库 | ✅ `budget_min_qty` 实测 8 行 |
 
-**工期**：0.5 天（不依赖数据，可立即开工）
+> 最低计量规则目前只入库，**尚未被计算服务消费**——那是 2a-2 的工作。
+
+**工期**：0.5 天（已用）
 
 ---
 
@@ -491,9 +462,9 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 | # | 判据 | 归属 |
 |---|---|---|
 | 1 | 无报价时 9 板块合计 = 前端 6 项总额 | 2a-2 |
-| 2 | 60㎡ 房子水电按 85㎡ 计价 | 2a-1 |
-| 3 | `unit_unknown` 报价不参与任何计算 | 2a-1 |
-| 4 | `GIFT` / `OWNER_SUPPLIED` 不计入合计但列得出来 | 2a-1 |
+| 2 | 60㎡ 房子水电按 85㎡ 计价（消费 `budget_min_qty`） | 2a-2 |
+| 3 | ~~`unit_unknown` 报价不参与任何计算~~ | ✅ 2a-1 已建索引与标记，2a-2 保证计算时应用 |
+| 4 | `GIFT` / `OWNER_SUPPLIED` 不计入合计但列得出来 | 2a-2 |
 | 5 | 每板块可拆材料/人工，两者之和 = 小计 | 2a-3 |
 | 6 | 90㎡ 与 60㎡ 套餐基础价相同 | 2a-4 |
 | 7 | 管理费 = 直接费 × 10%，与模板一致 | 2a-5 |
@@ -603,7 +574,7 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 ```
 阶段 0        1.5 天   ████████
 阶段 1        1.0 天   ████
-阶段 2a-1     0.5 天   ██           ← 不依赖数据，可立即做
+阶段 2a-1     0.5 天   ✅ 已完成（78c4357）
 阶段 2a-2     1.0 天   ████
 阶段 2a-3     1.0 天   ████
 阶段 2a-4     1.0 天   ████
@@ -611,7 +582,7 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 阶段 2b       2.0 天   ████████
 阶段 2c       1.0 天   ████
 ─────────────────────────────
-合计          10.0 天
+剩余          9.5 天
 ```
 
 **依赖关系**：
@@ -632,6 +603,9 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 
 ## 建议的下一步
 
-1. **今天就能开工**：2a-1（单位治理 + 最低计量 + `item_nature`），0.5 天，不动算法、不依赖报价数据
-2. **并行**：阶段 0.1–0.3（后端 Dockerfile + 三服务 compose + API 地址注入），1.5 天
-3. 两项完成后合并推到 main，即可交付一个「**能真正部署、预算单位不再算错**」的版本
+1. **已完成**：2a-1（单位治理 + 最低计量 + `item_nature`），提交 78c4357
+2. **下一步建议**：阶段 0.1–0.3（后端 Dockerfile + 三服务 compose + API 地址注入），1.5 天
+3. 或者继续 2a-2（板块 6 → 9 + 消费 `budget_min_qty`），1 天
+
+阶段 0 是三服务能真正跑起来的前提；2a-2 是把预算从「6 个拍脑袋分项」换成「9 个对齐模板的板块」。
+两者可并行，取决于当前优先级是「先能部署」还是「先算得准」。
