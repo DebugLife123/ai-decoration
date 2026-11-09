@@ -1,5 +1,6 @@
 import type { DesignStyle } from '../stores/appStore';
 import type { IdentifiedRoom, PlanSource } from './aiClient';
+import type { RoomImageVersion } from '../components/RoomImageEditor';
 
 const DATABASE_NAME = 'jianyi-design-history';
 const STORE_NAME = 'whole-home-projects';
@@ -15,7 +16,9 @@ export interface DesignHistoryRecord {
   analysis: string;
   rooms: IdentifiedRoom[];
   selectedRooms: string[];
-  results: { name: string; imageUrl: string }[];
+  warning?: string;
+  generationJobId?: string;
+  results: { name: string; imageUrl: string; review?: { status: 'pass' | 'check' | 'unverified'; note: string }; versions?: RoomImageVersion[]; currentVersionId?: string }[];
 }
 
 function openDatabase() {
