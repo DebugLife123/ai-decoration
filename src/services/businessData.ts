@@ -2,6 +2,7 @@ import type { MaterialRecord } from './dataContracts';
 import { readLocalValue, writeLocalValue } from './localDataAdapter';
 import { authApiBaseUrl, currentAccessToken, readAuthSession } from './authSession';
 import type { StyleRecommendationProfile } from './styleRecommendation';
+import { createId } from '../utils/id';
 
 export type BusinessRecordStatus = 'draft' | 'published';
 
@@ -110,7 +111,7 @@ function now() {
 }
 
 function id() {
-  return crypto.randomUUID();
+  return createId();
 }
 
 function localProfile() {
@@ -265,7 +266,7 @@ function apiAdapter(baseUrl: string): BusinessDataAdapter {
     }
     return response.blob();
   }
-  const key = () => `${crypto.randomUUID()}-${Date.now()}`;
+  const key = () => `${createId()}-${Date.now()}`;
   async function loadAllPages<T>(path: string) {
     const items: T[] = [];
     let page = 1;

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { createId } from '../utils/id';
 import './RoomImageEditor.css';
 
 export type RoomImageVersion = { id: string; parentVersionId: string | null; imageUrl: string; instruction: string; createdAt: string; model: string };
@@ -134,7 +135,7 @@ export default function RoomImageEditor({ roomName, imageUrl, versions, currentV
     setBusy(true); setError(''); setCandidate(null);
     try {
       const result = await onGenerate(createMask(), instruction.trim());
-      setCandidate({ id: crypto.randomUUID(), parentVersionId: currentVersionId, imageUrl: result.imageUrl, instruction: instruction.trim(), createdAt: new Date().toISOString(), model: result.model });
+      setCandidate({ id: createId(), parentVersionId: currentVersionId, imageUrl: result.imageUrl, instruction: instruction.trim(), createdAt: new Date().toISOString(), model: result.model });
       setComparison(50);
     } catch (cause) { setError(cause instanceof Error ? cause.message : '局部编辑失败，请保留原图后重试。'); }
     finally { setBusy(false); }

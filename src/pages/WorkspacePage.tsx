@@ -7,6 +7,7 @@ import RoomImageEditor, { type RoomImageVersion } from '../components/RoomImageE
 import { templates } from './HomePage';
 import { persistWorkspaceProject } from '../services/workspaceData';
 import type { Project, DesignVersion, GenerationTask } from '../services/dataContracts';
+import { createId } from '../utils/id';
 import './WorkspacePage.css';
 
 type Stage = 1 | 2 | 3 | 4;
@@ -27,7 +28,7 @@ const reportDetails: Record<string, { subtitle: string; principles: { title: str
 };
 const styleOptions = templates.map((template) => ({ ...template, key: template.styleKey, name: template.style, note: styleNotes[template.styleKey] ?? template.style, details: reportDetails[template.styleKey] ?? reportDetails.modern }));
 function formatSize(bytes: number) { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`; }
-function newId() { return globalThis.crypto?.randomUUID?.() || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }); }
+function newId() { return createId(); }
 function readImage(file: File) { return new Promise<{ data: string; meta: PlanImageMeta }>((resolve, reject) => {
   if (!file.type.startsWith('image/')) return reject(new Error('请上传 PNG、JPG 或 WEBP 户型图片；CAD/PDF 需先导出为图片。'));
   const reader = new FileReader();
@@ -292,7 +293,7 @@ export default function WorkspacePage() {
       const updated = await retryGenerationRooms(generationJobId, previous, setGenerationProgress);
       const existing = new Set(results.slice(1).map((item) => item.name));
       const additions: ReportResult[] = updated.rooms.filter((room) => !existing.has(room.name)).map((room) => {
-        const version: RoomImageVersion = { id: crypto.randomUUID(), parentVersionId: null, imageUrl: room.imageUrl, instruction: '', createdAt: new Date().toISOString(), model: 'original-generation' };
+        const version: RoomImageVersion = { id: createId(), parentVersionId: null, imageUrl: room.imageUrl, instruction: '', createdAt: new Date().toISOString(), model: 'original-generation' };
         return { name: room.name, imageUrl: room.imageUrl, review: room.review, versions: [version], currentVersionId: version.id };
       });
       const nextResults = [...results, ...additions];
