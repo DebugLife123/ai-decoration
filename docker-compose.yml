@@ -1,15 +1,62 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: decoration
+      POSTGRES_USER: decoration
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - decoration-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U decoration -d decoration"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    image: ${BACKEND_IMAGE:-wyx-decoration-backend:local}
+    environment:
+      SERVER_PORT: 8080
+      DATABASE_URL: jdbc:postgresql://postgres:5432/decoration
+      DATABASE_USERNAME: decoration
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      APP_UPLOAD_DIR: /data/uploads
+      ADMIN_BOOTSTRAP_ENABLED: ${ADMIN_BOOTSTRAP_ENABLED:-false}
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+    volumes:
+      - decoration-upload-data:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/actuator/health/readiness | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    restart: unless-stopped
+
   decoration:
     build: .
     image: ${DECORATION_IMAGE:-wyx-decoration:local}
-    network_mode: bridge
     ports:
       - "4175:4173"
     environment:
+      BACKEND_URL: http://backend:8080
       CODEX2API_API_KEY: ${CODEX2API_API_KEY:-}
       AI_BASE_URL: ${AI_BASE_URL:-https://codex2api.com}
       AI_VISION_MODEL: ${AI_VISION_MODEL:-grok-4.7}
       AI_IMAGE_MODEL: ${AI_IMAGE_MODEL:-grok-imagine-image-quality}
+      AI_ANALYSIS_TIMEOUT_MS: ${AI_ANALYSIS_TIMEOUT_MS:-90000}
+      AI_REVIEW_TIMEOUT_MS: ${AI_REVIEW_TIMEOUT_MS:-90000}
+      AI_IMAGE_TIMEOUT_MS: ${AI_IMAGE_TIMEOUT_MS:-180000}
+    depends_on:
+      backend:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/').then((r) => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1))"]
@@ -17,3 +64,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  decoration-postgres-data:
+  decoration-upload-data:

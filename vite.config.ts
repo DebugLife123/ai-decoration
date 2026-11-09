@@ -2,6 +2,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv } from 'vite'
 import { createAiGatewayPlugin } from './server/aiGateway.js'
 import { createCadWorkflowMiddleware } from './server/cadWorkflow.js'
+import { createBackendProxyPlugin } from './server/backendProxy.js'
 
 const aiEnvKeys = ['CODEX2API_API_KEY', 'AI_BASE_URL', 'AI_VISION_MODEL', 'AI_IMAGE_MODEL', 'AI_API_KEY', 'AI_MODEL', 'IMAGE_MODEL', 'AI_ANALYSIS_TIMEOUT_MS', 'AI_REVIEW_TIMEOUT_MS', 'AI_IMAGE_TIMEOUT_MS']
 
@@ -29,7 +30,7 @@ export default defineConfig(() => {
     imageTimeoutMs: configuredTimeout('AI_IMAGE_TIMEOUT_MS', 180000),
   }
   return {
-    plugins: [react(), createAiGatewayPlugin(loadedEnv), { name: 'cad-workflow', configureServer(server) { server.middlewares.use('/api/cad', createCadWorkflowMiddleware(cadGatewayConfig)) }, configurePreviewServer(server) { server.middlewares.use('/api/cad', createCadWorkflowMiddleware(cadGatewayConfig)) } }],
+    plugins: [react(), createAiGatewayPlugin(loadedEnv), createBackendProxyPlugin(loadedEnv.BACKEND_URL || 'http://127.0.0.1:8091'), { name: 'cad-workflow', configureServer(server) { server.middlewares.use('/api/cad', createCadWorkflowMiddleware(cadGatewayConfig)) }, configurePreviewServer(server) { server.middlewares.use('/api/cad', createCadWorkflowMiddleware(cadGatewayConfig)) } }],
     preview: { allowedHosts: ['www.openai2api.com'] },
   }
 })
