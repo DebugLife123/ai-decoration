@@ -49,7 +49,7 @@ services:
       BACKEND_URL: http://backend:8080
       CODEX2API_API_KEY: ${CODEX2API_API_KEY:-}
       AI_BASE_URL: ${AI_BASE_URL:-https://codex2api.com}
-      AI_VISION_MODEL: ${AI_VISION_MODEL:-grok-4.7}
+      AI_VISION_MODEL: ${AI_VISION_MODEL:-gpt-6.1-sol}
       AI_IMAGE_MODEL: ${AI_IMAGE_MODEL:-grok-imagine-image-quality}
       AI_ANALYSIS_TIMEOUT_MS: ${AI_ANALYSIS_TIMEOUT_MS:-90000}
       AI_REVIEW_TIMEOUT_MS: ${AI_REVIEW_TIMEOUT_MS:-90000}

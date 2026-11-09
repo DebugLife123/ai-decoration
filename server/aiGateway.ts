@@ -343,7 +343,7 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
   };
   const config: GatewayConfig = {
     baseUrl: env.AI_BASE_URL || 'https://codex2api.com', apiKey: env.CODEX2API_API_KEY || env.AI_API_KEY || '',
-    visionModel: env.AI_VISION_MODEL || env.AI_MODEL || 'gpt-4o-mini', imageModel: env.AI_IMAGE_MODEL || env.IMAGE_MODEL || 'gpt-image-1',
+    visionModel: env.AI_VISION_MODEL || env.AI_MODEL || 'gpt-6.1-sol', imageModel: env.AI_IMAGE_MODEL || env.IMAGE_MODEL || 'gpt-image-1',
     analysisTimeoutMs: timeoutValue('AI_ANALYSIS_TIMEOUT_MS', DEFAULT_ANALYSIS_TIMEOUT_MS),
     reviewTimeoutMs: timeoutValue('AI_REVIEW_TIMEOUT_MS', DEFAULT_REVIEW_TIMEOUT_MS),
     imageTimeoutMs: timeoutValue('AI_IMAGE_TIMEOUT_MS', DEFAULT_IMAGE_TIMEOUT_MS),

@@ -23,7 +23,7 @@ export default defineConfig(() => {
   const cadGatewayConfig = {
     baseUrl: loadedEnv.AI_BASE_URL || 'https://codex2api.com',
     apiKey: loadedEnv.CODEX2API_API_KEY || loadedEnv.AI_API_KEY || '',
-    visionModel: loadedEnv.AI_VISION_MODEL || loadedEnv.AI_MODEL || 'gpt-4o-mini',
+    visionModel: loadedEnv.AI_VISION_MODEL || loadedEnv.AI_MODEL || 'gpt-6.1-sol',
     imageModel: loadedEnv.AI_IMAGE_MODEL || loadedEnv.IMAGE_MODEL || 'gpt-image-1',
     analysisTimeoutMs: configuredTimeout('AI_ANALYSIS_TIMEOUT_MS', 90000),
     reviewTimeoutMs: configuredTimeout('AI_REVIEW_TIMEOUT_MS', 90000),
