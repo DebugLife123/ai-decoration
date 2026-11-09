@@ -26,7 +26,7 @@ interface ApiEnvelope<T> {
 const sessionKey = 'decoration-auth-session';
 const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
 
-export const authApiBaseUrl = (env?.VITE_BUSINESS_API_URL?.trim() || 'http://localhost:8091').replace(/\/$/, '');
+export const authApiBaseUrl = (env?.VITE_BUSINESS_API_URL?.trim() || (env?.DEV ? 'http://localhost:8091' : '')).replace(/\/$/, '');
 
 export function readAuthSession(): AuthSession | null {
   try {

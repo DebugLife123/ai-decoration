@@ -39,14 +39,15 @@ public class ProjectHistoryService {
         for (var row : taskRows) {
             jdbc.update("""
                     insert into generation_tasks(owner_id, project_id, id, task_type, status, input_json,
-                        error_message, attempt_count, created_at, started_at, completed_at)
-                    values (?, ?, ?, ?, ?, ?::jsonb, ?, 0, ?, ?, ?)
+                        result_json, error_message, attempt_count, created_at, started_at, completed_at)
+                    values (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, 0, ?, ?, ?)
                     on conflict (owner_id, id) do update set task_type = excluded.task_type,
                         status = excluded.status, input_json = excluded.input_json,
+                        result_json = excluded.result_json,
                         error_message = excluded.error_message, started_at = excluded.started_at,
                         completed_at = excluded.completed_at
                     where generation_tasks.project_id = excluded.project_id
-                    """, ownerId, projectId, row.id(), row.type(), row.status(), row.payload(), row.error(),
+                    """, ownerId, projectId, row.id(), row.type(), row.status(), row.payload(), row.result(), row.error(),
                     Timestamp.from(row.createdAt()), row.startedAt() == null ? null : Timestamp.from(row.startedAt()),
                     row.completedAt() == null ? null : Timestamp.from(row.completedAt()));
         }
@@ -157,7 +158,8 @@ public class ProjectHistoryService {
         var mode = task.path("mode").asText();
         var type = mode.equals("recommendation") ? "RECOMMENDATION" : mode.equals("edit") ? "EDIT" : "RENDER";
         payload.put("taskType", type);
-        return new TaskRow(id, type, status, json(payload), task.hasNonNull("error") ? task.get("error").asText() : null,
+        return new TaskRow(id, type, status, json(payload), task.hasNonNull("result") ? json(task.get("result")) : null,
+                task.hasNonNull("error") ? task.get("error").asText() : null,
                 createdAt, startedAt, completedAt);
     }
 
@@ -205,7 +207,7 @@ public class ProjectHistoryService {
         return new BusinessApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Project or task was not found");
     }
 
-    private record TaskRow(UUID id, String type, String status, String payload, String error,
+    private record TaskRow(UUID id, String type, String status, String payload, String result, String error,
                            Instant createdAt, Instant startedAt, Instant completedAt) { }
     private record VersionRow(UUID id, int number, String payload, Instant createdAt) { }
 }

@@ -46,7 +46,7 @@ export async function analyzeFloorPlan(floorPlan: string, source: PlanSource = '
   if (!response.ok) throw new Error([payload.error || '户型识别失败，请检查接口配置。', payload.requestId ? `请求编号：${payload.requestId}` : ''].filter(Boolean).join(' '));
   return payload;
 }
-export async function generateDesign(input: { mode: DesignMode; style: DesignStyle; prompt: string; photo?: string; photos?: string[]; floorPlan?: string; imageMeta?: PlanImageMeta; source?: PlanSource; analysis?: string; rooms?: IdentifiedRoom[]; selectedRooms?: string[]; roomReferenceImages?: { name: string; image: string }[] }, onProgress?: (job: GenerationJob) => void): Promise<GenerationResult & { warning?: string; jobId?: string }> {
+export async function generateDesign(input: { mode: DesignMode; style: DesignStyle; prompt: string; photo?: string; photos?: string[]; floorPlan?: string; imageMeta?: PlanImageMeta; source?: PlanSource; analysis?: string; rooms?: IdentifiedRoom[]; selectedRooms?: string[]; roomReferenceImages?: { name: string; image: string }[]; taskId?: string }, onProgress?: (job: GenerationJob) => void): Promise<GenerationResult & { warning?: string; jobId?: string }> {
   const response = await fetch('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
   const payload = await response.json() as GenerationResult & { error?: string; jobId?: string };
   if (!response.ok) throw new Error(payload.error || 'AI 生成失败，请检查接口配置。');

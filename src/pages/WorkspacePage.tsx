@@ -5,6 +5,8 @@ import { analyzeFloorPlan, editRoomImage, generateDesign, retryGenerationRooms, 
 import { deleteDesignHistory, listDesignHistory, saveDesignHistory, type DesignHistoryRecord } from '../services/designHistory';
 import RoomImageEditor, { type RoomImageVersion } from '../components/RoomImageEditor';
 import { templates } from './HomePage';
+import { persistWorkspaceProject } from '../services/workspaceData';
+import type { Project, DesignVersion, GenerationTask } from '../services/dataContracts';
 import './WorkspacePage.css';
 
 type Stage = 1 | 2 | 3 | 4;
@@ -25,6 +27,7 @@ const reportDetails: Record<string, { subtitle: string; principles: { title: str
 };
 const styleOptions = templates.map((template) => ({ ...template, key: template.styleKey, name: template.style, note: styleNotes[template.styleKey] ?? template.style, details: reportDetails[template.styleKey] ?? reportDetails.modern }));
 function formatSize(bytes: number) { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`; }
+function newId() { return globalThis.crypto?.randomUUID?.() || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }); }
 function readImage(file: File) { return new Promise<{ data: string; meta: PlanImageMeta }>((resolve, reject) => {
   if (!file.type.startsWith('image/')) return reject(new Error('请上传 PNG、JPG 或 WEBP 户型图片；CAD/PDF 需先导出为图片。'));
   const reader = new FileReader();
@@ -122,7 +125,7 @@ function PlanComparison({ original, render, title }: { original: string; render:
 
 export default function WorkspacePage() {
   const [searchParams] = useSearchParams();
-  const { selectedStyle, setSelectedStyle } = useAppStore();
+  const { selectedStyle, setSelectedStyle, loadProjects } = useAppStore();
   const routeSourceType: PlanSource = searchParams.get('source') === 'floorplan' ? 'floorplan' : 'cad';
   const [sourceOverride, setSourceOverride] = useState<{ route: PlanSource; value: PlanSource } | null>(null);
   const sourceType = sourceOverride?.route === routeSourceType ? sourceOverride.value : routeSourceType;
@@ -141,6 +144,8 @@ export default function WorkspacePage() {
   const [workElapsed, setWorkElapsed] = useState(0);
   const [generationProgress, setGenerationProgress] = useState<GenerationJob | null>(null);
   const [generationJobId, setGenerationJobId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const savedProjects = useAppStore((state) => state.projects);
   const isWorking = workKind !== null;
   const [message, setMessage] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -156,6 +161,34 @@ export default function WorkspacePage() {
       setHistoryMessage(error instanceof Error ? error.message : '读取本地方案记录失败。');
     });
   }, []);
+
+  useEffect(() => {
+    const requestedProject = searchParams.get('projectId');
+    const requestedVersion = searchParams.get('versionId');
+    if (!requestedProject || !savedProjects.length) return;
+    const project = savedProjects.find((item) => item.id === requestedProject);
+    const version = project?.versions.find((item) => item.id === requestedVersion) || project?.versions.at(-1);
+    if (!project || !version) return;
+    const record: DesignHistoryRecord = {
+      id: version.id, name: `${project.name} · ${new Date(version.createdAt).toLocaleDateString('zh-CN')}`, createdAt: version.createdAt,
+      style: version.style, source: version.source || 'floorplan', floorPlan: project.floorPlanUrl || '', analysis: version.floorPlanAnalysis || version.analysis,
+      rooms: version.identifiedRooms || [], selectedRooms: version.selectedRooms || [], warning: version.warning,
+      generationJobId: version.taskId,
+      results: [{ name: '全屋总览', imageUrl: version.coverImageUrl }, ...version.images.map((image) => ({ name: image.title, imageUrl: image.imageUrl, review: undefined }))],
+    };
+    setProjectId(project.id);
+    setFile(null);
+    setImageData(record.floorPlan);
+    setRooms(record.rooms);
+    setSelectedRooms(record.selectedRooms);
+    setResults(record.results);
+    setGenerationJobId(version.taskId || null);
+    setStyleOverride({ route: requestedStyle, value: version.style });
+    setSelectedStyle(version.style);
+    setActiveHistoryId(record.id);
+    setHistory((current) => [record, ...current.filter((item) => item.id !== record.id)]);
+    setStage(4);
+  }, [searchParams, savedProjects, requestedStyle, setSelectedStyle]);
 
   useEffect(() => {
     if (!workKind) return;
@@ -174,40 +207,63 @@ export default function WorkspacePage() {
   const runRecognition = async () => {
     if (!imageData) { setMessage('请先上传户型图片。'); return; }
     setWorkElapsed(0); setWorkKind('recognizing'); setGenerationProgress(null); setGenerationJobId(null); setMessage('');
+    const now = new Date().toISOString();
+    const persistentProjectId = newId();
+    const taskId = newId();
+    const task: GenerationTask = { id: taskId, mode: 'floorplan', style: workflowStyle, prompt: `${sourceType} floor plan recognition and whole-home generation`, status: 'generating', startedAt: now };
+    const project: Project = { id: persistentProjectId, name: `${activeStyle.name}全屋方案`, spaceType: sourceType === 'cad' ? 'CAD 全屋设计' : '户型图全屋设计', style: workflowStyle, createdAt: now, updatedAt: now, status: 'generating', floorPlanUrl: imageData, photoUrls: [], versions: [], tasks: [task], materialIds: [] };
+    let persistedProject: Project;
+    try {
+      persistedProject = await persistWorkspaceProject(project);
+      setProjectId(persistentProjectId);
+      await loadProjects();
+    } catch (error) {
+      setWorkKind(null);
+      setMessage(error instanceof Error ? `项目初始化失败：${error.message}` : '项目初始化失败，请稍后重试。');
+      return;
+    }
     try {
       const result = await analyzeFloorPlan(imageData, sourceType, imageMeta || undefined);
       const selected = result.rooms.map((room) => room.name);
       setRooms(result.rooms);
       setSelectedRooms(selected);
       setStage(2);
-      await generatePlan({ analysis: result.analysis, rooms: result.rooms, selectedRooms: selected });
+      await generatePlan({ analysis: result.analysis, rooms: result.rooms, selectedRooms: selected }, taskId, persistedProject);
     }
     catch (error) {
       console.error('Floor-plan recognition failed:', error);
       setStage(1);
       setMessage(error instanceof Error ? `户型识别失败：${error.message}` : '户型识别失败，请检查图片后重试。');
+      const failedTask = { ...task, status: 'failed' as const, completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : '户型识别失败' };
+      await persistWorkspaceProject({ ...project, updatedAt: failedTask.completedAt, status: 'failed', tasks: [failedTask] }).then(loadProjects).catch(() => undefined);
     }
     finally { setWorkKind(null); }
   };
-  const generatePlan = async (input: GenerationInput) => {
+  const generatePlan = async (input: GenerationInput, taskId: string, baseProject: Project) => {
     if (!imageData) { setMessage('请先上传户型图片。'); setStage(1); return; }
     setWorkElapsed(0); setWorkKind('generating'); setGenerationProgress(null); setMessage(''); setResults([]); setStage(2);
     const sourcePrompt = sourceType === 'cad' ? '输入来源为 CAD 导出的住宅平面图，严格参考图中墙体、门窗和尺寸标注。' : '输入来源为住宅户型图，严格参考图中可见的房间边界与空间连接。';
     const prompt = [sourcePrompt, searchParams.get('prompt'), ...preferences.map(([label, value]) => `${label}:${value}`), `户型识别结果：${input.analysis}`, `识别空间：${input.rooms.map((room) => `${room.name}${room.suggestedName ? `（候选：${room.suggestedName}）` : ''}（${room.description}；${room.evidence?.map((item) => item.detail).join('、') || '无额外可见证据'}）`).join('；')}`].filter(Boolean).join('。');
     try {
       const roomReferenceImages = await Promise.all(input.rooms.filter((room) => input.selectedRooms.includes(room.name) && room.bounds).map(async (room) => ({ name: room.name, image: await makeRoomReferenceSheet(imageData, room.bounds!) })));
-      const result = await generateDesign({ mode: 'floorplan', style: workflowStyle, prompt, floorPlan: imageData, imageMeta: imageMeta || undefined, source: sourceType, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, roomReferenceImages }, setGenerationProgress);
+      const result = await generateDesign({ mode: 'floorplan', style: workflowStyle, prompt, floorPlan: imageData, imageMeta: imageMeta || undefined, source: sourceType, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, roomReferenceImages, taskId }, setGenerationProgress);
       if (result.type !== 'floorplan') throw new Error('返回结果类型不正确。');
       setGenerationJobId(result.jobId || null);
       const generatedResults: ReportResult[] = [{ name: '全屋总览', imageUrl: result.cover }, ...result.rooms.map((room) => {
-        const originalVersion: RoomImageVersion = { id: crypto.randomUUID(), parentVersionId: null, imageUrl: room.imageUrl, instruction: '', createdAt: new Date().toISOString(), model: 'original-generation' };
+        const originalVersion: RoomImageVersion = { id: newId(), parentVersionId: null, imageUrl: room.imageUrl, instruction: '', createdAt: new Date().toISOString(), model: 'original-generation' };
         return { name: room.name, imageUrl: room.imageUrl, review: room.review, versions: [originalVersion], currentVersionId: originalVersion.id };
       })];
       setResults(generatedResults);
       setMessage(result.warning ? `部分效果图未完成：${result.warning}` : '');
       setStage(3);
+      const completedAt = new Date().toISOString();
+      const versionId = newId();
+      const task: GenerationTask = { ...baseProject.tasks[0], status: result.warning ? 'failed' : 'completed', completedAt, error: result.warning, result: { versionId, roomCount: generatedResults.length - 1, coverReady: true } };
+      const version: DesignVersion = { id: versionId, mode: 'floorplan', style: workflowStyle, prompt, createdAt: completedAt, analysis: result.analysis, coverImageUrl: result.cover, images: generatedResults.slice(1).map((item) => ({ id: newId(), title: item.name, imageUrl: item.imageUrl, description: input.rooms.find((room) => room.name === item.name)?.description })), taskId, source: sourceType, floorPlanAnalysis: input.analysis, identifiedRooms: input.rooms, selectedRooms: input.selectedRooms, warning: result.warning };
+      await persistWorkspaceProject({ ...baseProject, updatedAt: completedAt, status: result.warning ? 'failed' : 'completed', thumbnail: result.cover, versions: [...baseProject.versions, version], tasks: [task] });
+      await loadProjects();
       const record: DesignHistoryRecord = {
-        id: crypto.randomUUID(), name: `${activeStyle.name} · ${new Date().toLocaleDateString('zh-CN')}`, createdAt: new Date().toISOString(),
+        id: version.id, name: `${activeStyle.name} · ${new Date().toLocaleDateString('zh-CN')}`, createdAt: completedAt,
         style: workflowStyle, source: sourceType, floorPlan: imageData, analysis: result.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, warning: result.warning, generationJobId: result.jobId, results: generatedResults,
       };
       setActiveHistoryId(record.id);
@@ -218,7 +274,13 @@ export default function WorkspacePage() {
       } catch (error) {
         setHistoryMessage(error instanceof Error ? `本次方案已生成，但本地记录保存失败：${error.message}` : '本次方案已生成，但本地记录保存失败。');
       }
-    } catch (error) { console.error('Whole-home generation failed:', error); setStage(1); setMessage(error instanceof Error ? '方案生成失败：' + error.message : '方案生成失败，请稍后重试。'); }
+    } catch (error) {
+      console.error('Whole-home generation failed:', error);
+      setStage(1); setMessage(error instanceof Error ? '方案生成失败：' + error.message : '方案生成失败，请稍后重试。');
+      const completedAt = new Date().toISOString();
+      const task: GenerationTask = { ...baseProject.tasks[0], status: 'failed', completedAt, error: error instanceof Error ? error.message : '方案生成失败' };
+      await persistWorkspaceProject({ ...baseProject, updatedAt: completedAt, status: 'failed', tasks: [task] }).then(loadProjects).catch(() => undefined);
+    }
     finally { setWorkKind(null); }
   };
   const retryFailedRooms = async () => {
@@ -238,7 +300,24 @@ export default function WorkspacePage() {
       setMessage(updated.warning ? `部分效果图未完成：${updated.warning}` : '');
       if (record) {
         const nextRecord = { ...record, results: nextResults, warning: updated.warning };
-        try { await saveDesignHistory(nextRecord); setHistory((current) => current.map((item) => item.id === record.id ? nextRecord : item)); }
+        try {
+          await saveDesignHistory(nextRecord);
+          setHistory((current) => current.map((item) => item.id === record.id ? nextRecord : item));
+          const project = savedProjects.find((item) => item.id === projectId);
+          const version = project?.versions.find((item) => item.id === record.id);
+          const task = project?.tasks.find((item) => item.id === generationJobId);
+          if (project && version && task) {
+            const completedAt = new Date().toISOString();
+            const nextVersion: DesignVersion = {
+              ...version,
+              warning: updated.warning,
+              images: nextResults.slice(1).map((item) => ({ id: newId(), title: item.name, imageUrl: item.imageUrl, description: rooms.find((room) => room.name === item.name)?.description })),
+            };
+            const nextTask: GenerationTask = { ...task, status: updated.warning ? 'failed' : 'completed', completedAt, error: updated.warning };
+            await persistWorkspaceProject({ ...project, updatedAt: completedAt, status: updated.warning ? 'failed' : 'completed', versions: project.versions.map((item) => item.id === version.id ? nextVersion : item), tasks: project.tasks.map((item) => item.id === task.id ? nextTask : item) });
+            await loadProjects();
+          }
+        }
         catch (error) { setHistoryMessage(error instanceof Error ? `重试结果已显示，但记录保存失败：${error.message}` : '重试结果保存失败。'); }
       }
     } catch (error) { setMessage(error instanceof Error ? `空间重试失败：${error.message}` : '空间重试失败。'); }

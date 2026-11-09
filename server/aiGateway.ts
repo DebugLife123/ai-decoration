@@ -6,7 +6,7 @@ type RoomBounds = { x: number; y: number; width: number; height: number };
 type RoomEvidence = { type: string; detail: string };
 type IdentifiedRoom = { id?: string; name: string; description: string; suggestedName?: string; confidence?: number | null; status?: 'confirmed' | 'identified' | 'unknown'; evidence?: RoomEvidence[]; adjacentTo?: string[]; bounds?: RoomBounds | null };
 type PlanImageMeta = { sourceWidth: number; sourceHeight: number; sentWidth: number; sentHeight: number; sourceBytes: number };
-type GenerateRequest = { mode: 'photo' | 'floorplan'; style: string; prompt?: string; photo?: string; floorPlan?: string; imageMeta?: PlanImageMeta; photos?: string[]; source?: 'cad' | 'floorplan'; analysis?: string; rooms?: IdentifiedRoom[]; selectedRooms?: string[]; roomReferenceImages?: { name: string; image: string }[] };
+type GenerateRequest = { mode: 'photo' | 'floorplan'; style: string; prompt?: string; photo?: string; floorPlan?: string; imageMeta?: PlanImageMeta; photos?: string[]; source?: 'cad' | 'floorplan'; analysis?: string; rooms?: IdentifiedRoom[]; selectedRooms?: string[]; roomReferenceImages?: { name: string; image: string }[]; taskId?: string };
 type AnalyzeRequest = { floorPlan?: string; imageMeta?: PlanImageMeta; source?: 'cad' | 'floorplan' };
 type RoomImageEditRequest = { image?: string; mask?: string; instruction?: string; roomName?: string; style?: string };
 type ImageResult = { imageUrl: string };
@@ -371,7 +371,7 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
         if (oldest) { jobs.delete(oldest.id); retryInputs.delete(oldest.id); }
       }
       const requestId = crypto.randomUUID();
-      const id = crypto.randomUUID();
+      const id = typeof request.taskId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(request.taskId) ? request.taskId : crypto.randomUUID();
       const job: GenerationJob = { id, requestId, status: 'queued', stage: 'queued', message: '请求已进入生成队列。', completedRooms: 0, totalRooms: request.selectedRooms?.length || request.rooms?.length || 0, rooms: [], updatedAt: new Date().toISOString() };
       jobs.set(id, job);
       logAiEvent({ event: 'workflow_started', requestId, jobId: id, operation: 'whole-home-generation', stage: 'queued', model: config.imageModel, inputImageBytes: request.floorPlan ? imageByteLength(request.floorPlan) : 0, imageMeta: safeImageMeta(request.imageMeta), roomCount: job.totalRooms });

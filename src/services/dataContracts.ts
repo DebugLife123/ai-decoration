@@ -20,6 +20,12 @@ export interface DesignVersion {
   analysis: string;
   coverImageUrl: string;
   images: DesignImage[];
+  taskId?: string;
+  source?: PlanSource;
+  floorPlanAnalysis?: string;
+  identifiedRooms?: IdentifiedRoom[];
+  selectedRooms?: string[];
+  warning?: string;
 }
 
 export interface GenerationTask {
@@ -31,6 +37,7 @@ export interface GenerationTask {
   startedAt: string;
   completedAt?: string;
   error?: string;
+  result?: { versionId: string; roomCount: number; coverReady: boolean };
 }
 
 export interface Project {

@@ -326,7 +326,7 @@ const apiToken = env?.VITE_BUSINESS_API_TOKEN?.trim();
 export const businessApiConfig = {
   baseUrl: apiUrl?.replace(/\/$/, '') || '',
   get token() { return currentAccessToken(); },
-  enabled: Boolean(apiUrl),
+  enabled: Boolean(apiUrl) || !env?.DEV,
 };
 
 const remoteBusinessDataAdapter = apiAdapter(apiUrl);
