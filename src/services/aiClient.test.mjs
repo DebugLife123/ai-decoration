@@ -1,6 +1,48 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { generateDesign, retryGenerationRooms } from './aiClient.ts';
+import { editRoomImage, generateDesign, retryGenerationRooms } from './aiClient.ts';
+
+test('room edit converts a persisted blob image to a supported data URL', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalFileReader = globalThis.FileReader;
+  let requestBody;
+  globalThis.FileReader = class {
+    readAsDataURL(blob) {
+      this.result = `data:${blob.type};base64,${Buffer.from('saved-room-image').toString('base64')}`;
+      this.onload();
+    }
+  };
+  globalThis.fetch = async (url, options) => {
+    if (url === 'blob:http://localhost/saved-room') return new Response(new Blob(['saved-room-image'], { type: 'image/png' }));
+    requestBody = JSON.parse(options.body);
+    return Response.json({ imageUrl: 'data:image/png;base64,edited', model: 'test-image-model' });
+  };
+  try {
+    const result = await editRoomImage({ image: 'blob:http://localhost/saved-room', mask: 'data:image/png;base64,mask', instruction: '把门换成黑色', roomName: '次卧1', style: '现代简约' });
+    assert.match(requestBody.image, /^data:image\/png;base64,/);
+    assert.equal(requestBody.mask, 'data:image/png;base64,mask');
+    assert.equal(result.model, 'test-image-model');
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.FileReader = originalFileReader;
+  }
+});
+
+test('room edit leaves a supported data URL unchanged', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestBody;
+  globalThis.fetch = async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return Response.json({ imageUrl: 'data:image/png;base64,edited', model: 'test-image-model' });
+  };
+  try {
+    const image = 'data:image/jpeg;base64,original';
+    await editRoomImage({ image, mask: 'data:image/png;base64,mask', instruction: '调整颜色', roomName: '客厅', style: '现代简约' });
+    assert.equal(requestBody.image, image);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test('polling receives each image once and merges retry results', async () => {
   const originalFetch = globalThis.fetch;

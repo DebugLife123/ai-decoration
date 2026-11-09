@@ -34,8 +34,43 @@ export type GenerationJob = {
   failedRooms?: string[];
   error?: string;
 };
+const supportedImageMimeTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
+async function toSupportedImageDataUrl(image: string): Promise<string> {
+  if (/^data:image\/(png|jpeg|webp);base64,/i.test(image)) return image;
+
+  let blob: Blob;
+  try {
+    const response = await fetch(image);
+    if (!response.ok) throw new Error(`图片读取失败（${response.status}）`);
+    blob = await response.blob();
+  } catch {
+    throw new Error('原图无法读取，请重新打开方案后重试。');
+  }
+
+  const mimeType = blob.type.toLowerCase().split(';')[0];
+  if (!supportedImageMimeTypes.has(mimeType)) {
+    throw new Error('原图格式不支持，请使用 PNG、JPG 或 WEBP 图片。');
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!/^data:image\/(png|jpeg|webp);base64,/i.test(result)) {
+        reject(new Error('原图转换失败，请重新打开方案后重试。'));
+        return;
+      }
+      resolve(result);
+    };
+    reader.onerror = () => reject(new Error('原图转换失败，请重新打开方案后重试。'));
+    reader.readAsDataURL(blob);
+  });
+}
+
 export async function editRoomImage(input: { image: string; mask: string; instruction: string; roomName: string; style: string }): Promise<{ imageUrl: string; model: string }> {
-  const response = await fetch('/api/ai/edit-room-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+  const image = await toSupportedImageDataUrl(input.image);
+  const response = await fetch('/api/ai/edit-room-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...input, image }) });
   const payload = await response.json() as { imageUrl?: string; model?: string; error?: string };
   if (!response.ok || !payload.imageUrl) throw new Error(payload.error || '局部编辑失败，请稍后重试。');
   return { imageUrl: payload.imageUrl, model: payload.model || 'configured-image-model' };
