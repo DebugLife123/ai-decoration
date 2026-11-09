@@ -23,6 +23,16 @@ interface ApiEnvelope<T> {
   timestamp: string;
 }
 
+async function readApiEnvelope<T>(response: Response): Promise<ApiEnvelope<T> | null> {
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.toLowerCase().includes('application/json')) return null;
+  try {
+    return await response.json() as ApiEnvelope<T>;
+  } catch {
+    return null;
+  }
+}
+
 const sessionKey = 'decoration-auth-session';
 const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
 
@@ -71,8 +81,9 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   } catch {
     throw new Error('无法连接服务，请确认后端已启动。');
   }
-  const payload = await response.json() as ApiEnvelope<T>;
-  if (!response.ok) throw new Error(payload.message || `请求失败（${response.status}）`);
+  const payload = await readApiEnvelope<T>(response);
+  if (!response.ok) throw new Error(payload?.message || `请求失败（${response.status}）`);
+  if (!payload) throw new Error('服务返回了无法识别的响应，请稍后重试。');
   return payload.data;
 }
 
@@ -86,8 +97,8 @@ export async function apiDownload(path: string): Promise<Blob> {
     throw new Error('无法连接服务，请确认后端已启动。');
   }
   if (!response.ok) {
-    const payload = await response.json() as ApiEnvelope<unknown>;
-    throw new Error(payload.message || `文件读取失败（${response.status}）`);
+    const payload = await readApiEnvelope<unknown>(response);
+    throw new Error(payload?.message || `文件读取失败（${response.status}）`);
   }
   return response.blob();
 }
@@ -103,7 +114,8 @@ export async function authRequest<T>(path: string, body?: unknown): Promise<T> {
   } catch {
     throw new Error('无法连接登录服务，请确认后端已启动。');
   }
-  const payload = await response.json() as ApiEnvelope<T>;
-  if (!response.ok) throw new Error(payload.message || '登录请求失败，请稍后重试。');
+  const payload = await readApiEnvelope<T>(response);
+  if (!response.ok) throw new Error(payload?.message || `登录请求失败（${response.status}），请稍后重试。`);
+  if (!payload) throw new Error('登录服务返回了无法识别的响应，请稍后重试。');
   return payload.data;
 }
