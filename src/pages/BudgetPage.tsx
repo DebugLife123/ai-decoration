@@ -4,16 +4,23 @@ import { useAppStore } from '../stores/appStore';
 import { fallbackStyleProfiles, recommendStyles, type StyleRecommendationProfile } from '../services/styleRecommendation';
 import { loadPlatformStyleProfiles } from '../services/styleProfileSource';
 import { styleCatalogByKey } from '../services/styleCatalog';
+import { estimateBudget, type BudgetItem, type EstimateResult } from '../services/budgetApi';
 import './BudgetPage.css';
 
 type FinishLevel = 'basic' | 'standard' | 'premium';
 
-const finishLevels: { id: FinishLevel; label: string; factor: number }[] = [
-  { id: 'basic', label: '基础', factor: 0.82 },
-  { id: 'standard', label: '舒适', factor: 1 },
-  { id: 'premium', label: '品质', factor: 1.34 },
+const finishLevels: { id: FinishLevel; label: string; factor: number; api: 'BASIC' | 'STANDARD' | 'PREMIUM' }[] = [
+  { id: 'basic', label: '基础', factor: 0.82, api: 'BASIC' },
+  { id: 'standard', label: '舒适', factor: 1, api: 'STANDARD' },
+  { id: 'premium', label: '品质', factor: 1.34, api: 'PREMIUM' },
 ];
 
+/**
+ * 本地兜底用的 6 项参考区间。
+ *
+ * 2a-2 之后后端会返回 9 板块的更细拆分；这里保留一份，用于后端不可用时兜底，
+ * 保证预算页在离线状态下依旧可用（约数与后端 budget_reference_bands 同源）。
+ */
 const referenceCosts = [
   { label: '拆改与水电', low: 320, high: 520 },
   { label: '泥瓦与防水', low: 280, high: 450 },
@@ -22,6 +29,12 @@ const referenceCosts = [
   { label: '厨卫与定制收纳', low: 380, high: 720 },
   { label: '安装、辅料与管理', low: 180, high: 320 },
 ];
+
+const dataQualityText: Record<EstimateResult['dataQuality'], string> = {
+  QUOTED: '基于多家企业的现行报价测算，可按明细查看报价来源。',
+  PARTIAL: '部分板块基于企业报价，其余按行业基准估算。',
+  REFERENCE: '行业参考区间，当前地区暂无可比企业报价。',
+};
 
 function formatMoney(value: number) {
   return (value / 10000).toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -35,6 +48,7 @@ export default function BudgetPage() {
   const [budgetInput, setBudgetInput] = useState('');
   const [finishLevel, setFinishLevel] = useState<FinishLevel>('standard');
   const [platformProfiles, setPlatformProfiles] = useState<StyleRecommendationProfile[] | null>(null);
+  const [remoteEstimate, setRemoteEstimate] = useState<EstimateResult | null>(null);
   useEffect(() => {
     let cancelled = false;
     loadPlatformStyleProfiles()
@@ -42,11 +56,14 @@ export default function BudgetPage() {
       .catch(() => { /* 回退到内置风格资料 */ });
     return () => { cancelled = true; };
   }, []);
+
   const selectedProject = projects.find((project) => project.id === projectId);
   const area = Number(areaInput);
   const targetBudget = Number(budgetInput) * 10000;
   const currentLevel = finishLevels.find((item) => item.id === finishLevel)!;
-  const estimate = useMemo(() => {
+
+  /** 本地兜底估算：后端不可用时使用，口径与旧版完全一致。 */
+  const localEstimate = useMemo(() => {
     if (!Number.isFinite(area) || area <= 0 || area > 2000) return null;
     const breakdown = referenceCosts.map((item) => ({
       ...item,
@@ -60,6 +77,30 @@ export default function BudgetPage() {
     };
   }, [area, currentLevel.factor]);
 
+  // 后端试算：面积 / 地区 / 档位变化时防抖重算，失败静默回退本地口径。
+  useEffect(() => {
+    if (!Number.isFinite(area) || area <= 0 || area > 2000) {
+      setRemoteEstimate(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      estimateBudget({
+        area,
+        region: region.trim() || undefined,
+        finishLevel: currentLevel.api,
+        projectId: projectId || null,
+        targetBudget: targetBudget > 0 ? targetBudget : null,
+      })
+        .then((result) => { if (!cancelled) setRemoteEstimate(result); })
+        .catch(() => { if (!cancelled) setRemoteEstimate(null); });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [area, currentLevel.api, projectId, region, targetBudget]);
+
   const selectProject = (id: string) => {
     setProjectId(id);
     const project = projects.find((item) => item.id === id);
@@ -69,9 +110,10 @@ export default function BudgetPage() {
     setBudgetInput(project.budget?.toString() || '');
   };
 
-  const budgetStatus = estimate && targetBudget > 0
-    ? targetBudget < estimate.low ? 'low' : targetBudget > estimate.high ? 'high' : 'within'
-    : null;
+  const budgetStatus = remoteEstimate?.overBudgetStatus
+    ? remoteEstimate.overBudgetStatus === 'OVER' ? 'low'
+      : remoteEstimate.overBudgetStatus === 'UNDER' ? 'high' : 'within'
+    : estimate0(localEstimate, targetBudget);
   const recommendationBudget = Number.isFinite(Number(budgetInput)) && Number(budgetInput) > 0 ? Number(budgetInput) : null;
 
   // 企业资料优先，但不足 3 条时用内置风格补齐：
@@ -85,6 +127,11 @@ export default function BudgetPage() {
       .filter((item) => !usedStyles.has(item.style));
     return [...platform, ...supplements].slice(0, 3);
   }, [area, platformProfiles, recommendationBudget, region]);
+
+  /** 展示口径：远端 9 板块优先，本地 6 项兜底。 */
+  const display = remoteEstimate
+    ? { low: remoteEstimate.totalLow, high: remoteEstimate.totalHigh, items: remoteEstimate.items }
+    : localEstimate ? { low: localEstimate.low, high: localEstimate.high, items: null } : null;
 
   return <main className="budget-page">
     <header className="budget-header">
@@ -114,8 +161,8 @@ export default function BudgetPage() {
       </section>
 
       <section className="budget-result" aria-live="polite">
-        {!estimate ? <div className="budget-prompt"><strong>填写面积开始试算</strong><span>请输入 0 至 2000 ㎡之间的装修面积。</span></div> : <>
-          <div className="estimate-heading"><div><span>参考总价区间</span><strong>¥{formatMoney(estimate.low)}<small>万</small><i> - </i>¥{formatMoney(estimate.high)}<small>万</small></strong></div><span className="estimate-area">{area.toLocaleString('zh-CN')} ㎡{region.trim() ? ` · ${region.trim()}` : ''}</span></div>
+        {!display ? <div className="budget-prompt"><strong>填写面积开始试算</strong><span>请输入 0 至 2000 ㎡之间的装修面积。</span></div> : <>
+          <div className="estimate-heading"><div><span>参考总价区间</span><strong>¥{formatMoney(display.low)}<small>万</small><i> - </i>¥{formatMoney(display.high)}<small>万</small></strong></div><span className="estimate-area">{area.toLocaleString('zh-CN')} ㎡{region.trim() ? ` · ${region.trim()}` : ''}</span></div>
           {budgetStatus && <p className={`budget-comparison ${budgetStatus}`}>
             {budgetStatus === 'within' ? '计划预算落在当前参考区间内。' : budgetStatus === 'low' ? '计划预算低于当前参考区间，可调整面积或装修档位。' : '计划预算高于当前参考区间，可预留部分用于家具、家电或软装。'}
           </p>}
@@ -132,10 +179,46 @@ export default function BudgetPage() {
               return <article className={`style-recommendation ${index === 0 ? 'primary' : ''}`} key={`${style.style}-${style.companyName ?? 'platform'}`}><div className="style-recommendation-copy"><div><strong>{styleName}</strong>{index === 0 && <em>{style.companyName ? '企业优先' : '优先推荐'}</em>}{style.companyName && <i className="style-recommendation-source">合作企业 · {style.companyName}</i>}</div><span>{style.note}</span><p>{style.reason}</p></div><Link to={`/workspace?${workspaceParams.toString()}`}>采用此风格</Link></article>;
             })}</div> : <div className="style-recommendation-empty">先填写预算金额，再查看风格建议。</div>}
           </div>
-          <div className="estimate-breakdown"><h2>分项参考</h2>{estimate.breakdown.map((item) => <div className="estimate-row" key={item.label}><span>{item.label}</span><strong>¥{formatMoney(item.low)} - ¥{formatMoney(item.high)} 万</strong></div>)}</div>
-          <p className="estimate-disclaimer">以上为演示用样例估算，不是企业报价或市场实时报价。地区、房屋状况、施工范围和选材会造成较大差异；不含家具家电、软装及可能产生的结构加固费用。</p>
+          <div className="estimate-breakdown"><h2>分项参考</h2>{renderBreakdown(display.items, localEstimate?.breakdown)}</div>
+          <p className="estimate-disclaimer">
+            {remoteEstimate ? dataQualityText[remoteEstimate.dataQuality] : '以上为演示用样例估算，不是企业报价或市场实时报价。'}
+            {' '}地区、房屋状况、施工范围和选材会造成较大差异；不含家具家电、软装及可能产生的结构加固费用。
+          </p>
         </>}
       </section>
     </div>
   </main>;
+}
+
+function estimate0(localEstimate: { low: number; high: number } | null, targetBudget: number) {
+  return localEstimate && targetBudget > 0
+    ? targetBudget < localEstimate.low ? 'low' : targetBudget > localEstimate.high ? 'high' : 'within'
+    : null;
+}
+
+/**
+ * 远端 9 板块明细：显示材料/人工拆分、来源标记与最低计量提示；
+ * 兜底时退回本地 6 项。
+ */
+function renderBreakdown(items: BudgetItem[] | null, localBreakdown: { label: string; low: number; high: number }[] | undefined) {
+  if (!items) {
+    return (localBreakdown ?? []).map((item) => (
+      <div className="estimate-row" key={item.label}><span>{item.label}</span><strong>¥{formatMoney(item.low)} - ¥{formatMoney(item.high)} 万</strong></div>
+    ));
+  }
+  return items.map((item) => (
+    <div className="estimate-row" key={item.itemKey}>
+      <span>{item.label}{item.disabled && <em className="estimate-row-flag">未包含</em>}
+        {item.appliedMinQty && <em className="estimate-row-flag" title={item.appliedMinQtyRule ?? ''}>按最低量计</em>}
+        {item.source === 'QUOTED' && <em className="estimate-row-flag quoted">企业报价</em>}
+      </span>
+      <strong>
+        {item.disabled
+          ? '—'
+          : <>¥{formatMoney(item.costLow)}{item.costLow !== item.costHigh && <> - ¥{formatMoney(item.costHigh)}</>} 万
+            <small className="estimate-row-split">材料 {formatMoney(item.materialCostLow)}–{formatMoney(item.materialCostHigh)} · 人工 {formatMoney(item.laborCostLow)}–{formatMoney(item.laborCostHigh)}</small>
+          </>}
+      </strong>
+    </div>
+  ));
 }

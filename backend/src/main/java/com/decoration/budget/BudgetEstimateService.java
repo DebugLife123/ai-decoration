@@ -1,0 +1,395 @@
+package com.decoration.budget;
+
+import com.decoration.shared.api.BusinessApiException;
+import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import static com.decoration.budget.BudgetDtos.BudgetItem;
+import static com.decoration.budget.BudgetDtos.EstimateRequest;
+import static com.decoration.budget.BudgetDtos.EstimateResult;
+import static com.decoration.budget.BudgetDtos.QuoteSample;
+
+/**
+ * 预算试算（阶段 2a-2）。
+ *
+ * <p>核心是三层降级：
+ * <pre>
+ *   QUOTED     板块有 ≥N 家企业的可识别报价 → 用真实报价
+ *   REFERENCE  没有满足门槛的报价           → 用 budget_reference_bands 基准区间
+ *   DISABLED   用户显式关闭的板块            → 不计价，但要在结果里列出来
+ * </pre>
+ *
+ * <p>缺失板块必须用基准回填，绝不能算 0——否则只有地板报价时，
+ * 用户会看到一个「砍掉 40% 分项」的荒谬低值。
+ *
+ * <p>回归基准：清空企业报价时，9 个板块合计必须等于
+ * 前端 src/pages/BudgetPage.tsx 原 6 项 referenceCosts 的计算总额
+ * （BASIC 档 1790–3110 元/㎡ 严格守恒）。
+ */
+@Service
+public class BudgetEstimateService {
+
+    /** 引用基准前需要的最少企业数；低于门槛的类目降级为 REFERENCE。 */
+    static final int MIN_COMPANY_COUNT = 3;
+    static final BigDecimal QUANTITY_LOW_FACTOR = new BigDecimal("0.92");
+    static final BigDecimal QUANTITY_HIGH_FACTOR = new BigDecimal("1.08");
+    /** 得房率（高层 0.75–0.82 的保守中值）。 */
+    static final BigDecimal INTERIOR_RATIO = new BigDecimal("0.78");
+    /** 墙面展开系数（周长 × 层高的经验值，扣门窗后约 2.55）。 */
+    static final BigDecimal WALL_RATIO = new BigDecimal("2.55");
+    static final String MODEL_VERSION = "v3";
+
+    private final JdbcTemplate jdbc;
+
+    public BudgetEstimateService(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    /** 板块定义（来自 budget_items）。 */
+    record ItemDef(String key, String label, String unitKind, int sortOrder,
+                   boolean defaultOn, BigDecimal materialRatio) {
+    }
+
+    /** 工程量系数（来自 workload_factors）。 */
+    record Factor(String basis, BigDecimal perSqm, BigDecimal wasteRate) {
+    }
+
+    /** 最低计量规则（来自 budget_min_qty）。 */
+    record MinQty(BigDecimal minQty, String scope, String note) {
+    }
+
+    /** 匹配到的报价（来自 material_quotes / labor_quotes）。 */
+    record Quote(UUID id, String name, BigDecimal price, String unit, String unitKind,
+                 String companyName, boolean isLabor) {
+    }
+
+    /** 单价区间（P25 / P75）。 */
+    record Band(BigDecimal low, BigDecimal high) {
+    }
+
+    public EstimateResult estimate(EstimateRequest request) {
+        var area = request.area();
+        var finishLevel = request.finishLevelOrDefault();
+        var spaceType = request.spaceTypeOrDefault();
+
+        var interiorArea = area.multiply(INTERIOR_RATIO).setScale(2, RoundingMode.HALF_UP);
+        var wallArea = interiorArea.multiply(WALL_RATIO).setScale(2, RoundingMode.HALF_UP);
+
+        var items = loadItems();
+        var factors = loadFactors(spaceType);
+        var minQtyRules = loadMinQtyRules();
+        var categoriesByItem = loadCategories();
+        var warnings = new ArrayList<String>();
+
+        var disabledKeys = new HashSet<>(nullSafe(request.disabledItems()));
+        var enabledKeys = new HashSet<>(nullSafe(request.enabledItems()));
+        // STRUCTURE 默认参与：模板里结构改造是独立分部，老房必然有拆改。
+        // 用户可用 disabledItems 关闭（新房不想包含拆改）。
+
+        var resultItems = new ArrayList<BudgetItem>();
+        var materialLow = BigDecimal.ZERO;
+        var materialHigh = BigDecimal.ZERO;
+        var laborLow = BigDecimal.ZERO;
+        var laborHigh = BigDecimal.ZERO;
+        var quotedCount = 0;
+
+        for (var item : items) {
+            var disabled = disabledKeys.contains(item.key());
+            var factor = factors.get(item.key());
+            var demandUnit = item.unitKind();
+
+            BigDecimal qtyBase = null;
+            String basis = null;
+            BigDecimal wasteRate = BigDecimal.ZERO;
+            if (!disabled && factor != null) {
+                var base = switch (factor.basis()) {
+                    case "BUILDING_AREA" -> area;
+                    case "WALL_AREA" -> wallArea;
+                    default -> interiorArea;
+                };
+                qtyBase = base.multiply(factor.perSqm()).setScale(2, RoundingMode.HALF_UP);
+                wasteRate = factor.wasteRate();
+                basis = factor.basis();
+            }
+
+            BigDecimal qtyLow = null;
+            BigDecimal qtyHigh = null;
+            boolean appliedMinQty = false;
+            String appliedMinQtyRule = null;
+            if (qtyBase != null) {
+                qtyLow = money(qtyBase.multiply(QUANTITY_LOW_FACTOR));
+                qtyHigh = money(qtyBase.multiply(QUANTITY_HIGH_FACTOR));
+                var rule = minQtyRules.get(item.key() + ":" + demandUnit);
+                if (rule != null && "PER_HOUSE".equals(rule.scope()) && qtyHigh.compareTo(rule.minQty()) < 0) {
+                    // 按户兜底（如水电不足 85㎡ 按 85㎡）：数量低于阈值就抬到阈值。
+                    qtyLow = rule.minQty();
+                    qtyHigh = rule.minQty();
+                    appliedMinQty = true;
+                    appliedMinQtyRule = rule.note();
+                }
+                if (isCountUnit(demandUnit)) {
+                    qtyLow = roundUp(qtyLow);
+                    qtyHigh = roundUp(qtyHigh);
+                }
+            }
+
+            var materialQuotes = disabled || qtyBase == null
+                    ? List.<Quote>of()
+                    : findQuotes("MATERIAL", item.key(), categoriesByItem, demandUnit, request.region());
+            var laborQuotes = disabled || qtyBase == null
+                    ? List.<Quote>of()
+                    : findQuotes("LABOR", item.key(), categoriesByItem, demandUnit, request.region());
+
+            var materialCostLow = BigDecimal.ZERO;
+            var materialCostHigh = BigDecimal.ZERO;
+            var laborCostLow = BigDecimal.ZERO;
+            var laborCostHigh = BigDecimal.ZERO;
+            String source;
+            var skipped = new ArrayList<String>();
+            List<QuoteSample> samples = List.of();
+
+            if (disabled || qtyBase == null) {
+                source = "DISABLED";
+                if (disabled) skipped.add("用户已关闭该板块");
+                if (!disabled && factor == null) skipped.add("该板块暂无工程量系数，未参与计算");
+            } else if (distinctCompanies(materialQuotes) >= MIN_COMPANY_COUNT
+                    && distinctCompanies(laborQuotes) >= MIN_COMPANY_COUNT) {
+                var materialBand = priceBand(materialQuotes);
+                var laborBand = priceBand(laborQuotes);
+                var waste = wasteRate.add(BigDecimal.ONE);
+                materialCostLow = money(qtyLow.multiply(materialBand.low()).multiply(waste));
+                materialCostHigh = money(qtyHigh.multiply(materialBand.high()).multiply(waste));
+                laborCostLow = money(qtyLow.multiply(laborBand.low()).multiply(waste));
+                laborCostHigh = money(qtyHigh.multiply(laborBand.high()).multiply(waste));
+                source = "QUOTED";
+                quotedCount++;
+                samples = mergeSamples(materialQuotes, laborQuotes);
+            } else {
+                var band = referenceBand(item.key(), finishLevel);
+                if (band == null) {
+                    source = "DISABLED";
+                    skipped.add("该板块没有配置基准区间，未参与计算");
+                } else {
+                    // 基准回填：材料占比 × 区间 = 材料部分，其余为人工。绝不能算 0。
+                    // 按户最低计量（如水电不足 85㎡ 按 85㎡）同样要作用到基准路径。
+                    var billableArea = area;
+                    var houseRule = minQtyRules.get(item.key() + ":" + item.unitKind());
+                    if (houseRule != null && "PER_HOUSE".equals(houseRule.scope())
+                            && area.compareTo(houseRule.minQty()) < 0) {
+                        billableArea = houseRule.minQty();
+                        appliedMinQty = true;
+                        appliedMinQtyRule = houseRule.note();
+                    }
+                    var totalLow = money(band.low().multiply(billableArea));
+                    var totalHigh = money(band.high().multiply(billableArea));
+                    var ratio = item.materialRatio();
+                    materialCostLow = money(totalLow.multiply(ratio));
+                    materialCostHigh = money(totalHigh.multiply(ratio));
+                    laborCostLow = totalLow.subtract(materialCostLow);
+                    laborCostHigh = totalHigh.subtract(materialCostHigh);
+                    source = "REFERENCE";
+                    if (!materialQuotes.isEmpty() || !laborQuotes.isEmpty()) {
+                        skipped.add("同板块仅 " + Math.max(distinctCompanies(materialQuotes), distinctCompanies(laborQuotes))
+                                + " 家企业报价，低于 " + MIN_COMPANY_COUNT + " 家门槛，按行业基准估算");
+                    } else {
+                        skipped.add("暂无企业报价，按行业基准估算");
+                    }
+                }
+            }
+
+            materialLow = materialLow.add(materialCostLow);
+            materialHigh = materialHigh.add(materialCostHigh);
+            laborLow = laborLow.add(laborCostLow);
+            laborHigh = laborHigh.add(laborCostHigh);
+
+            resultItems.add(new BudgetItem(item.key(), item.label(), demandUnit, basis,
+                    qtyBase, appliedMinQty, appliedMinQtyRule, wasteRate,
+                    disabled, materialCostLow, materialCostHigh, laborCostLow, laborCostHigh,
+                    materialCostLow.add(laborCostLow), materialCostHigh.add(laborCostHigh),
+                    source, skipped, samples));
+        }
+
+        var totalLow = money(materialLow.add(laborLow));
+        var totalHigh = money(materialHigh.add(laborHigh));
+
+        var dataQuality = quotedCount == 0 ? "REFERENCE" : quotedCount >= items.size() ? "QUOTED" : "PARTIAL";
+
+        var target = request.targetBudget();
+        String overBudgetStatus = null;
+        if (target != null && target.signum() > 0) {
+            overBudgetStatus = target.compareTo(totalLow) < 0 ? "OVER"
+                    : target.compareTo(totalHigh) > 0 ? "UNDER" : "WITHIN";
+        }
+
+        if (quotedCount > 0 && quotedCount < items.size()) {
+            warnings.add("仅 " + quotedCount + " 个板块达到 " + MIN_COMPANY_COUNT
+                    + " 家企业门槛并采用真实报价，其余板块按行业基准估算");
+        }
+
+        return new EstimateResult(totalLow, totalHigh, target, overBudgetStatus, dataQuality,
+                "LIST", MODEL_VERSION, interiorArea, wallArea,
+                materialLow, materialHigh, laborLow, laborHigh,
+                resultItems, warnings, Instant.now());
+    }
+
+    private List<ItemDef> loadItems() {
+        return jdbc.query("""
+                select item_key, label, unit_kind, sort_order, default_on, material_ratio
+                from budget_items order by sort_order
+                """, (rs, n) -> new ItemDef(rs.getString("item_key"), rs.getString("label"),
+                rs.getString("unit_kind"), rs.getInt("sort_order"),
+                rs.getBoolean("default_on"), rs.getBigDecimal("material_ratio")));
+    }
+
+    private Map<String, Factor> loadFactors(String spaceType) {
+        var map = new HashMap<String, Factor>();
+        jdbc.query("""
+                select item_key, basis, per_sqm, waste_rate from workload_factors
+                where space_type in (?, 'WHOLE_HOME')
+                order by case when space_type = ? then 0 else 1 end
+                """, rs -> {
+            map.putIfAbsent(rs.getString("item_key"), new Factor(rs.getString("basis"),
+                    rs.getBigDecimal("per_sqm"), rs.getBigDecimal("waste_rate")));
+        }, spaceType, spaceType);
+        return map;
+    }
+
+    private Map<String, MinQty> loadMinQtyRules() {
+        var map = new HashMap<String, MinQty>();
+        jdbc.query("select item_key, unit_kind, min_qty, scope, note from budget_min_qty", rs -> {
+            map.put(rs.getString("item_key") + ":" + rs.getString("unit_kind"),
+                    new MinQty(rs.getBigDecimal("min_qty"), rs.getString("scope"), rs.getString("note")));
+        });
+        return map;
+    }
+
+    private Map<String, List<String>> loadCategories() {
+        var map = new HashMap<String, List<String>>();
+        jdbc.query("select item_key, source, category from budget_item_categories order by priority", rs -> {
+            var key = rs.getString("source") + ":" + rs.getString("item_key");
+            map.computeIfAbsent(key, k -> new ArrayList<>()).add(rs.getString("category"));
+        });
+        return map;
+    }
+
+    private Band referenceBand(String itemKey, String finishLevel) {
+        var rows = jdbc.query("""
+                select low_per_sqm, high_per_sqm from budget_reference_bands
+                where item_key = ? and finish_level = ?
+                """, (rs, n) -> new Band(rs.getBigDecimal("low_per_sqm"), rs.getBigDecimal("high_per_sqm")),
+                itemKey, finishLevel);
+        if (!rows.isEmpty()) return rows.getFirst();
+        return jdbc.query("""
+                select low_per_sqm, high_per_sqm from budget_reference_bands
+                where item_key = ? and finish_level = 'BASIC'
+                """, (rs, n) -> new Band(rs.getBigDecimal("low_per_sqm"), rs.getBigDecimal("high_per_sqm")),
+                itemKey).stream().findFirst().orElse(null);
+    }
+
+    /**
+     * 匹配板块对应的报价。
+     *
+     * <p>过滤顺序（任何一步不满足即剔除）：
+     * 类目映射命中 → 企业认证 APPROVED → 未下架 → 单位可识别 →
+     * 计价项（GIFT / OWNER_SUPPLIED 不参与）→ 有效期内 → 期望单位一致。
+     */
+    List<Quote> findQuotes(String source, String itemKey,
+                           Map<String, List<String>> categoriesByItem,
+                           String demandUnit, String region) {
+        var categories = categoriesByItem.getOrDefault(source + ":" + itemKey, List.of());
+        if (categories.isEmpty()) return List.of();
+
+        var isLabor = "LABOR".equals(source);
+        var table = isLabor ? "labor_quotes" : "material_quotes";
+        var nameCol = isLabor ? "labor_type" : "name";
+        var placeholders = String.join(",", java.util.Collections.nCopies(categories.size(), "?"));
+
+        var sql = """
+                select q.id, q.%s as item_name, q.price, q.unit, q.unit_kind,
+                       coalesce(p.name, c.name) as company_name
+                from %s q
+                join company_certifications cert on cert.company_id = q.company_id and cert.status = 'APPROVED'
+                left join company_profiles p on p.company_id = q.company_id
+                left join auth_companies c on c.id = q.company_id
+                where q.admin_hidden = false
+                  and q.unit_unknown = false
+                  and q.item_nature = 'INCLUDED'
+                  and q.valid_until >= current_date
+                  and q.%s in (%s)
+                """.formatted(nameCol, table, nameCol, placeholders);
+
+        var args = new ArrayList<Object>();
+        args.addAll(categories);
+        if (region != null && !region.isBlank()) {
+            sql += " and q.region = ?";
+            args.add(region.trim());
+        }
+
+        var quotes = jdbc.query(sql, (rs, n) -> new Quote(rs.getObject("id", UUID.class),
+                rs.getString("item_name"), rs.getBigDecimal("price"), rs.getString("unit"),
+                rs.getString("unit_kind"), rs.getString("company_name"), isLabor), args.toArray());
+
+        // 期望单位与报价计价单位不一致的报价不能参与（台面按 ㎡ 报、按延米算会错）。
+        return quotes.stream().filter(q -> demandUnit.equals(q.unitKind())).toList();
+    }
+
+    /** 门槛检查用的「企业数」，不是「报价条数」。 */
+    private static int distinctCompanies(List<Quote> quotes) {
+        return (int) quotes.stream().map(Quote::companyName).distinct().count();
+    }
+
+    private Band priceBand(List<Quote> quotes) {
+        var prices = quotes.stream().map(Quote::price).sorted().toList();
+        return new Band(percentile(prices, 0.25), percentile(prices, 0.75));
+    }
+
+    /** 线性插值分位数；样本少时不引统计库。 */
+    static BigDecimal percentile(List<BigDecimal> sorted, double p) {
+        if (sorted.isEmpty()) return null;
+        if (sorted.size() == 1) return sorted.getFirst();
+        double idx = p * (sorted.size() - 1);
+        int lo = (int) Math.floor(idx), hi = (int) Math.ceil(idx);
+        if (lo == hi) return sorted.get(lo);
+        var frac = BigDecimal.valueOf(idx - lo);
+        return sorted.get(lo).multiply(BigDecimal.ONE.subtract(frac))
+                .add(sorted.get(hi).multiply(frac))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private List<QuoteSample> mergeSamples(List<Quote> material, List<Quote> labor) {
+        var samples = new ArrayList<QuoteSample>();
+        for (var q : material) samples.add(new QuoteSample(q.id(), q.name(), q.price(), q.unit(), q.unitKind(), q.companyName()));
+        for (var q : labor) samples.add(new QuoteSample(q.id(), q.name(), q.price(), q.unit(), q.unitKind(), q.companyName()));
+        return samples;
+    }
+
+    private boolean isCountUnit(String unitKind) {
+        return "PIECE".equals(unitKind) || "SET".equals(unitKind) || "HOUSE".equals(unitKind)
+                || "ROOM".equals(unitKind) || "PACKAGE".equals(unitKind);
+    }
+
+    private BigDecimal roundUp(BigDecimal value) {
+        return value.setScale(0, RoundingMode.CEILING);
+    }
+
+    private static BigDecimal money(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO.setScale(2) : value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static <T> List<T> nullSafe(List<T> list) {
+        return list == null ? List.of() : list;
+    }
+}
