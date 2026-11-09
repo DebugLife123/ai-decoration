@@ -1,10 +1,12 @@
-# 仅供 CI 与本地校验后端测试使用：一个临时 postgres + 一个 maven 容器。
-# 用法：
-#   docker compose -f backend/docker-compose.test.yml up --abort-on-container-exit --exit-code-from backend-test
-#   docker compose -f backend/docker-compose.test.yml down -v
+# 仅供 CI 使用的临时 postgres：验证任务在 runner 主机上直接跑 mvn test，
+# 不再用 maven 容器。
 #
-# 与 backend/docker-compose.yml 的区别：那份只起本机开发用的 postgres（端口 5432 映射到宿主），
-# 这份不起端口，测试容器直接通过服务名连库，用完即销毁。
+# 为什么去掉 maven 容器：runner 连不上 Docker Hub，拉
+# maven:3.9-eclipse-temurin-21 会 EOF 失败，导致「能不能跑测试」被
+# 「能不能拉镜像」绑架。现在只剩一个 postgres 镜像依赖，且它是长期缓存的。
+#
+# 端口映射：同机若已有 PostgreSQL 占着 5432，把左边的 5432 改成 55432，
+# 并同步改 .gitlab-ci.yml 里的 DATABASE_TEST_URL。默认按原样保留。
 services:
   postgres-test:
     image: postgres:16-alpine
@@ -12,6 +14,8 @@ services:
       POSTGRES_DB: decoration
       POSTGRES_USER: decoration
       POSTGRES_PASSWORD: decoration
+    ports:
+      - "5432:5432"
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:
@@ -19,23 +23,3 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
-
-  backend-test:
-    image: maven:3.9-eclipse-temurin-21
-    working_dir: /build
-    depends_on:
-      postgres-test:
-        condition: service_healthy
-    environment:
-      # 集成测试读这两个变量决定连哪个库（见 BudgetEstimateIntegrationTest / BusinessDataPostgresIntegrationTest）
-      DATABASE_TEST_URL: jdbc:postgresql://postgres-test:5432/decoration
-      DATABASE_TEST_USERNAME: decoration
-      DATABASE_TEST_PASSWORD: decoration
-      MAVEN_OPTS: -Dmaven.repo.local=/m2
-    volumes:
-      - ./:/build
-      - m2-cache:/m2
-    command: ["mvn", "-B", "test"]
-
-volumes:
-  m2-cache:

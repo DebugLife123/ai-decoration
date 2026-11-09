@@ -38,17 +38,43 @@ verify_frontend:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
-# 后端：mvn test（含 2 个直连 PostgreSQL 的集成测试），用 compose 起临时库
-# 集成测试读 DATABASE_TEST_URL / DATABASE_TEST_USERNAME / DATABASE_TEST_PASSWORD
+# 后端：直接在 runner 主机上跑 mvn test（含 2 个直连 PostgreSQL 的集成测试）。
+#
+# 这里不再用 maven 容器跑测试：runner 拉不到 docker.io 上的 maven 镜像（EOF），
+# 「能不能跑测试」不应该被「能不能拉镜像」绑架。现在只剩一个 postgres 镜像，
+# 而它是长期缓存的。
+#
+# 前置条件（runner 主机上）：JDK 21 + Maven 3.9+ 在 PATH 里。
+# 前两行 java -version / mvn -v 是探针：如果 runner 缺工具链，日志会直接指出是哪一项，
+# 而不是抛出一堆「找不到命令」。
+#
+# 端口按原样用 5432。若 runner 上已有 PostgreSQL 占着 5432，把
+# backend/docker-compose.test.yml 的映射改成 55432 并同步改这里的 DATABASE_TEST_URL。
+#
+# 集成测试读 DATABASE_TEST_URL / DATABASE_TEST_USERNAME / DATABASE_TEST_PASSWORD，
+# 这里显式给值，不依赖测试代码里的默认值。
+# 每个测试类在自己的随机 schema 里跑完整 Flyway 迁移，与同机上的长期库互不干扰。
 verify_backend:
   stage: verify
   tags:
     - dockerlab-windows
   timeout: 30m
+  variables:
+    DATABASE_TEST_URL: jdbc:postgresql://localhost:5432/decoration
+    DATABASE_TEST_USERNAME: decoration
+    DATABASE_TEST_PASSWORD: decoration
   script:
-    - docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml up --abort-on-container-exit --exit-code-from backend-test
+    - java -version
+    - mvn -v
+    - docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml up -d --wait
+    - mvn -B -f backend/pom.xml test
   after_script:
     - docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml down --volumes --remove-orphans
+  artifacts:
+    when: on_failure
+    expire_in: 1 week
+    paths:
+      - backend/target/surefire-reports/
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
