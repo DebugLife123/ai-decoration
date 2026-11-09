@@ -1,5 +1,6 @@
 package com.decoration.business;
 
+import com.decoration.budget.BudgetUnitKind;
 import com.decoration.shared.api.BusinessApiException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,11 +44,14 @@ public class BusinessDataService {
             rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("specification"),
             rs.getString("unit"), rs.getBigDecimal("price"), rs.getString("brand"), rs.getString("category"),
             rs.getString("region"), rs.getObject("valid_until", LocalDate.class), rs.getObject("image_id", UUID.class), List.of(), rs.getInt("version"),
-            instant(rs, "created_at"), instant(rs, "updated_at"));
+            instant(rs, "created_at"), instant(rs, "updated_at"),
+            rs.getString("unit_kind"), rs.getBoolean("unit_unknown"), rs.getString("item_nature"));
     private static final RowMapper<LaborQuote> LABOR_MAPPER = (rs, row) -> new LaborQuote(
             rs.getObject("id", UUID.class), rs.getString("labor_type"), rs.getString("unit"),
             rs.getBigDecimal("price"), rs.getString("region"), rs.getObject("valid_until", LocalDate.class),
-            rs.getInt("version"), instant(rs, "created_at"), instant(rs, "updated_at"));
+            rs.getInt("version"), instant(rs, "created_at"), instant(rs, "updated_at"),
+            rs.getString("unit_kind"), rs.getBoolean("unit_unknown"), rs.getString("item_nature"),
+            rs.getBoolean("admin_hidden"));
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
@@ -205,7 +209,8 @@ public class BusinessDataService {
                 (rs, row) -> rs.getObject(1, UUID.class), quote.id());
         return new MaterialQuote(quote.id(), quote.name(), quote.spec(), quote.unit(), quote.price(), quote.brand(),
                 quote.category(), quote.region(), quote.validUntil(), ids.isEmpty() ? quote.imageId() : ids.getFirst(),
-                ids, quote.version(), quote.createdAt(), quote.updatedAt());
+                ids, quote.version(), quote.createdAt(), quote.updatedAt(),
+                quote.unitKind(), quote.unitUnknown(), quote.itemNature());
     }
 
     public MaterialQuote getMaterialQuote(UUID companyId, UUID id) {
@@ -217,16 +222,20 @@ public class BusinessDataService {
         validateDate(request.validUntil());
         var imageIds = requestedImages(request.imageIds(), request.imageId());
         validateMaterialImages(companyId, imageIds);
+        var itemNature = validateItemNature(request.itemNatureOrDefault());
+        var unit = clean(request.unit());
+        var unitKind = BudgetUnitKind.fromLabel(unit);
         var id = UUID.randomUUID();
         var actualId = idempotentResource(companyId, key, "material-quote", request, id);
         if (!actualId.equals(id)) return new Created<>(getMaterialQuote(companyId, actualId), false);
         var now = Timestamp.from(Instant.now());
         jdbc.update("""
                 insert into material_quotes(id, company_id, name, specification, unit, price, brand, category, region,
-                    valid_until, image_id, created_at, updated_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, id, companyId, clean(request.name()), clean(request.spec()), clean(request.unit()), request.price(), clean(request.brand()),
-                clean(request.category()), clean(request.region()), request.validUntil(), imageIds.isEmpty() ? null : imageIds.getFirst(), now, now);
+                    valid_until, image_id, created_at, updated_at, unit_kind, unit_unknown, item_nature)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, id, companyId, clean(request.name()), clean(request.spec()), unit, request.price(), clean(request.brand()),
+                clean(request.category()), clean(request.region()), request.validUntil(), imageIds.isEmpty() ? null : imageIds.getFirst(), now, now,
+                unitKind.name(), unitKind == BudgetUnitKind.UNKNOWN, itemNature);
         saveMaterialImages(companyId, id, imageIds);
         return new Created<>(getMaterialQuote(companyId, id), true);
     }
@@ -242,18 +251,23 @@ public class BusinessDataService {
                 : patch.clearImage() ? List.<UUID>of()
                 : patch.imageId() != null ? List.of(patch.imageId()) : null;
         if (imageIds != null) validateMaterialImages(companyId, imageIds);
+        var nextUnit = patch.unit() == null ? current.unit() : clean(patch.unit());
+        var nextUnitKind = BudgetUnitKind.fromLabel(nextUnit);
+        var nextNature = patch.itemNature() == null ? current.itemNature() : validateItemNature(clean(patch.itemNature()));
         var changed = jdbc.update("""
                 update material_quotes set name = ?, specification = ?, unit = ?, price = ?, brand = ?, category = ?, region = ?,
-                    valid_until = ?, image_id = ?, version = version + 1, updated_at = ?
+                    valid_until = ?, image_id = ?, unit_kind = ?, unit_unknown = ?, item_nature = ?,
+                    version = version + 1, updated_at = ?
                 where company_id = ? and id = ? and version = ?
                 """, patch.name() == null ? current.name() : clean(patch.name()),
-                patch.spec() == null ? current.spec() : clean(patch.spec()), patch.unit() == null ? current.unit() : clean(patch.unit()),
+                patch.spec() == null ? current.spec() : clean(patch.spec()), nextUnit,
                 patch.price() == null ? current.price() : patch.price(), patch.brand() == null ? current.brand() : clean(patch.brand()),
                 patch.category() == null ? current.category() : clean(patch.category()),
                 patch.region() == null ? current.region() : clean(patch.region()),
                 patch.validUntil() == null ? current.validUntil() : patch.validUntil(),
                 imageIds != null ? (imageIds.isEmpty() ? null : imageIds.getFirst())
                         : patch.clearImage() ? null : patch.imageId() == null ? current.imageId() : patch.imageId(),
+                nextUnitKind.name(), nextUnitKind == BudgetUnitKind.UNKNOWN, nextNature,
                 Timestamp.from(Instant.now()), companyId, id, patch.version());
         if (changed == 0) throw versionConflict();
         if (imageIds != null) saveMaterialImages(companyId, id, imageIds);
@@ -282,15 +296,19 @@ public class BusinessDataService {
     @Transactional
     public Created<LaborQuote> createLaborQuote(UUID companyId, String key, LaborQuoteRequest request) {
         validateDate(request.validUntil());
+        var itemNature = validateItemNature(request.itemNatureOrDefault());
+        var unit = clean(request.unit());
+        var unitKind = BudgetUnitKind.fromLabel(unit);
         var id = UUID.randomUUID();
         var actualId = idempotentResource(companyId, key, "labor-quote", request, id);
         if (!actualId.equals(id)) return new Created<>(getLaborQuote(companyId, actualId), false);
         var now = Timestamp.from(Instant.now());
         jdbc.update("""
-                insert into labor_quotes(id, company_id, labor_type, unit, price, region, valid_until, created_at, updated_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, id, companyId, clean(request.type()), clean(request.unit()), request.price(), clean(request.region()),
-                request.validUntil(), now, now);
+                insert into labor_quotes(id, company_id, labor_type, unit, price, region, valid_until, created_at, updated_at,
+                    unit_kind, unit_unknown, item_nature)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, id, companyId, clean(request.type()), unit, request.price(), clean(request.region()),
+                request.validUntil(), now, now, unitKind.name(), unitKind == BudgetUnitKind.UNKNOWN, itemNature);
         return new Created<>(getLaborQuote(companyId, id), true);
     }
 
@@ -300,12 +318,18 @@ public class BusinessDataService {
         var current = getLaborQuote(companyId, id);
         if (patch.version() != current.version()) throw versionConflict();
         if (patch.validUntil() != null) validateDate(patch.validUntil());
+        var nextUnit = patch.unit() == null ? current.unit() : clean(patch.unit());
+        var nextUnitKind = BudgetUnitKind.fromLabel(nextUnit);
+        var nextNature = patch.itemNature() == null ? current.itemNature() : validateItemNature(clean(patch.itemNature()));
         var changed = jdbc.update("""
                 update labor_quotes set labor_type = ?, unit = ?, price = ?, region = ?, valid_until = ?,
-                    version = version + 1, updated_at = ? where company_id = ? and id = ? and version = ?
-                """, patch.type() == null ? current.type() : clean(patch.type()), patch.unit() == null ? current.unit() : clean(patch.unit()),
+                    unit_kind = ?, unit_unknown = ?, item_nature = ?, version = version + 1, updated_at = ?
+                where company_id = ? and id = ? and version = ?
+                """, patch.type() == null ? current.type() : clean(patch.type()), nextUnit,
                 patch.price() == null ? current.price() : patch.price(), patch.region() == null ? current.region() : clean(patch.region()),
-                patch.validUntil() == null ? current.validUntil() : patch.validUntil(), Timestamp.from(Instant.now()), companyId, id, patch.version());
+                patch.validUntil() == null ? current.validUntil() : patch.validUntil(),
+                nextUnitKind.name(), nextUnitKind == BudgetUnitKind.UNKNOWN, nextNature,
+                Timestamp.from(Instant.now()), companyId, id, patch.version());
         if (changed == 0) throw versionConflict();
         return getLaborQuote(companyId, id);
     }
@@ -429,6 +453,17 @@ public class BusinessDataService {
     private static void validateDate(LocalDate date) {
         if (date.isBefore(LocalDate.now())) throw invalid("validUntil must be today or later");
         if (date.isAfter(LocalDate.now().plusYears(10))) throw invalid("validUntil must be within the next 10 years");
+    }
+
+    /**
+     * 校验项目性质。GIFT（赠送项）与 OWNER_SUPPLIED（业主自购）不计入合同造价，
+     * 但必须能被单独筛选出来，所以落库而不是丢弃。
+     */
+    private static String validateItemNature(String nature) {
+        return switch (nature) {
+            case "INCLUDED", "GIFT", "OWNER_SUPPLIED" -> nature;
+            default -> throw invalid("itemNature must be one of INCLUDED, GIFT, OWNER_SUPPLIED");
+        };
     }
 
     private String requestHash(Object request) {

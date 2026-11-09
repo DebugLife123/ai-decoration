@@ -1,6 +1,7 @@
 import type { MaterialRecord } from './dataContracts';
 import { readLocalValue, writeLocalValue } from './localDataAdapter';
 import { currentAccessToken, readAuthSession } from './authSession';
+import { isUnitRecognized, unitKindOf } from './budgetUnits';
 import type { StyleRecommendationProfile } from './styleRecommendation';
 
 export type BusinessRecordStatus = 'draft' | 'published';
@@ -43,6 +44,10 @@ export interface LaborQuoteRecord {
   validUntil: string;
   version?: number;
   updatedAt: string;
+  /** 计量单位枚举（BudgetUnitKind）。 */
+  unitKind?: string;
+  unitUnknown?: boolean;
+  itemNature?: 'INCLUDED' | 'GIFT' | 'OWNER_SUPPLIED';
 }
 
 export type CompanyCertificationStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -109,6 +114,11 @@ function now() {
   return new Date().toISOString();
 }
 
+/** 本地草稿也补齐单位枚举，保证与远端返回的字段形状一致。 */
+function withUnitKind<T extends { unit: string }>(record: T): T & { unitKind: string; unitUnknown: boolean; itemNature: 'INCLUDED' | 'GIFT' | 'OWNER_SUPPLIED' } {
+  return { ...record, unitKind: unitKindOf(record.unit), unitUnknown: !isUnitRecognized(record.unit), itemNature: (record as { itemNature?: 'INCLUDED' | 'GIFT' | 'OWNER_SUPPLIED' }).itemNature || 'INCLUDED' };
+}
+
 function id() {
   return crypto.randomUUID();
 }
@@ -122,11 +132,11 @@ function localCases() {
 }
 
 function localMaterials() {
-  return readLocalValue<MaterialRecord[]>(businessLocalKeys.materials, []);
+  return readLocalValue<MaterialRecord[]>(businessLocalKeys.materials, []).map((item) => withUnitKind(item));
 }
 
 function localWorkers() {
-  return readLocalValue<LaborQuoteRecord[]>(businessLocalKeys.workers, []);
+  return readLocalValue<LaborQuoteRecord[]>(businessLocalKeys.workers, []).map((item) => withUnitKind(item));
 }
 
 function localAdapter(): BusinessDataAdapter {
@@ -159,12 +169,12 @@ function localAdapter(): BusinessDataAdapter {
     },
     async loadMaterials() { return localMaterials(); },
     async createMaterial(record) {
-      const saved = { ...record, id: id(), updatedAt: now() };
+      const saved = { ...withUnitKind(record), id: id(), updatedAt: now() };
       writeLocalValue(businessLocalKeys.materials, [saved, ...localMaterials()]);
       return saved;
     },
     async updateMaterial(record) {
-      const saved = { ...record, updatedAt: now() };
+      const saved = { ...withUnitKind(record), updatedAt: now() };
       writeLocalValue(businessLocalKeys.materials, localMaterials().map((item) => item.id === record.id ? saved : item));
       return saved;
     },
@@ -173,12 +183,12 @@ function localAdapter(): BusinessDataAdapter {
     },
     async loadWorkers() { return localWorkers(); },
     async createWorker(record) {
-      const saved = { ...record, id: id(), updatedAt: now() };
+      const saved = { ...withUnitKind(record), id: id(), updatedAt: now() };
       writeLocalValue(businessLocalKeys.workers, [saved, ...localWorkers()]);
       return saved;
     },
     async updateWorker(record) {
-      const saved = { ...record, updatedAt: now() };
+      const saved = { ...withUnitKind(record), updatedAt: now() };
       writeLocalValue(businessLocalKeys.workers, localWorkers().map((item) => item.id === record.id ? saved : item));
       return saved;
     },
@@ -215,8 +225,8 @@ function localAdapter(): BusinessDataAdapter {
 type ApiEnvelope<T> = { code: string; message: string; data: T; timestamp: string };
 type ApiPage<T> = { items: T[]; page: { page: number; size: number; total: number; totalPages: number } };
 type ApiCase = { id: string; title: string; area: number | null; style: string | null; budget: number | null; status: BusinessRecordStatus; fileIds: string[]; version: number; updatedAt: string };
-type ApiMaterial = { id: string; name: string; spec: string; unit: string; price: number; brand: string | null; category: string; region: string; validUntil: string; imageId: string | null; imageIds: string[]; version: number; updatedAt: string };
-type ApiWorker = { id: string; type: string; unit: string; price: number; region: string; validUntil: string; version: number; updatedAt: string };
+type ApiMaterial = { id: string; name: string; spec: string; unit: string; price: number; brand: string | null; category: string; region: string; validUntil: string; imageId: string | null; imageIds: string[]; version: number; updatedAt: string; unitKind?: string | null; unitUnknown?: boolean; itemNature?: string | null };
+type ApiWorker = { id: string; type: string; unit: string; price: number; region: string; validUntil: string; version: number; updatedAt: string; unitKind?: string | null; unitUnknown?: boolean; itemNature?: string | null };
 
 function apiAdapter(baseUrl: string): BusinessDataAdapter {
   const base = baseUrl.replace(/\/$/, '');
@@ -284,8 +294,8 @@ function apiAdapter(baseUrl: string): BusinessDataAdapter {
     return Number.isFinite(parsed) ? parsed : undefined;
   };
   const caseFromApi = (item: ApiCase): BusinessCaseRecord => ({ ...item, area: item.area == null ? '' : String(item.area), budget: item.budget == null ? '' : String(item.budget), style: item.style || '', files: item.fileIds || [] });
-  const materialFromApi = (item: ApiMaterial): MaterialRecord => ({ ...item, imageIds: item.imageIds || (item.imageId ? [item.imageId] : []), brand: item.brand || undefined, price: String(item.price) });
-  const workerFromApi = (item: ApiWorker): LaborQuoteRecord => ({ ...item, price: String(item.price) });
+  const materialFromApi = (item: ApiMaterial): MaterialRecord => ({ ...item, imageIds: item.imageIds || (item.imageId ? [item.imageId] : []), brand: item.brand || undefined, price: String(item.price), unitKind: item.unitKind || unitKindOf(item.unit), unitUnknown: item.unitUnknown ?? !isUnitRecognized(item.unit), itemNature: (item.itemNature as MaterialRecord['itemNature']) || 'INCLUDED' });
+  const workerFromApi = (item: ApiWorker): LaborQuoteRecord => ({ ...item, price: String(item.price), unitKind: item.unitKind || unitKindOf(item.unit), unitUnknown: item.unitUnknown ?? !isUnitRecognized(item.unit), itemNature: (item.itemNature as LaborQuoteRecord['itemNature']) || 'INCLUDED' });
   return {
     mode: 'api',
     async loadProfile() { return (await request<CompanyProfileRecord | null>('/api/v1/business/profile')) || emptyProfile; },
@@ -297,11 +307,11 @@ function apiAdapter(baseUrl: string): BusinessDataAdapter {
     async deleteCase(record) { await request<void>(`/api/v1/business/cases/${record.id}?version=${record.version ?? 0}`, { method: 'DELETE' }); },
     async loadMaterials() { return (await loadAllPages<ApiMaterial>('/api/v1/business/material-quotes?sort=updatedAt&includeExpired=true')).map(materialFromApi); },
     async createMaterial(record) { const data = await request<ApiMaterial>('/api/v1/business/material-quotes', { method: 'POST', headers: { 'Idempotency-Key': key() }, body: JSON.stringify({ ...record, imageIds: record.imageIds || (record.imageId ? [record.imageId] : []), price: Number(record.price) }) }); return materialFromApi(data); },
-    async updateMaterial(record) { const data = await request<ApiMaterial>(`/api/v1/business/material-quotes/${record.id}`, { method: 'PATCH', body: JSON.stringify({ name: record.name, spec: record.spec, unit: record.unit, price: Number(record.price), brand: record.brand || '', category: record.category, region: record.region, validUntil: record.validUntil, imageIds: record.imageIds || (record.imageId ? [record.imageId] : []), version: record.version ?? 0 }) }); return materialFromApi(data); },
+    async updateMaterial(record) { const data = await request<ApiMaterial>(`/api/v1/business/material-quotes/${record.id}`, { method: 'PATCH', body: JSON.stringify({ name: record.name, spec: record.spec, unit: record.unit, price: Number(record.price), brand: record.brand || '', category: record.category, region: record.region, validUntil: record.validUntil, itemNature: record.itemNature || 'INCLUDED', imageIds: record.imageIds || (record.imageId ? [record.imageId] : []), version: record.version ?? 0 }) }); return materialFromApi(data); },
     async deleteMaterial(record) { await request<void>(`/api/v1/business/material-quotes/${record.id}?version=${record.version ?? 0}`, { method: 'DELETE' }); },
     async loadWorkers() { return (await loadAllPages<ApiWorker>('/api/v1/business/labor-quotes?sort=updatedAt')).map(workerFromApi); },
     async createWorker(record) { const data = await request<ApiWorker>('/api/v1/business/labor-quotes', { method: 'POST', headers: { 'Idempotency-Key': key() }, body: JSON.stringify({ ...record, price: Number(record.price) }) }); return workerFromApi(data); },
-    async updateWorker(record) { const data = await request<ApiWorker>(`/api/v1/business/labor-quotes/${record.id}`, { method: 'PATCH', body: JSON.stringify({ type: record.type, unit: record.unit, price: Number(record.price), region: record.region, validUntil: record.validUntil, version: record.version ?? 0 }) }); return workerFromApi(data); },
+    async updateWorker(record) { const data = await request<ApiWorker>(`/api/v1/business/labor-quotes/${record.id}`, { method: 'PATCH', body: JSON.stringify({ type: record.type, unit: record.unit, price: Number(record.price), region: record.region, validUntil: record.validUntil, itemNature: record.itemNature || 'INCLUDED', version: record.version ?? 0 }) }); return workerFromApi(data); },
     async deleteWorker(record) { await request<void>(`/api/v1/business/labor-quotes/${record.id}?version=${record.version ?? 0}`, { method: 'DELETE' }); },
     async loadStyleProfiles() {
       const data = await request<CompanyStyleProfileRecord>('/api/v1/business/style-profiles');

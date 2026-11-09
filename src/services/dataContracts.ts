@@ -73,6 +73,11 @@ export interface MaterialRecord {
   imageId?: string | null;
   imageIds?: string[];
   brand?: string;
+  /** 计量单位枚举（BudgetUnitKind）。UNKNOWN 表示单位无法识别，预算计算会跳过。 */
+  unitKind?: string;
+  unitUnknown?: boolean;
+  /** INCLUDED 计价项 / GIFT 赠送项 / OWNER_SUPPLIED 业主自购，后两者不计入合同造价。 */
+  itemNature?: 'INCLUDED' | 'GIFT' | 'OWNER_SUPPLIED';
 }
 
 export interface WorkspaceDataAdapter {

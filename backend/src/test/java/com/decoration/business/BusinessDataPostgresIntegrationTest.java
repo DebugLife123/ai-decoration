@@ -944,6 +944,105 @@ class BusinessDataPostgresIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    /**
+     * 单位治理：可识别的单位落到对应枚举，误填的规格单位（如 mm）必须被标成
+     * unitUnknown 而不是当成平方米，否则价格会放大 1000 倍。
+     */
+    @Test
+    void classifiesQuoteUnitsAndExcludesUnrecognizedOnes() throws Exception {
+        var squareMeters = """
+                {"name":"oak floor","spec":"910x127x15mm","unit":"㎡","price":299,"category":"floor","region":"Shanghai","validUntil":"%s"}
+                """.formatted(futureDate());
+        var created = mockMvc.perform(post("/api/v1/business/material-quotes")
+                        .with(token(COMPANY_A, "COMPANY_ADMIN"))
+                        .header("Idempotency-Key", "unit-key-sqm")
+                        .contentType("application/json").content(squareMeters))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.unitKind").value("SQM"))
+                .andExpect(jsonPath("$.data.unitUnknown").value(false))
+                .andExpect(jsonPath("$.data.itemNature").value("INCLUDED"))
+                .andReturn().getResponse().getContentAsString();
+        var id = com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(created).path("data").path("id").asText();
+
+        // 复合单位与「樘」这类计数单位都要能识别。
+        for (var sample : java.util.List.of(
+                java.util.Map.entry("延米", "LM"),
+                java.util.Map.entry("樘", "PIECE"),
+                java.util.Map.entry("桶", "PACKAGE"),
+                java.util.Map.entry("m/级", "LM_PER_LEVEL"),
+                java.util.Map.entry("cm/m2", "CM_PER_SQM"),
+                java.util.Map.entry("套米", "SET_LM"),
+                java.util.Map.entry("工日", "DAY"))) {
+            mockMvc.perform(post("/api/v1/business/material-quotes")
+                            .with(token(COMPANY_A, "COMPANY_ADMIN"))
+                            .header("Idempotency-Key", "unit-key-" + sample.getValue())
+                            .contentType("application/json")
+                            .content("""
+                                    {"name":"sample","spec":"s","unit":"%s","price":10,"category":"c","region":"Shanghai","validUntil":"%s"}
+                                    """.formatted(sample.getKey(), futureDate())))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.data.unitKind").value(sample.getValue()))
+                    .andExpect(jsonPath("$.data.unitUnknown").value(false));
+        }
+
+        // 把规格单位误填进「单位」→ UNKNOWN，且不再当成平方米。
+        var mistaken = mockMvc.perform(post("/api/v1/business/material-quotes")
+                        .with(token(COMPANY_A, "COMPANY_ADMIN"))
+                        .header("Idempotency-Key", "unit-key-mm")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"wood floor","spec":"910x10x10","unit":"mm","price":299,"category":"floor","region":"Hengyang","validUntil":"%s"}
+                                """.formatted(futureDate())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.unitKind").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.unitUnknown").value(true))
+                .andReturn().getResponse().getContentAsString();
+        var mistakenId = com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(mistaken).path("data").path("id").asText();
+
+        // 企业把单位改对之后，标记要自动取消（PATCH 会重算 unit_kind）。
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .patch("/api/v1/business/material-quotes/{id}", mistakenId)
+                        .with(token(COMPANY_A, "COMPANY_ADMIN"))
+                        .contentType("application/json")
+                        .content("{\"unit\":\"㎡\",\"version\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unitKind").value("SQM"))
+                .andExpect(jsonPath("$.data.unitUnknown").value(false));
+
+        // 赠送项与业主自购要能落库，非法枚举值要被拒。
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .patch("/api/v1/business/material-quotes/{id}", id)
+                        .with(token(COMPANY_A, "COMPANY_ADMIN"))
+                        .contentType("application/json")
+                        .content("{\"itemNature\":\"GIFT\",\"version\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.itemNature").value("GIFT"));
+        mockMvc.perform(post("/api/v1/business/material-quotes")
+                        .with(token(COMPANY_A, "COMPANY_ADMIN"))
+                        .header("Idempotency-Key", "unit-key-bad-nature")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"x","spec":"s","unit":"㎡","price":10,"category":"c","region":"Shanghai","validUntil":"%s","itemNature":"BOGUS"}
+                                """.formatted(futureDate())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        // 人工报价也要有单位枚举，并且补上了 admin_hidden。
+        mockMvc.perform(post("/api/v1/business/labor-quotes")
+                        .with(token(COMPANY_A, "COMPANY_ADMIN"))
+                        .header("Idempotency-Key", "unit-key-labor")
+                        .contentType("application/json")
+                        .content("""
+                                {"type":"mason","unit":"工日","price":200,"region":"Shanghai","validUntil":"%s"}
+                                """.formatted(futureDate())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.unitKind").value("DAY"))
+                .andExpect(jsonPath("$.data.unitUnknown").value(false))
+                .andExpect(jsonPath("$.data.adminHidden").value(false));
+    }
+
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder pu(String path) {
         return org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(path);
     }
