@@ -196,7 +196,7 @@ export function roomsFrom(text: string): IdentifiedRoom[] {
       const suiteEvidence = evidence.some((item) => item.type === 'adjacency' && /(套卫|主卫|衣帽间|套间)/.test(item.detail));
       const unsupportedBedroomRank = /^(主卧|次卧|主人房|主卧室|次卧室)$/.test(candidate) && !labelEvidence && !suiteEvidence;
       const unsupportedBathroom = /^(卫生间|主卫|次卫|公卫)$/.test(candidate) && !labelEvidence && !evidence.some((item) => item.type === 'fixture' && /(洁具|马桶|坐便|洗手盆|淋浴|地漏|排水)/.test(item.detail));
-      const genericModelName = !candidate || /^(空间|房间|区域)\s*\d+$/.test(candidate) || /待确认(房间|区域)/.test(candidate);
+      const genericModelName = !candidate || /^(空间|房间|区域)\s*\d+$/.test(candidate) || /^待确认/.test(candidate);
       const uncertain = unsupportedBedroomRank || unsupportedBathroom || genericModelName;
       const rawBounds = room?.bounds;
       const bounds = rawBounds && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(rawBounds[key])) && rawBounds.x >= 0 && rawBounds.y >= 0 && rawBounds.width > 0 && rawBounds.height > 0 && rawBounds.x + rawBounds.width <= 1.001 && rawBounds.y + rawBounds.height <= 1.001
