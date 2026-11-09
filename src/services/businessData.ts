@@ -1,6 +1,7 @@
 import type { MaterialRecord } from './dataContracts';
 import { readLocalValue, writeLocalValue } from './localDataAdapter';
 import { currentAccessToken, readAuthSession } from './authSession';
+import { apiBaseUrl } from './apiBase';
 import { isUnitRecognized, unitKindOf } from './budgetUnits';
 import type { StyleRecommendationProfile } from './styleRecommendation';
 
@@ -330,16 +331,15 @@ function apiAdapter(baseUrl: string): BusinessDataAdapter {
 }
 
 const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-const apiUrl = env?.VITE_BUSINESS_API_URL?.trim() || 'http://localhost:8080';
 const apiToken = env?.VITE_BUSINESS_API_TOKEN?.trim();
 
 export const businessApiConfig = {
-  baseUrl: apiUrl?.replace(/\/$/, '') || '',
+  baseUrl: apiBaseUrl,
   get token() { return currentAccessToken(); },
-  enabled: Boolean(apiUrl),
+  enabled: Boolean(apiBaseUrl) || Boolean(apiToken),
 };
 
-const remoteBusinessDataAdapter = apiAdapter(apiUrl);
+const remoteBusinessDataAdapter = apiAdapter(apiBaseUrl);
 
 export const businessDataAdapter: BusinessDataAdapter = new Proxy({} as BusinessDataAdapter, {
   get(_target, property) {

@@ -26,19 +26,42 @@ import java.util.UUID;
 @Service
 public class BusinessAssetService {
     private static final Logger log = LoggerFactory.getLogger(BusinessAssetService.class);
+
+    /**
+     * 允许上传的 MIME 白名单。
+     *
+     * <p>原来用 {@code mediaType.startsWith("image/")} 放行，等于把 {@code image/svg+xml} 也放进来了：
+     * SVG 里可以内嵌 {@code <script>}，一旦被浏览器以 image/svg+xml 内联渲染就构成存储型 XSS。
+     * 这里改成显式枚举，只放行位图与 PDF。
+     */
+    private static final java.util.Set<String> ALLOWED_MEDIA_TYPES = java.util.Set.of(
+            "image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp", "application/pdf");
+
+    /** 扩展名白名单，用于 contentType 缺失或为 octet-stream 时兜底判断。 */
+    private static final java.util.Set<String> ALLOWED_EXTENSIONS = java.util.Set.of(
+            ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".pdf");
+
     private final JdbcTemplate jdbc;
     private final Path storageRoot;
+    private final long maxFileSizeBytes;
 
-    public BusinessAssetService(JdbcTemplate jdbc, @Value("${app.storage.local-dir:./var/uploads}") String storageDir) {
+    public BusinessAssetService(JdbcTemplate jdbc,
+                                @Value("${app.storage.local-dir:./var/uploads}") String storageDir,
+                                @Value("${app.storage.max-file-size-bytes:15728640}") long maxFileSizeBytes) {
         this.jdbc = jdbc;
         this.storageRoot = Path.of(storageDir).toAbsolutePath().normalize();
+        this.maxFileSizeBytes = maxFileSizeBytes;
     }
 
     public BusinessAsset upload(UUID companyId, MultipartFile file) {
         if (file == null || file.isEmpty()) throw invalid("A non-empty file is required");
-        if (file.getSize() > 15L * 1024 * 1024) throw new BusinessApiException(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE", "Files must be 15 MB or smaller");
-        var mediaType = file.getContentType() == null ? "application/octet-stream" : file.getContentType();
-        if (!mediaType.startsWith("image/") && !mediaType.equals("application/pdf")) throw invalid("Only image and PDF files are supported");
+        if (file.getSize() > maxFileSizeBytes) {
+            throw new BusinessApiException(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE",
+                    "Files must be " + (maxFileSizeBytes / (1024 * 1024)) + " MB or smaller");
+        }
+        var originalName = Path.of(file.getOriginalFilename() == null ? "upload" : file.getOriginalFilename())
+                .getFileName().toString();
+        var mediaType = resolveMediaType(originalName, file.getContentType());
         var id = UUID.randomUUID();
         var objectKey = companyId + "/" + id;
         var target = storageRoot.resolve(objectKey).normalize();
@@ -52,10 +75,31 @@ public class BusinessAssetService {
         } catch (IOException exception) {
             throw new BusinessApiException(HttpStatus.INTERNAL_SERVER_ERROR, "FILE_STORAGE_ERROR", "File could not be stored");
         }
-        var name = Path.of(file.getOriginalFilename() == null ? "upload" : file.getOriginalFilename()).getFileName().toString();
         jdbc.update("insert into business_assets(company_id, id, file_name, object_key, media_type, created_at) values (?, ?, ?, ?, ?, ?)",
-                companyId, id, name, objectKey, mediaType, java.sql.Timestamp.from(Instant.now()));
-        return new BusinessAsset(id, name, mediaType, file.getSize(), Instant.now());
+                companyId, id, originalName, objectKey, mediaType, java.sql.Timestamp.from(Instant.now()));
+        return new BusinessAsset(id, originalName, mediaType, file.getSize(), Instant.now());
+    }
+
+    /**
+     * 校验并归一化上传文件类型。
+     *
+     * <p>客户端声明的 Content-Type 不可信：它可以是任意值，也可以为空。因此同时看扩展名，
+     * 两者都必须落在白名单里；客户端给的类型若不在白名单，一律按扩展名推断后重新校验。
+     */
+    private static String resolveMediaType(String fileName, String declaredType) {
+        var declared = declaredType == null ? "" : declaredType.trim().toLowerCase(java.util.Locale.ROOT);
+        var lowerName = fileName.toLowerCase(java.util.Locale.ROOT);
+        var extension = lowerName.contains(".") ? lowerName.substring(lowerName.lastIndexOf('.')) : "";
+
+        if (!ALLOWED_EXTENSIONS.contains(extension)) {
+            throw unsupported("仅支持 JPG、PNG、WEBP、GIF、BMP 图片与 PDF 文件");
+        }
+        if (ALLOWED_MEDIA_TYPES.contains(declared)) return declared;
+
+        // 声明类型缺失或不可信时按扩展名推断；推断结果仍须在白名单内。
+        var inferred = normalizedMediaType(fileName, null);
+        if (ALLOWED_MEDIA_TYPES.contains(inferred)) return inferred;
+        throw unsupported("仅支持 JPG、PNG、WEBP、GIF、BMP 图片与 PDF 文件");
     }
 
     public StoredBusinessAsset get(UUID companyId, UUID assetId) {
@@ -206,6 +250,7 @@ public class BusinessAssetService {
 
     private StoredBusinessAsset throwNotFound() { throw new BusinessApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "File was not found"); }
     private static BusinessApiException invalid(String message) { return new BusinessApiException(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", message); }
+    private static BusinessApiException unsupported(String message) { return new BusinessApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE", message); }
 
     public record BusinessAsset(UUID id, String fileName, String mediaType, long byteSize, Instant createdAt) { }
     public record StoredBusinessAsset(String fileName, String objectKey, String mediaType, Resource resource) {

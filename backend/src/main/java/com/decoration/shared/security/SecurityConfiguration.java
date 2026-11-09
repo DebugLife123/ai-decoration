@@ -51,12 +51,20 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    CorsConfigurationSource corsConfigurationSource() {
+    CorsConfigurationSource corsConfigurationSource(
+            @Value("${app.security.cors-allowed-origins:}") String configuredOrigins) {
         var configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList(
+        var extraOrigins = Arrays.stream(configuredOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .toList();
+        var origins = new java.util.ArrayList<>(List.of(
                 "http://localhost:5173", "http://127.0.0.1:5173",
                 "http://localhost:5174", "http://127.0.0.1:5174",
-                "http://localhost:4173", "http://127.0.0.1:4173"));
+                "http://localhost:4173", "http://127.0.0.1:4173",
+                "http://localhost:4175", "http://127.0.0.1:4175"));
+        origins.addAll(extraOrigins);
+        configuration.setAllowedOrigins(origins);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "Idempotency-Key"));
         configuration.setExposedHeaders(List.of("Location"));

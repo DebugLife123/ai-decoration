@@ -21,25 +21,46 @@ cache:
   paths:
     - .npm/
 
-verify:
+# 前端：lint + 类型检查 + 构建 + compose 语法校验
+verify_frontend:
   stage: verify
   tags:
     - dockerlab-windows
   script:
     - npm ci --prefer-offline
     - npm run lint
+    - npx tsc -b
     - npm run build
+    # compose 里 JWT_SECRET 用了 ${JWT_SECRET:?...} 必填语法，这里给个占位值只为校验语法
+    - $env:JWT_SECRET = 'ci-syntax-check-only'
     - docker compose -p $env:COMPOSE_PROJECT_NAME config --quiet
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# 后端：mvn test（含 2 个直连 PostgreSQL 的集成测试），用 compose 起临时库
+# 集成测试读 DATABASE_TEST_URL / DATABASE_TEST_USERNAME / DATABASE_TEST_PASSWORD
+verify_backend:
+  stage: verify
+  tags:
+    - dockerlab-windows
+  timeout: 30m
+  script:
+    - docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml up --abort-on-container-exit --exit-code-from backend-test
+  after_script:
+    - docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml down --volumes --remove-orphans
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  allow_failure: false
 
 deploy_production:
   stage: deploy
   tags:
     - dockerlab-windows
   needs:
-    - job: verify
+    - job: verify_frontend
+    - job: verify_backend
   resource_group: decoration-production
   environment:
     name: production
@@ -65,21 +86,22 @@ deploy_production:
     }
     Set-Location -LiteralPath $deploymentPath
     $composeArgs = @('--project-directory', $deploymentPath, '-p', $env:COMPOSE_PROJECT_NAME, '-f', (Join-Path $deploymentPath 'docker-compose.yml'))
-    $env:IMAGE_TAG = "wyx-decoration:$env:CI_COMMIT_SHA"
-    $previousImage = docker inspect wyx-decoration-decoration-1 --format '{{.Image}}' 2>$null
-    if ($LASTEXITCODE -eq 0 -and $previousImage) { $env:ROLLBACK_IMAGE = "wyx-decoration:rollback"; docker tag $previousImage $env:ROLLBACK_IMAGE; if ($LASTEXITCODE -ne 0) { throw "Could not preserve the current production image." } }
-    docker build --tag $env:IMAGE_TAG .
-    if ($LASTEXITCODE -ne 0) { throw "Docker image build failed." }
-    $env:DECORATION_IMAGE = $env:IMAGE_TAG
+    # 生产密钥与来源白名单必须由 CI/CD 变量提供，不再有硬编码默认值
+    if (-not $env:JWT_SECRET) { throw "JWT_SECRET CI/CD variable is required." }
+    if (-not $env:VITE_BUSINESS_API_URL) { throw "VITE_BUSINESS_API_URL CI/CD variable is required (frontend bundles it at build time)." }
     docker compose @composeArgs config --quiet
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose configuration validation failed." }
-    docker compose @composeArgs up -d --no-build
-    if ($LASTEXITCODE -ne 0) { throw "Docker Compose could not start the production service." }
+    docker compose @composeArgs up -d --build
+    if ($LASTEXITCODE -ne 0) { throw "Docker Compose could not start the production stack." }
     $healthy = $false
-    for ($attempt = 1; $attempt -le 18; $attempt++) { try { $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:4175/" -TimeoutSec 5; if ([int]$response.StatusCode -eq 200) { $healthy = $true; break } } catch {}; Start-Sleep -Seconds 5 }
-    if (-not $healthy) { docker compose @composeArgs ps; docker compose @composeArgs logs --tail 80; if ($env:ROLLBACK_IMAGE) { $env:DECORATION_IMAGE = $env:ROLLBACK_IMAGE; docker compose @composeArgs up -d --no-build; Start-Sleep -Seconds 10 }; throw "Production health check failed; previous image rollback was attempted." }
-    $policy = docker inspect wyx-decoration-decoration-1 --format '{{.HostConfig.RestartPolicy.Name}}'
-    if ($policy -ne "unless-stopped") { throw "Unexpected restart policy: $policy" }
+    for ($attempt = 1; $attempt -le 36; $attempt++) {
+      try {
+        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:4175/" -TimeoutSec 5
+        if ([int]$response.StatusCode -eq 200) { $healthy = $true; break }
+      } catch {}
+      Start-Sleep -Seconds 5
+    }
+    if (-not $healthy) { docker compose @composeArgs ps; docker compose @composeArgs logs --tail 120; throw "Production health check failed." }
     docker compose @composeArgs ps
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

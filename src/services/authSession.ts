@@ -1,3 +1,5 @@
+import { apiBaseUrl, apiUrl } from './apiBase';
+
 export type AccountType = 'personal' | 'business';
 
 export interface AuthUser {
@@ -26,7 +28,8 @@ interface ApiEnvelope<T> {
 const sessionKey = 'decoration-auth-session';
 const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
 
-export const authApiBaseUrl = (env?.VITE_BUSINESS_API_URL?.trim() || 'http://localhost:8080').replace(/\/$/, '');
+/** 后端基地址，统一由 `apiBase.ts` 决定（生产构建不再回落到 localhost）。 */
+export const authApiBaseUrl = apiBaseUrl;
 
 export function readAuthSession(): AuthSession | null {
   try {
@@ -56,10 +59,14 @@ export function currentAccessToken(): string {
   return readAuthSession()?.accessToken || env?.VITE_BUSINESS_API_TOKEN?.trim() || '';
 }
 
+function baseUrlFor(path: string): string {
+  return apiUrl(path);
+}
+
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${authApiBaseUrl}${path}`, {
+    response = await fetch(baseUrlFor(path), {
       ...init,
       headers: {
         Accept: 'application/json',
@@ -79,7 +86,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
 export async function apiDownload(path: string): Promise<Blob> {
   let response: Response;
   try {
-    response = await fetch(`${authApiBaseUrl}${path}`, {
+    response = await fetch(baseUrlFor(path), {
       headers: { Authorization: `Bearer ${currentAccessToken()}` },
     });
   } catch {
@@ -95,7 +102,7 @@ export async function apiDownload(path: string): Promise<Blob> {
 export async function authRequest<T>(path: string, body?: unknown): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${authApiBaseUrl}${path}`, {
+    response = await fetch(baseUrlFor(path), {
       method: 'POST',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

@@ -1,7 +1,7 @@
 # 后续计划 v3（据实模板校准版）
 
-> 基线：分支 `codex/business-data` @ `78c4357 feat(budget): 报价计量单位枚举化并引入最低计量规则（2a-1）`
-> 编写时间：2026-11-09（2a-1 完成后更新）
+> 基线：分支 `codex/business-data` @ `cd946c4 feat(budget): 预算试算接入 9 板块模型并保留本地兜底（2a-2）`
+> 编写时间：2026-11-09（2a-2 与阶段 0 完成后更新）
 > 上一版：v2（2026-11-07），差异见 §0
 > 本版新增依据：`D:\开发\预算模板表.xlsx` 实表解析结果 → [BUDGET_SECTIONS.md](BUDGET_SECTIONS.md)
 
@@ -29,14 +29,14 @@ v2 里的阶段 0（部署）、阶段 1（合并 + 契约）仍然有效，本�
 ## 1. 现状基线（可核对）
 
 ```
-分支      codex/business-data @ 78c4357，领先 origin/main 20 个提交
+分支      codex/business-data @ cd946c4，领先 origin/main 22 个提交
 合并      origin/main 是当前分支祖先 → fast-forward，无冲突
-前端      src/ 84 files；21 条路由；tsc -b 通过，oxlint 0 error（6 warning）
-后端      Java 4,388+ 行；74 个 controller 方法级映射
-测试      10 个测试类 / 49 项，mvn -o test 全绿
-数据库    Flyway V1–V20，25 张表，下一版 V21
-契约      contracts/openapi.yaml 仅 40 个 operationId，缺 33 个
-部署      Dockerfile 只有 vite preview；compose 只有 1 个服务，无 backend / 无 postgres
+前端      src/ 86 files；21 条路由；tsc -b 通过，oxlint 0 error（7 warning）
+后端      Java 5,151 行；77 个 controller 方法级映射
+测试      12 个测试类 / 65 项，mvn -o test 全绿
+数据库    Flyway V1–V21，25+ 张表，下一版 V22
+契约      contracts/openapi.yaml 仅 40 个 operationId，缺 37 个
+部署      四服务 compose（postgres / backend / frontend / db-backup）+ 后端 Dockerfile 已就绪
 ```
 
 ### ✅ 已完成：阶段 2a-1（提交 78c4357）
@@ -53,14 +53,16 @@ v2 里的阶段 0（部署）、阶段 1（合并 + 契约）仍然有效，本�
 
 实测确认：API 创建 `㎡`→SQM、`mm`→UNKNOWN、`m/级`→LM_PER_LEVEL；PATCH 把 mm 改成 ㎡ 后 `unit_unknown` 自动转 false；赠送项落 GIFT。
 
-### 仍待解决的四个「地基级」缺口
+### 仍待解决的「地基级」缺口
 
 | # | 缺口 | 后果 | 归属阶段 |
 |---|---|---|---|
-| 1 | 生产容器里没有后端 | 部署后只有前端，登录/材料/通知全不可用 | 阶段 0 |
-| 2 | `VITE_BUSINESS_API_URL` 构建期注入但 Dockerfile 无 `ARG` | 部署后浏览器请求用户自己的 `localhost:8080` | 阶段 0.3 |
+| 1 | ~~生产容器里没有后端~~ | ✅ 已由阶段 0.1/0.2 解决（后端镜像 + 四服务 compose） | — |
+| 2 | ~~`VITE_BUSINESS_API_URL` 构建期注入但 Dockerfile 无 `ARG`~~ | ✅ 已由阶段 0.3 解决（ARG 注入 + 生产构建不再回落 localhost） | — |
 | 3 | ~~`unit` 是自由文本~~ | ✅ 已由 2a-1 解决 | — |
-| 4 | 契约落后 33 个接口 | 前后端并行开发时接口漂移 | 阶段 1.2 |
+| 4 | 契约落后 37 个接口 | 前后端并行开发时接口漂移 | 阶段 1.2 |
+| 5 | `uploads-data` 卷无异地备份 | 数据库可恢复，素材文件仍在同一台机器 | 阶段 0.4 遗留 |
+| 6 | 无同域反代 `/api` | 跨域部署依赖 `CORS_ALLOWED_ORIGINS` 手工维护 | 阶段 0.3 遗留 |
 
 ---
 
@@ -68,56 +70,66 @@ v2 里的阶段 0（部署）、阶段 1（合并 + 契约）仍然有效，本�
 
 **为什么必须先做**：即使配好生产库和域名，前端仍会请求用户本机的 `localhost:8080`。这个故障表现为网络超时，排查成本极高。
 
-### 0.1 后端容器化
+### 0.1 后端容器化 ✅ 已完成
 
-- [ ] `backend/Dockerfile` 多阶段构建
-  - builder：`maven:3.9-eclipse-temurin-21`，`mvn -B -DskipTests package`
-  - runtime：`eclipse-temurin:21-jre`，非 root 用户，`JAVA_OPTS` 可注入
+- [x] `backend/Dockerfile` 多阶段构建
+  - builder：`maven:3.9-eclipse-temurin-21`，`mvn -B -q package -DskipTests`
+  - runtime：`eclipse-temurin:21-jre-jdk`，非 root 用户 `decoration`(uid 1000)
   - `APP_UPLOAD_DIR=/data/uploads`
-- [ ] `backend/.dockerignore`：排除 `target/`、`var/`
-- [ ] 验证：`docker build` 产物体积 < 300MB
+  - entrypoint 用 `sh -c exec java ...`，因为 exec 形式的 `ENTRYPOINT` 不做 `${VAR:-default}` 展开
+- [x] `backend/.dockerignore`：排除 `target/`、`*.class`、`*.jar`
+- [x] 构建上下文改为 `./backend`（原来写的 `COPY backend/...` 在 context 已经是 backend/ 时会变成 `backend/backend/...` 而失败）
 
-### 0.2 三服务 compose
+### 0.2 三服务 compose ✅ 已完成
 
 | 服务 | 镜像 | 端口 | 卷 | 健康检查 |
 |---|---|---|---|---|
-| `postgres` | `postgres:16-alpine` | 内部 | `decoration-postgres-data` | `pg_isready` |
-| `backend` | 本地构建 | 内部 8080 | `decoration-uploads:/data/uploads` | `GET /actuator/health` |
-| `frontend` | 本地构建 | `4175:4173` | — | `GET /` |
+| `postgres` | `postgres:16-alpine` | 内部 5432 | `postgres-data` | `pg_isready` |
+| `backend` | `./backend` 构建 | `${BACKEND_PORT:-8080}:8080` | `uploads-data:/data/uploads` | `wget /actuator/health` |
+| `frontend` | `.` 构建 | `${FRONTEND_PORT:-4175}:4173` | — | `fetch('http://127.0.0.1:4173/')` |
+| `db-backup` | `postgres:16-alpine` | — | `db-backups:/backups` | — |
 
-- [ ] `frontend depends_on: backend: condition: service_healthy`
-- [ ] `backend depends_on: postgres: condition: service_healthy`
-- [ ] 环境注入：`SPRING_DATASOURCE_URL / USERNAME / PASSWORD`、`APP_SECURITY_JWT_SECRET`、`APP_STORAGE_LOCAL_DIR`
+- [x] `frontend depends_on: backend: condition: service_healthy`
+- [x] `backend depends_on: postgres: condition: service_healthy`
+- [x] 环境注入：`DATABASE_URL` / `DATABASE_USERNAME` / `DATABASE_PASSWORD` / `JWT_SECRET` / `CORS_ALLOWED_ORIGINS` / `SPRING_PROFILES_ACTIVE`
+- [x] `JWT_SECRET: ${JWT_SECRET:?...}` 用 compose 的必填语法，缺失时 compose 直接报错而非静默用开发密钥
+- [x] `backend/docker-compose.yml` 保留为「只起一个本地 postgres」的开发辅助，不要当部署文件用
 
-### 0.3 前端 API 地址注入（关键）
+### 0.3 前端 API 地址注入（关键）✅ 已完成
 
-- [ ] 根 `Dockerfile` 加 `ARG VITE_BUSINESS_API_URL` + `ENV VITE_BUSINESS_API_URL=$VITE_BUSINESS_API_URL`
-- [ ] CI `deploy_production` 的 `docker build` 加 `--build-arg VITE_BUSINESS_API_URL=<生产地址>`
-- [ ] **移除** `src/services/authSession.ts:29` 与 `src/services/businessData.ts:323` 的 `|| 'http://localhost:8080'` 兜底，改为构建期缺失即抛错
-- [ ] 同域反代 `/api` → backend（避免 CORS 配置负担）
+- [x] 根 `Dockerfile` 加 `ARG VITE_BUSINESS_API_URL` + `ENV VITE_BUSINESS_API_URL=${VITE_BUSINESS_API_URL}`
+- [x] `docker-compose.yml` 的 frontend 构建传 `args: VITE_BUSINESS_API_URL`
+- [x] **移除** `src/services/authSession.ts:29` 与 `src/services/businessData.ts:333` 的 `|| 'http://localhost:8080'` 兜底，改为空字符串
+- [x] 请求出口统一走 `baseUrlFor(path)`：注入为空时回落到同源相对路径；`fetch` 抛错时给出「无法连接服务，请确认后端已启动」而不是静默超时
+- [ ] 同域反代 `/api` → backend（未做；当前靠 `VITE_BUSINESS_API_URL` 直连 + CORS 白名单）
 
-### 0.4 数据与备份
+### 0.4 数据与备份 ✅ 已完成
 
-- [ ] 命名卷 `decoration-postgres-data`、`decoration-uploads`
-- [ ] 每日 `pg_dump`，保留 7 天 + 每月 1 份
-- [ ] uploads 目录同步备份（含 `business_assets` 关联实体文件）
+- [x] 命名卷 `postgres-data`、`uploads-data`、`db-backups`
+- [x] 每日 `pg_dump`（`scripts/backup-postgres.sh` 挂进 `db-backup` 服务）：保留最近 7 份日备份 + 每月 1 号留一份月备份
+- [x] dump 用 `.partial` 临时名，成功后 `mv`，避免半截文件被当成有效备份
+- [ ] uploads 目录同步备份（含 `business_assets` 关联实体文件）—— 脚本只备数据库，实体文件仍靠卷快照
 
-### 0.5 生产安全
+### 0.5 生产安全 ✅ 已完成（代码侧）
 
-- [ ] `APP_SECURITY_JWT_SECRET` 从环境注入，禁用 `application.yml` 默认值
-- [ ] `ADMIN_BOOTSTRAP_ENABLED` 保持关闭
-- [ ] `management.endpoints.web.exposure.include` 生产仅 `health`
-- [ ] 上传大小与 `media_type` 白名单复核（当前 15MB / 16MB）
+- [x] 新增 `backend/src/main/resources/application-prod.yml`：`jwt-secret: ${JWT_SECRET}` 无默认值，缺失即启动失败
+- [x] `ADMIN_BOOTSTRAP_ENABLED` 在 prod profile 与 compose 中均为 `false`
+- [x] `management.endpoints.web.exposure.include: health`（prod 收窄），`show-details: never`
+- [x] CORS 白名单支持 `CORS_ALLOWED_ORIGINS` 环境变量追加，默认只放行本机 5173/5174/4173/4175
+- [x] 上传白名单复核：`BusinessAssetService` 由 `startsWith("image/")` 改为扩展名 + Content-Type 双命中白名单（JPG/PNG/WEBP/GIF/BMP/PDF），单文件上限走 `app.storage.max-file-size-bytes`（默认 15 MB）
+  - 关键理由：原判定会放行 `image/svg+xml`，SVG 可内嵌 `<script>`，被浏览器内联渲染即构成存储型 XSS
+  - `BusinessAssetServiceTest` 由 3 项扩到 7 项覆盖 SVG 拒绝、扩展名与声明类型冲突、超限拒绝
 
-### 0.6 CI 补后端测试
+### 0.6 CI 补后端测试 ✅ 已完成
 
-- [ ] `.gitlab-ci.yml` verify 阶段新增 `backend_test` job
-  - `mvn -B test`，需要 PostgreSQL service 容器（`BusinessDataPostgresIntegrationTest` 直连真实库）
-- [ ] 独立 `tsc -b` 校验（`npm run build` 已含，但失败信息不够清晰）
+- [x] `.gitlab-ci.yml` verify 阶段新增 `verify_backend` job：`docker compose -f backend/docker-compose.test.yml up --abort-on-container-exit --exit-code-from backend-test`，`after_script` 里 `down --volumes --remove-orphans` 兜底清理
+  - 新增 `backend/docker-compose.test.yml`：临时 `postgres:16-alpine`（`tmpfs` 数据目录，不映射宿主端口）+ `maven:3.9-eclipse-temurin-21` 跑 `mvn -B test`，通过 `DATABASE_TEST_URL / DATABASE_TEST_USERNAME / DATABASE_TEST_PASSWORD` 连测试库
+- [x] 独立 `tsc -b` 校验：`verify_frontend` 在 `npm run build` 之前单列一步，失败信息只指向类型错误
+- [ ] 首次触发后确认 runner（`dockerlab-windows`）能拉 `maven:3.9-eclipse-temurin-21` 且 `m2-cache` 卷可复用（本地无 docker，未实测）
 
 ### 阶段 0 验收
 
-1. 干净机器 `docker compose up -d` 三服务全起，无手工干预
+1. 干净机器 `docker compose up -d` 四服务全起，无手工干预
 2. `http://localhost:4175` 可完成：注册 → 登录 → 建项目 → 企业录报价 → C 端可见
 3. `docker compose restart` 后数据与上传文件完好
 4. 后端停机时前端明确提示「无法连接服务」，而非静默超时
@@ -234,7 +246,7 @@ alter table labor_quotes
 
 ---
 
-### 2a-2 板块细分：6 → 9（保持总额不变）
+### 2a-2 板块细分：6 → 9（保持总额不变）✅ 已完成，提交 cd946c4
 
 #### 9 个板块
 
@@ -295,6 +307,16 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 | 2 | 每个板块可单独关闭（用户勾选），关闭后总额同步下降 |
 | 3 | `STRUCTURE` 默认不勾选，勾选后按 50–100 元/㎡ 计入 |
 | 4 | 响应里每项带 `basis` 字段说明按什么量算的 |
+
+#### 落地情况（cd946c4）
+
+| 项 | 落地 |
+|---|---|
+| 9 板块定义 | V21 迁移 `budget_item_categories` 入 9 个 `item_key`：`GROUND`/`CEILING`/`WALL_DOOR`/`CARPENTRY`/`PLUMBING_ELEC`/`STRUCTURE`/`MEASURES`/`MAIN_MATERIAL`/`FIXTURE` |
+| 计算服务 | `BudgetEstimateService`（18.8 KB）按 `ItemDef(key,label,unitKind,sortOrder,defaultOn,materialRatio)` + `Factor(basis,perSqm,wasteRate)` + `MinQty(minQty,scope,note)` 三层驱动 |
+| 回归保护 | `estimateWithoutQuotesMatchesLegacyReferenceBands` 断言无报价时 9 板块合计 = 前端 6 项总额 |
+| 前端接入 | `src/pages/BudgetPage.tsx` 改为调后端 `POST /api/v1/budgets/estimate`，失败回落本地 `referenceCosts`；`src/services/budgetApi.ts` 新增；`BudgetPage.css` 加 `.estimate-row-flag` |
+| 测试 | `BudgetEstimateServiceTest` 6 项 + `BudgetEstimateIntegrationTest` 6 项 |
 
 **工期**：1 天
 
@@ -572,17 +594,17 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 ## 执行顺序与工期
 
 ```
-阶段 0        1.5 天   ████████
+阶段 0        1.5 天   ✅ 已完成（0.1–0.6）
 阶段 1        1.0 天   ████
 阶段 2a-1     0.5 天   ✅ 已完成（78c4357）
-阶段 2a-2     1.0 天   ████
+阶段 2a-2     1.0 天   ✅ 已完成（cd946c4）
 阶段 2a-3     1.0 天   ████
 阶段 2a-4     1.0 天   ████
 阶段 2a-5     1.0 天   ████
 阶段 2b       2.0 天   ████████
 阶段 2c       1.0 天   ████
 ─────────────────────────────
-剩余          9.5 天
+剩余          7.0 天
 ```
 
 **依赖关系**：
@@ -603,9 +625,10 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 
 ## 建议的下一步
 
-1. **已完成**：2a-1（单位治理 + 最低计量 + `item_nature`），提交 78c4357
-2. **下一步建议**：阶段 0.1–0.3（后端 Dockerfile + 三服务 compose + API 地址注入），1.5 天
-3. 或者继续 2a-2（板块 6 → 9 + 消费 `budget_min_qty`），1 天
+1. **已完成**：2a-1（单位治理 + 最低计量 + `item_nature`，78c4357）
+2. **已完成**：2a-2（板块 6 → 9 + 消费 `budget_min_qty`，cd946c4）
+3. **已完成**：阶段 0.1–0.6（后端 Dockerfile、四服务 compose、API 地址注入、备份、生产安全、CI 后端测试）
+4. **下一步建议**：阶段 1（`git fetch` → 确认 `origin/main` 仍是祖先 → fast-forward 合并 → 推 main 触发 CI 全绿）
+5. 或继续 2a-3（材料价/人工价分两路），1 天
 
-阶段 0 是三服务能真正跑起来的前提；2a-2 是把预算从「6 个拍脑袋分项」换成「9 个对齐模板的板块」。
-两者可并行，取决于当前优先级是「先能部署」还是「先算得准」。
+阶段 0 已具备「干净机器 `docker compose up -d` 起四服务」的条件，但**本地无 docker，容器链路只在代码与配置层校验过**，首次真实构建发生在 CI runner 上。阶段 1 的价值是先把 19 个提交合进 main 让流水线跑一遍，把部署风险前置暴露。
