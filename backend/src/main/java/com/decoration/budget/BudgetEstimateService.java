@@ -1,6 +1,8 @@
 package com.decoration.budget;
 
 import com.decoration.shared.api.BusinessApiException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,8 @@ import java.util.UUID;
 import static com.decoration.budget.BudgetDtos.BudgetItem;
 import static com.decoration.budget.BudgetDtos.EstimateRequest;
 import static com.decoration.budget.BudgetDtos.EstimateResult;
+import static com.decoration.budget.BudgetDtos.PackageItem;
+import static com.decoration.budget.BudgetDtos.PackageProductInfo;
 import static com.decoration.budget.BudgetDtos.QuoteSample;
 
 /**
@@ -50,12 +54,31 @@ public class BudgetEstimateService {
     static final BigDecimal INTERIOR_RATIO = new BigDecimal("0.78");
     /** 墙面展开系数（周长 × 层高的经验值，扣门窗后约 2.55）。 */
     static final BigDecimal WALL_RATIO = new BigDecimal("2.55");
-    static final String MODEL_VERSION = "v4";
+    /**
+     * 外墙厚度（米），与 docs/ROADMAP.md 阶段 2a-4 的公式一致：
+     * {@code area_measured = area × 0.78 + 0.24 × perimeter_estimate}。
+     *
+     * <p>ROADMAP 里写的是「外墙 240mm」，公式里按 0.24 全额计入周长，
+     * 这里照抄不改——改系数属于 2a-6 校准的范畴，会动总额。
+     */
+    static final BigDecimal EXTERIOR_WALL_THICKNESS = new BigDecimal("0.24");
+    /**
+     * 周长估算系数：周长 ≈ 建筑面积 ^ 0.5 × 该系数。
+     *
+     * <p>户型越方正周长越短，这个系数取的是常见两/三居的平均值（约 4.4）：
+     * 120㎡ → 4.4 × 10.95 ≈ 48.2 m，与「开间 12m × 进深 10m」的方盒周长 44m 同量级。
+     */
+    static final BigDecimal PERIMETER_FACTOR = new BigDecimal("4.4");
+    /** 套餐最低计价面积兜底（模板 90㎡）。 */
+    static final BigDecimal DEFAULT_PACKAGE_MIN_AREA = new BigDecimal("90");
+    static final String MODEL_VERSION = "v5";
 
     private final JdbcTemplate jdbc;
+    private final ObjectMapper objectMapper;
 
-    public BudgetEstimateService(JdbcTemplate jdbc) {
+    public BudgetEstimateService(JdbcTemplate jdbc, ObjectMapper objectMapper) {
         this.jdbc = jdbc;
+        this.objectMapper = objectMapper;
     }
 
     /** 板块定义（来自 budget_items）。 */
@@ -81,6 +104,16 @@ public class BudgetEstimateService {
     }
 
     public EstimateResult estimate(EstimateRequest request) {
+        // 两种模式的结果不能混加：PACKAGE 只出「套餐价 + 增项」，
+        // LIST 才逐板块算。「混加」在模板里就是最常见的算错来源
+        // （套餐价已经含了地面/墙面/水电，再叠一遍分项就翻倍）。
+        if ("PACKAGE".equals(request.pricingModeOrDefault())) {
+            return estimateByPackage(request);
+        }
+        return estimateByList(request);
+    }
+
+    private EstimateResult estimateByList(EstimateRequest request) {
         var area = request.area();
         var finishLevel = request.finishLevelOrDefault();
         var spaceType = request.spaceTypeOrDefault();
@@ -296,7 +329,171 @@ public class BudgetEstimateService {
         return new EstimateResult(totalLow, totalHigh, target, overBudgetStatus, dataQuality,
                 "LIST", MODEL_VERSION, interiorArea, wallArea,
                 materialLow, materialHigh, laborLow, laborHigh,
+                null, List.of(), List.of(),
                 resultItems, warnings, Instant.now());
+    }
+
+    /**
+     * 套餐式计价（阶段 2a-4）。
+     *
+     * <pre>
+     *   实测框架面积 = 建筑面积 × 0.78 + 外墙 0.24m × 周长估算
+     *   计价面积     = max(实测框架面积, 套餐最低计价面积)
+     *   套餐价       = 套餐单价(元/㎡) × 计价面积
+     *   合同总造价   = 套餐价 + 增项
+     * </pre>
+     *
+     * <p>管理费（10%）属于阶段 2a-5，这里不加。
+     *
+     * <p>「两种模式不能混加」是本阶段最容易错的地方：套餐价已经含了地面、墙面、水电等，
+     * 再叠一遍分项清单总额会直接翻倍。所以套餐模式**不返回** 9 板块清单，
+     * 只返回套餐价 + 用户显式点名的增项。增项只认 {@code enabledItems}：
+     * 没被点名的一律视为套餐已覆盖（含 STRUCTURE 这种默认不参与的）。
+     */
+    private EstimateResult estimateByPackage(EstimateRequest request) {
+        var product = loadPackage(request.packageId());
+        var area = request.area();
+
+        // 得房率与 LIST 模式共用同一常量，两种模式的面积口径必须能互相解释。
+        var interiorArea = area.multiply(INTERIOR_RATIO).setScale(2, RoundingMode.HALF_UP);
+        // 周长 ≈ √建筑面积 × 系数：户型越方正周长越短，没有户型图时这是最省参数的估法。
+        var perimeter = BigDecimal.valueOf(Math.sqrt(area.doubleValue()))
+                .multiply(PERIMETER_FACTOR).setScale(2, RoundingMode.HALF_UP);
+        var measuredArea = interiorArea
+                .add(EXTERIOR_WALL_THICKNESS.multiply(perimeter))
+                .setScale(2, RoundingMode.HALF_UP);
+        var minArea = product.minArea() == null ? DEFAULT_PACKAGE_MIN_AREA : product.minArea();
+        var minAreaApplied = measuredArea.compareTo(minArea) < 0;
+        var billableArea = minAreaApplied ? minArea : measuredArea;
+
+        // 套餐价是确定值，不是区间：low 与 high 相等（模板 G49 = 单价 × 面积）。
+        var baseCost = money(product.pricePerSqm().multiply(billableArea));
+        var ratio = product.materialRatio();
+        var baseMaterial = money(baseCost.multiply(ratio));
+        var baseLabor = baseCost.subtract(baseMaterial);
+
+        var packageKeys = product.items().stream().map(PackageItem::itemKey).toList();
+        var enabledKeys = new LinkedHashSet<>(nullSafe(request.enabledItems()));
+        var addonKeys = enabledKeys.stream().filter(key -> !packageKeys.contains(key)).toList();
+        var addons = List.<BudgetItem>of();
+        var warnings = new ArrayList<String>();
+        if (!addonKeys.isEmpty()) {
+            // 复用 LIST 路径算增项，而不是另写一套：增项与分项的口径必须完全一致，
+            // 否则「套餐 + 增项」和纯 LIST 在同样的增项上会给出两个数。
+            var disabled = loadItems().stream().map(ItemDef::key)
+                    .filter(key -> !addonKeys.contains(key)).toList();
+            var addonRequest = new EstimateRequest(area, request.region(), request.finishLevel(),
+                    request.spaceType(), "LIST", null, request.projectId(), disabled, addonKeys, null);
+            addons = estimateByList(addonRequest).items().stream().filter(item -> !item.disabled()).toList();
+            warnings.add("套餐外另有 " + addons.size() + " 项增项单独计价，套餐价不包含这部分");
+        }
+        var addonMaterialLow = addons.stream().map(BudgetItem::materialCostLow)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        var addonMaterialHigh = addons.stream().map(BudgetItem::materialCostHigh)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        var addonLaborLow = addons.stream().map(BudgetItem::laborCostLow)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        var addonLaborHigh = addons.stream().map(BudgetItem::laborCostHigh)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        var addonLow = money(addonMaterialLow.add(addonLaborLow));
+        var addonHigh = money(addonMaterialHigh.add(addonLaborHigh));
+
+        var totalLow = money(baseCost.add(addonLow));
+        var totalHigh = money(baseCost.add(addonHigh));
+        var materialLow = money(baseMaterial.add(addonMaterialLow));
+        var materialHigh = money(baseMaterial.add(addonMaterialHigh));
+        var laborLow = money(baseLabor.add(addonLaborLow));
+        var laborHigh = money(baseLabor.add(addonLaborHigh));
+
+        if (minAreaApplied) {
+            warnings.add("面积 " + measuredArea.stripTrailingZeros().toPlainString()
+                    + " ㎡ 低于套餐最低计价面积 " + minArea.stripTrailingZeros().toPlainString()
+                    + " ㎡，按最低面积计价");
+        }
+        if (product.companyId() == null) {
+            warnings.add("当前使用平台通用套餐价，与企业实际套餐价可能存在差异");
+        }
+
+        var target = request.targetBudget();
+        String overBudgetStatus = null;
+        if (target != null && target.signum() > 0) {
+            overBudgetStatus = target.compareTo(totalLow) < 0 ? "OVER"
+                    : target.compareTo(totalHigh) > 0 ? "UNDER" : "WITHIN";
+        }
+
+        var info = new PackageProductInfo(product.id(), product.name(), product.companyName(),
+                product.pricePerSqm(), minArea, perimeter, measuredArea, billableArea,
+                minAreaApplied, baseCost, baseCost);
+
+        return new EstimateResult(totalLow, totalHigh, target, overBudgetStatus, "PACKAGE",
+                "PACKAGE", MODEL_VERSION, interiorArea, interiorArea.multiply(WALL_RATIO)
+                .setScale(2, RoundingMode.HALF_UP),
+                materialLow, materialHigh, laborLow, laborHigh,
+                info, product.items(), addons, List.of(), warnings, Instant.now());
+    }
+
+    /** 已生效的套餐定义（来自 package_products）。 */
+    record PackageRow(UUID id, UUID companyId, String companyName, String name,
+                      BigDecimal pricePerSqm, BigDecimal minArea, BigDecimal materialRatio,
+                      List<PackageItem> items) {
+    }
+
+    /**
+     * 取套餐：显式 packageId 用指定套餐；否则用平台通用套餐（company_id 为空）。
+     *
+     * <p>下架或过期的套餐不参与——否则用户会拿一个再也买不到的价格去做预算。
+     */
+    private PackageRow loadPackage(UUID packageId) {
+        var sql = """
+                select p.id, p.company_id, p.name, p.price_per_sqm, p.min_area, p.material_ratio,
+                       p.items_json, coalesce(pr.name, c.name) as company_name
+                from package_products p
+                left join company_profiles pr on pr.company_id = p.company_id
+                left join auth_companies c on c.id = p.company_id
+                where p.status = 'ACTIVE' and p.valid_until >= current_date
+                """;
+        var args = new ArrayList<Object>();
+        if (packageId != null) {
+            sql += " and p.id = ?";
+            args.add(packageId);
+        } else {
+            // 平台通用套餐：没有企业套餐时也能出价，否则刚上线的地区用不了套餐模式。
+            sql += " and p.company_id is null";
+        }
+        sql += " order by p.price_per_sqm asc limit 1";
+        var rows = jdbc.query(sql, (rs, n) -> new PackageRow(
+                rs.getObject("id", UUID.class),
+                rs.getObject("company_id", UUID.class),
+                rs.getString("company_name"),
+                rs.getString("name"),
+                rs.getBigDecimal("price_per_sqm"),
+                rs.getBigDecimal("min_area"),
+                rs.getBigDecimal("material_ratio"),
+                parsePackageItems(rs.getString("items_json"))), args.toArray());
+        if (rows.isEmpty()) {
+            throw new BusinessApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
+                    packageId == null ? "暂无可用的套餐报价" : "套餐不存在或已下架");
+        }
+        return rows.getFirst();
+    }
+
+    /** items_json 是 {@code [{"itemKey":"GROUND","label":"..."}]}；坏数据不能拖垮整次试算。 */
+    private List<PackageItem> parsePackageItems(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            List<Map<String, Object>> raw = objectMapper.readValue(json, new TypeReference<>() {
+            });
+            var items = new ArrayList<PackageItem>();
+            for (var row : raw) {
+                var key = row.get("itemKey");
+                var label = row.get("label");
+                if (key == null) continue;
+                items.add(new PackageItem(key.toString(), label == null ? key.toString() : label.toString()));
+            }
+            return items;
+        } catch (Exception exception) {
+            return List.of();
+        }
     }
 
     private List<ItemDef> loadItems() {

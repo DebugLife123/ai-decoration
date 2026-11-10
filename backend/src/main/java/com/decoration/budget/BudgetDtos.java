@@ -23,6 +23,9 @@ public final class BudgetDtos {
             @Size(max = 80) String region,
             @Pattern(regexp = "BASIC|STANDARD|PREMIUM") String finishLevel,
             @Size(max = 40) String spaceType,
+            @Pattern(regexp = "LIST|PACKAGE") String pricingMode,
+            /** PACKAGE 模式下指定套餐；缺省用平台通用套餐。LIST 模式下忽略。 */
+            UUID packageId,
             UUID projectId,
             /** 关闭的板块（如不打算做结构改造）。缺省时 STRUCTURE 不参与。 */
             List<@Size(max = 40) String> disabledItems,
@@ -38,6 +41,40 @@ public final class BudgetDtos {
         public String spaceTypeOrDefault() {
             return spaceType == null || spaceType.isBlank() ? "WHOLE_HOME" : spaceType;
         }
+
+        /** 计价方式：LIST 按板块清单逐项计价，PACKAGE 按套餐单价 × 实测框架面积。 */
+        public String pricingModeOrDefault() {
+            return pricingMode == null || pricingMode.isBlank() ? "LIST" : pricingMode;
+        }
+    }
+
+    /**
+     * PACKAGE 模式下命中的套餐。
+     *
+     * <p>套餐价是确定值（不是区间），所以 baseCostLow 与 baseCostHigh 相等；
+     * 保留两个字段是为了让前端的区间渲染逻辑对两种模式通用。
+     */
+    public record PackageProductInfo(
+            UUID id,
+            String name,
+            /** 企业自报价套餐有值；平台通用套餐为 null。 */
+            String companyName,
+            BigDecimal pricePerSqm,
+            BigDecimal minArea,
+            /** 按输入面积推算的外墙周长（米）。 */
+            BigDecimal perimeterEstimate,
+            /** 实测框架面积 = 套内面积 + 外墙厚度 × 周长。 */
+            BigDecimal measuredArea,
+            /** 实际计价面积 = max(实测框架面积, 最低计价面积)。 */
+            BigDecimal billableArea,
+            /** 是否触发了最低计价面积兜底。 */
+            boolean minAreaApplied,
+            BigDecimal baseCostLow,
+            BigDecimal baseCostHigh) {
+    }
+
+    /** 套餐内含的配置项（对应模板「配置内全包价」）。 */
+    public record PackageItem(String itemKey, String label) {
     }
 
     /** 单个板块的试算结果。 */
@@ -91,6 +128,7 @@ public final class BudgetDtos {
             BigDecimal targetBudget,
             String overBudgetStatus,
             String dataQuality,
+            /** LIST 或 PACKAGE。两种模式的结果不能混加。 */
             String pricingMode,
             String modelVersion,
             BigDecimal interiorArea,
@@ -99,6 +137,12 @@ public final class BudgetDtos {
             BigDecimal materialCostHigh,
             BigDecimal laborCostLow,
             BigDecimal laborCostHigh,
+            /** PACKAGE 模式下命中的套餐；LIST 模式为 null。 */
+            PackageProductInfo packageProduct,
+            /** 套餐内含的配置清单（模板「配置内全包价」）；LIST 模式为空数组。 */
+            List<PackageItem> packageItems,
+            /** 套餐外的增减项（按板块清单计价）；LIST 模式为空数组。 */
+            List<BudgetItem> addonItems,
             List<BudgetItem> items,
             List<String> warnings,
             Instant generatedAt) {

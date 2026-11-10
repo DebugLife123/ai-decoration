@@ -382,20 +382,32 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 实测框架面积 = 室内面积 + 外墙 240mm
 ```
 
-- [ ] `project_budget_estimates` 增 `pricing_mode varchar(16) not null default 'LIST'`
-- [ ] 新增 `package_products(company_id, name, price_per_sqm, min_area, valid_until, items_json, status)`
-- [ ] 套餐模式的计算路径：`area_measured = area × 0.78 + 0.24 × perimeter_estimate`，取 `max(area_measured, 90)`
-- [ ] 套餐内项目清单（对应模板「配置内全包价」）与增项清单分开返回
-- [ ] `pricing_mode` 由前端切换，两种模式结果不能混加
+- [x] `project_budget_estimates` 增 `pricing_mode varchar(16) not null default 'LIST'`
+- [x] 新增 `package_products(company_id, name, price_per_sqm, min_area, valid_until, items_json, status)`
+- [x] 套餐模式的计算路径：`area_measured = area × 0.78 + 0.24 × perimeter_estimate`，取 `max(area_measured, 90)`
+- [x] 套餐内项目清单（对应模板「配置内全包价」）与增项清单分开返回
+- [x] `pricing_mode` 由前端切换，两种模式结果不能混加
 
 > 模板自身缺陷提醒：`全包外部!G49 = 1098*B3` 但文案写「898 元/㎡」，`G50 = #REF!`。
 > 我们只抄结构和公式，不抄 898/1098 这两个数。
 
+#### 实现要点
+
+- `pricing_mode` 列 V21 就已存在，本阶段没有新增迁移，只补了 `V24__create_package_products.sql`。
+- 套餐表额外加了 `material_ratio numeric(5,4) not null default 0.75`（材料占套餐价的比例），用来把套餐价拆成材料/人工两段，前端才能和分项模式共用一套材料-人工展示；这是 ROADMAP 原 checklist 里没写的列。
+- `perimeter_estimate` 不在表里，由 `PERIMETER_FACTOR = 4.4` 从建筑面积推：周长 ≈ √面积 × 4.4（120㎡ → 4.4 × 10.95 ≈ 48.2m）。`EXTERIOR_WALL_THICKNESS = 0.24`（240mm）照抄模板。两个系数都放代码常量，改系数属 2a-6 校准，不动数据。
+- 种子套餐是平台通用（`company_id is null`）的「全包基础套餐」，`price_per_sqm = 1180`、`min_area = 90`。`items_json` 含 7 项，**刻意不含 CARPENTRY（家具制作）与 STRUCTURE（结构改造）**——这两项在套餐里无法标准化定价，模板也是放「增减项」，正好对上验收第 2 条。
+- 增项复用 LIST 路径算，不另写一套：`addonKeys = enabledItems − packageKeys`，把 `disabledItems` 设成全部非增项后调 `estimateByList`，所以同一项在两种模式下报价一致。
+- `PACKAGE` 模式下 `items` 返回空数组（不是省略），`packageItems`/`addonItems` 各管一段。前端 `display.items` 为空时走套餐渲染，避免把两个总额相加。
+- `dataQuality` 固定 `PACKAGE`（套餐价是确定值，逐板块的报价覆盖率不适用）。
+- `MODEL_VERSION` v4 → **v5**：同一个面积+档位输入，PACKAGE 与 LIST 的总价不同；即便 LIST 逻辑没动，版本号也要升，否则归档里两种口径的数据无法区分。
+- 前端套餐模式**没有本地兜底**：`referenceCosts` 是分项口径，套在套餐上会给出明显错的数，所以后端不可用时显示「套餐报价暂时取不到」，而不是编一个数。分项模式仍保留本地兜底。
+
 #### 验收
 
-1. 90㎡ 与 60㎡ 输入得到相同基础价（最低 90㎡ 兜底生效）
-2. 套餐模式不出现「家具制作」「结构改造」等清单项，只出套餐价 + 增项
-3. `LIST` 与 `PACKAGE` 结果分别可复算
+1. 90㎡ 与 60㎡ 输入得到相同基础价（最低 90㎡ 兜底生效）—— 测试 `packageModeAppliesMinimumAreaFloor`
+2. 套餐模式不出现「家具制作」「结构改造」等清单项，只出套餐价 + 增项 —— 测试 `packageModeSeparatesAddonsAndKeepsListItemsOut`
+3. `LIST` 与 `PACKAGE` 结果分别可复算 —— 测试 `listModeCarriesNoPackageFields`、`unknownPackageIsRejected`
 
 **工期**：1 天
 
@@ -474,7 +486,10 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
   "totalHigh": 304600.00,
   "dataQuality": "PARTIAL",
   "pricingMode": "LIST",
-  "modelVersion": "v4",
+  "modelVersion": "v5",
+  "packageProduct": null,
+  "packageItems": [],
+  "addonItems": [],
   "items": [
     {
       "itemKey": "GROUND", "label": "地面工程",
@@ -499,6 +514,9 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 > 2a-3 之后 `source` 有四种：`QUOTED`（两路都是企业报价）、`PARTIAL`（只有一路是）、`REFERENCE`（两路都用基准）、
 > `DISABLED`（用户关掉了这个板块）。上例地面只有 2 家企业材料报价——材料走真实 P25/P75，人工按基准
 > `190~330 × (1-0.72)` 回填，所以整体是 `PARTIAL` 而不是整项跌回 `REFERENCE`。
+>
+> 2a-4 之后 `pricingMode` 有两种口径，**结果不能相加**：`LIST` 时 `items` 是 9 板块明细、`packageProduct` 为 null；
+> `PACKAGE` 时 `items` 为空、改由 `packageProduct` + `packageItems`（套餐已含）+ `addonItems`（套餐外增项）表达。
 
 ---
 
@@ -511,7 +529,7 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 | 3 | ~~`unit_unknown` 报价不参与任何计算~~ | ✅ 2a-1 已建索引与标记，2a-2 保证计算时应用 |
 | 4 | `GIFT` / `OWNER_SUPPLIED` 不计入合计但列得出来 | 2a-2 |
 | 5 | 每板块可拆材料/人工，两者之和 = 小计 | 2a-3 ✅ |
-| 6 | 90㎡ 与 60㎡ 套餐基础价相同 | 2a-4 |
+| 6 | 90㎡ 与 60㎡ 套餐基础价相同 | 2a-4 ✅ |
 | 7 | 管理费 = 直接费 × 10%，与模板一致 | 2a-5 |
 | 8 | 无电梯 6 楼上楼费 = 600 × 6 | 2a-5 |
 | 9 | 后端停机时预算页仍可用（前端兜底） | 2b |
@@ -529,7 +547,7 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
   - `PARTIAL`：「部分板块基于企业报价，其余为行业参考」
   - `REFERENCE`：「行业参考区间，尚无可比企业报价」
 - [ ] 标记 `GIFT`（赠送，标注参考价值）与 `OWNER_SUPPLIED`（客户自购，不计价）
-- [ ] 计价模式切换：清单式 / 套餐式
+- [x] 计价模式切换：清单式 / 套餐式（2a-4 已随后端一起做掉，见 `BudgetPage.tsx` 的 `pricingModes`）
 - [ ] 超支提醒：`total > 预算` 时顶部横幅 + 差额
 - [ ] 面积/地区/风格/楼层变更防抖重算
 - [ ] 「保存到项目」→ 项目详情可见历史预算（带 `modelVersion`）
@@ -622,12 +640,12 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 阶段 2a-1     0.5 天   ✅ 已完成（78c4357）
 阶段 2a-2     1.0 天   ✅ 已完成（cd946c4）
 阶段 2a-3     1.0 天   ✅ 已完成
-阶段 2a-4     1.0 天   ████
+阶段 2a-4     1.0 天   ✅ 已完成
 阶段 2a-5     1.0 天   ████
 阶段 2b       2.0 天   ████████
 阶段 2c       1.0 天   ████
 ─────────────────────────────
-剩余          6.0 天
+剩余          5.0 天
 ```
 
 **依赖关系**：
@@ -652,7 +670,8 @@ v3 因为板块变多，判据改为：**9 个板块合计 = 前端 6 项计算�
 2. **已完成**：2a-2（板块 6 → 9 + 消费 `budget_min_qty`，cd946c4）
 3. **已完成**：阶段 0.1–0.6（后端 Dockerfile、四服务 compose、API 地址注入、备份、生产安全、CI 后端测试）
 4. **已完成**：2a-3（材料/人工两路独立计价，`MODEL_VERSION` v3 → v4）
-5. **下一步建议**：阶段 1（`git fetch` → 确认 `origin/main` 仍是祖先 → fast-forward 合并 → 推 main 触发 CI 全绿）
-6. 或继续 2a-4（套餐式计价 `pricing_mode`），1 天。注意 2a-4 会再改一次输出总额，`MODEL_VERSION` 需要再次 bump
+5. **已完成**：阶段 1（已 fast-forward 合入 main 并推送，origin/main 与工作区同步）
+6. **下一步建议**：2a-5（附加费与税金：管理费 10%、税金 5.36%、远程费、楼层/层高附加），1 天。注意 2a-5 会把「不计入合同造价」的三项单独返回，同样要再 bump `MODEL_VERSION`
+7. 之后是 2b（企业侧）与 2c（施工侧）
 
 阶段 0 已具备「干净机器 `docker compose up -d` 起四服务」的条件，但**本地无 docker，容器链路只在代码与配置层校验过**，首次真实构建发生在 CI runner 上。阶段 1 的价值是先把 19 个提交合进 main 让流水线跑一遍，把部署风险前置暴露。

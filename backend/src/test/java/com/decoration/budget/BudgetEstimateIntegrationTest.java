@@ -78,7 +78,7 @@ class BudgetEstimateIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.dataQuality").value("REFERENCE"))
                 .andExpect(jsonPath("$.data.pricingMode").value("LIST"))
-                .andExpect(jsonPath("$.data.modelVersion").value("v4"))
+                .andExpect(jsonPath("$.data.modelVersion").value("v5"))
                 .andExpect(jsonPath("$.data.items.length()").value(9))
                 // 9 板块合计 = 1790 × 120 / 3110 × 120（守恒）
                 .andExpect(jsonPath("$.data.totalLow").value(214800))
@@ -363,5 +363,120 @@ class BudgetEstimateIntegrationTest {
         } finally {
             companies.forEach(this::dropCompany);
         }
+    }
+
+    // ---------- 阶段 2a-4：套餐式计价 ----------
+
+    /**
+     * 验收 1：90㎡ 与 60㎡ 的基础价完全相同（最低计价面积 90㎡ 兜底生效）。
+     *
+     * <p>平台通用套餐是 1180 元/㎡、最低 90㎡：
+     * 90㎡ → 实测面积 70.20 + 0.24 × 41.74 = 80.22，低于 90，按 90 计 → 106200；
+     * 60㎡ → 实测面积 46.80 + 0.24 × 34.08 = 54.98，同样低于 90 → 仍是 106200。
+     */
+    @Test
+    void packageModeAppliesMinimumAreaFloor() throws Exception {
+        var body90 = mockMvc.perform(post("/api/v1/budgets/estimate")
+                        .contentType("application/json")
+                        .content("""
+                                {"area":90,"region":"上海","pricingMode":"PACKAGE"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pricingMode").value("PACKAGE"))
+                .andExpect(jsonPath("$.data.modelVersion").value("v5"))
+                .andExpect(jsonPath("$.data.dataQuality").value("PACKAGE"))
+                .andExpect(jsonPath("$.data.packageProduct.minAreaApplied").value(true))
+                .andExpect(jsonPath("$.data.packageProduct.minArea").value(90))
+                .andExpect(jsonPath("$.data.packageProduct.billableArea").value(90))
+                .andExpect(jsonPath("$.data.packageProduct.pricePerSqm").value(1180))
+                .andExpect(jsonPath("$.data.totalLow").value(106200))
+                .andExpect(jsonPath("$.data.totalHigh").value(106200))
+                // 套餐模式不返回逐板块清单，避免「套餐价 + 分项」被前端叠加。
+                .andExpect(jsonPath("$.data.items.length()").value(0))
+                .andExpect(jsonPath("$.data.addonItems.length()").value(0))
+                .andReturn().getResponse().getContentAsString();
+
+        var body60 = mockMvc.perform(post("/api/v1/budgets/estimate")
+                        .contentType("application/json")
+                        .content("""
+                                {"area":60,"region":"上海","pricingMode":"PACKAGE"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.packageProduct.minAreaApplied").value(true))
+                .andExpect(jsonPath("$.data.totalLow").value(106200))
+                .andReturn().getResponse().getContentAsString();
+
+        var mapper = com.fasterxml.jackson.databind.json.JsonMapper.builder().build();
+        // 验收 1 的实质：两个不同输入拿到同一个基础价。
+        org.junit.jupiter.api.Assertions.assertEquals(
+                mapper.readTree(body90).path("data").path("totalLow").decimalValue(),
+                mapper.readTree(body60).path("data").path("totalLow").decimalValue(),
+                "90㎡ 与 60㎡ 都应兜底到 90㎡，基础价必须相同");
+    }
+
+    /**
+     * 验收 2：套餐模式只出「套餐价 + 增项」，不出现家具制作、结构改造等分项清单。
+     *
+     * <p>120㎡ 的实测框架面积 = 93.60 + 0.24 × 48.20 = 105.17，
+     * 套餐价 = 1180 × 105.17 = 124100.60。
+     * 显式点名 CARPENTRY 作为增项：STANDARD 档基准 240–420 元/㎡ × 120㎡ = 28800–50400。
+     */
+    @Test
+    void packageModeSeparatesAddonsAndKeepsListItemsOut() throws Exception {
+        mockMvc.perform(post("/api/v1/budgets/estimate")
+                        .contentType("application/json")
+                        .content("""
+                                {"area":120,"region":"上海","finishLevel":"STANDARD",
+                                 "pricingMode":"PACKAGE","enabledItems":["CARPENTRY"]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pricingMode").value("PACKAGE"))
+                .andExpect(jsonPath("$.data.packageProduct.minAreaApplied").value(false))
+                .andExpect(jsonPath("$.data.packageProduct.measuredArea").value(105.17))
+                .andExpect(jsonPath("$.data.packageProduct.baseCostLow").value(124100.60))
+                // 套餐内清单 7 项，且刻意不含 CARPENTRY / STRUCTURE。
+                .andExpect(jsonPath("$.data.packageItems.length()").value(7))
+                .andExpect(jsonPath("$.data.packageItems[?(@.itemKey == 'CARPENTRY')]").isEmpty())
+                .andExpect(jsonPath("$.data.packageItems[?(@.itemKey == 'STRUCTURE')]").isEmpty())
+                // 增项只有点名的那一项，独立成列，不与套餐价混在一起。
+                .andExpect(jsonPath("$.data.addonItems.length()").value(1))
+                .andExpect(jsonPath("$.data.addonItems[0].itemKey").value("CARPENTRY"))
+                .andExpect(jsonPath("$.data.addonItems[0].costLow").value(28800.0))
+                // 总造价 = 套餐价 + 增项；分项清单整体为空。
+                .andExpect(jsonPath("$.data.totalLow").value(152900.60))
+                .andExpect(jsonPath("$.data.totalHigh").value(174500.60))
+                .andExpect(jsonPath("$.data.items.length()").value(0))
+                // 2a-3 的不变量在套餐模式下同样成立：材料 + 人工 = 总额。
+                // 材料 = 套餐价 93075.45 + 增项材料 22464.00；人工 = 31025.15 + 6336.00。
+                .andExpect(jsonPath("$.data.materialCostLow").value(115539.45))
+                .andExpect(jsonPath("$.data.laborCostLow").value(37361.15));
+    }
+
+    /** 验收 3：LIST 与 PACKAGE 各自可复算，且 LIST 结果不带套餐字段。 */
+    @Test
+    void listModeCarriesNoPackageFields() throws Exception {
+        mockMvc.perform(post("/api/v1/budgets/estimate")
+                        .contentType("application/json")
+                        .content("""
+                                {"area":100,"region":"上海","finishLevel":"BASIC"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pricingMode").value("LIST"))
+                .andExpect(jsonPath("$.data.packageProduct").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.packageItems.length()").value(0))
+                .andExpect(jsonPath("$.data.addonItems.length()").value(0))
+                .andExpect(jsonPath("$.data.items.length()").value(9));
+    }
+
+    /** 指定一个不存在的套餐要报 404，而不是悄悄回落到平台通用套餐。 */
+    @Test
+    void unknownPackageIsRejected() throws Exception {
+        mockMvc.perform(post("/api/v1/budgets/estimate")
+                        .contentType("application/json")
+                        .content("""
+                                {"area":100,"pricingMode":"PACKAGE","packageId":"%s"}
+                                """.formatted(UUID.randomUUID())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
     }
 }

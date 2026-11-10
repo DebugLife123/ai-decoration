@@ -10,7 +10,7 @@
 
 第 4–11 章是企业侧四类资源与通用规则的验收基线；第 12–15 章分别覆盖管理端、通知、询价、公开目录；第 16–18 章是执行分层、通过标准与遗留决策。
 
-契约与实现均已落地（`contracts/openapi.yaml`：81 operation / 120 schema / 11 个共享 response；后端 `backend/src/main/java/com/decoration/**/*Controller.java` 实测同为 81 个 (verb, path)）。因此本文件的验收项分为：
+契约与实现均已落地（`contracts/openapi.yaml`：81 operation / 122 schema / 11 个共享 response；后端 `backend/src/main/java/com/decoration/**/*Controller.java` 实测同为 81 个 (verb, path)）。因此本文件的验收项分为：
 
 1. **静态契约检查**：只读取 `contracts/openapi.yaml` 即可执行，不依赖数据库或运行中的服务。
 2. **集成测试**：需要可启动的后端、PostgreSQL、身份认证和至少两个企业租户的数据夹具。
@@ -534,7 +534,7 @@
 
 | Operation | 权限 | 验收点 |
 | --- | --- | --- |
-| `POST /api/v1/budgets/estimate` | **匿名**（`security: []`） | `area` 必填且 1–2000；`finishLevel` ∈ `BASIC/STANDARD/PREMIUM`（缺省 `STANDARD`）、`spaceType` ≤ 40（缺省 `WHOLE_HOME`）；返回 `BudgetEstimateResult` |
+| `POST /api/v1/budgets/estimate` | **匿名**（`security: []`） | `area` 必填且 1–2000；`finishLevel` ∈ `BASIC/STANDARD/PREMIUM`（缺省 `STANDARD`）、`spaceType` ≤ 40（缺省 `WHOLE_HOME`）、`pricingMode` ∈ `LIST/PACKAGE`（缺省 `LIST`）、`packageId` 为 UUID 或缺省；返回 `BudgetEstimateResult` |
 | `POST /api/v1/budgets` | 已认证 | **201**；归档主体为 token 的 `companyId`，缺省回落 `subject`；要求 `Idempotency-Key`（8–128 字符），同键同体重放返回同一条归档，同键异体 409 `IDEMPOTENCY_CONFLICT`（见第 18 章决策 5） |
 | `GET /api/v1/budgets?projectId=` | 已认证 | 只返回当前主体归档；`projectId` 筛选不得跨主体 |
 | `GET /api/v1/budgets/{id}` | 已认证 | 他人 `id` → 404 |
@@ -543,8 +543,8 @@
 
 试算结果语义：
 
-- `pricingMode` 恒为 `LIST`、`modelVersion` 恒为 `v4`，前端据此判断算法版本，不得为空。v4 起材料与人工分两路计价，同为 `PARTIAL` 的输入在 v3 下会被整项回退、总额不同，因此版本号必须能区分。
-- `dataQuality`：任一板块 `source=PARTIAL` 即为 `PARTIAL`（即使其余板块全是 `QUOTED`）；`items` 中无任何 `QUOTED`/`PARTIAL` 来源 → `REFERENCE`；全部 `QUOTED` → `QUOTED`。三类各需一条夹具。
+- `pricingMode` 回显请求值，`LIST` 或 `PACKAGE`；`modelVersion` 恒为 `v5`，前端据此判断算法版本，不得为空。v5 起新增套餐口径、v4 起材料与人工分两路计价——同一个输入在不同版本下总额不同，因此版本号必须能区分。
+- `dataQuality`：任一板块 `source=PARTIAL` 即为 `PARTIAL`（即使其余板块全是 `QUOTED`）；`items` 中无任何 `QUOTED`/`PARTIAL` 来源 → `REFERENCE`；全部 `QUOTED` → `QUOTED`；`PACKAGE` 模式下恒为 `PACKAGE`。四类各需一条夹具。
 - `overBudgetStatus`：`targetBudget < totalLow` → `OVER`；`targetBudget > totalHigh` → `UNDER`；落在闭区间 → `WITHIN`；未提供 `targetBudget` 时的取值需与契约一致。
 - `items[].source` ∈ `QUOTED/PARTIAL/REFERENCE/DISABLED`；`disabled=true` 的项不计入合计，且 `skippedReasons` 非空。
 - `unitUnknown=true` 的报价不得进入任一 `items[].quoteSamples`，防止错误单位参与计算。
@@ -556,6 +556,17 @@
 - `materialPriceLow/High`、`laborPriceLow/High` 是「元/计量单位」的展示单价，由成本字段反推，允许与成本 ÷ 数量 ÷ 损耗有 1 分钱级取整差；**成本字段才是权威值**，消费者不得用单价去反算总额。
 - 保序性：只调整材料报价价格，`laborCostLow/High`、`laborPriceLow/High` 必须逐位不变（验收第 2 条）。
 - 匿名试算不得落库；只有显式 `POST /api/v1/budgets` 才产生归档记录。
+
+套餐式计价（阶段 2a-4）：
+
+- `pricingMode=LIST` 时 `packageProduct` 必须为 `null`、`packageItems` 与 `addonItems` 必须为空数组；`pricingMode=PACKAGE` 时 `items` 必须为空数组、`packageProduct` 非空。**这两种形态互斥，客户端把 `totalLow` 与 `items` 里的分项都加起来一定会算错**，夹具需正反两面各一条。
+- 最低计价面积兜底：`billableArea = max(measuredArea, minArea)`，`minAreaApplied` 精确反映是否触发。同套餐下 60㎡ 与 90㎡ 输入必须得到相同的 `packageProduct.baseCostLow`，且 `totalLow` 相等（验收第 1 条，测试 `packageModeAppliesMinimumAreaFloor`）。
+- 套餐单价是**确定值**：`packageProduct.baseCostLow == baseCostHigh`，整单 `totalLow == totalHigh`（未加增项时）。区间字段保留只是为了前端统一渲染，不代表套餐存在价格区间。
+- 实测框架面积按 `interiorArea = area × 0.78`、`perimeterEstimate = √area × 4.4`、`measuredArea = interiorArea + 0.24 × perimeterEstimate` 计算，各步取 2 位小数；`billableArea` 与 `pricePerSqm` 相乘后取 2 位。夹具需能复算出同一数字（验收第 3 条）。
+- `packageItems` 是套餐已含项、`addonItems` 是套餐外增项，两者不重叠；增项必须由请求的 `enabledItems` 显式点名（且不在套餐内），未点名不得自动出现。标准套餐的 `packageItems` 不得包含 `CARPENTRY`（家具制作）与 `STRUCTURE`（结构改造）（验收第 2 条，测试 `packageModeSeparatesAddonsAndKeepsListItemsOut`）。
+- 增项复用 LIST 引擎计价：同一 `itemKey` 在 `addonItems` 与 LIST 模式的 `items` 里 `costLow/costHigh` 必须一致，且 `materialCostLow + laborCostLow = costLow` 的不变量在增项上同样成立。
+- 指定不存在的 `packageId` → 404 `NOT_FOUND`；不指定 `packageId` 而平台无可用套餐 → 404 `NOT_FOUND`（测试 `unknownPackageIsRejected`）。`status != ACTIVE` 或 `valid_until` 已过期的套餐视为不可用。
+- 套餐价不得走本地兜底：前端 `referenceCosts` 是分项口径，后端不可用时套餐模式必须显示「取不到」而不是给出估算值。
 
 ## 16. 执行分层与建议工具
 
@@ -602,7 +613,7 @@
 
 静态门禁（契约合并前必须全绿）：
 
-1. OpenAPI 可解析，无悬空 `$ref`（当前基线：81 operation / 120 schema / 11 共享 response / 541 ref / 0 dangling）。
+1. OpenAPI 可解析，无悬空 `$ref`（当前基线：81 operation / 122 schema / 11 共享 response / 544 ref / 0 dangling）。
 2. 每个 operationId 唯一且命名稳定；19 个 tag 全部在文件头声明。
 3. 6 个匿名入口显式声明 `security: []`，其余 operation 继承全局 `bearerAuth`。
 4. `ErrorResponse.code` 覆盖 `INVALID_REQUEST/VALIDATION_ERROR/UNAUTHORIZED/FORBIDDEN/NOT_FOUND/CONFLICT/IDEMPOTENCY_CONFLICT/VERSION_CONFLICT/INVALID_STATUS_TRANSITION/DUPLICATE_QUOTE/UNSUPPORTED_MEDIA_TYPE/FILE_TOO_LARGE/INTERNAL_ERROR`。

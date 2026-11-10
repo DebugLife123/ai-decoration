@@ -47,12 +47,37 @@ export interface BudgetItem {
   quoteSamples: BudgetQuoteSample[];
 }
 
+/** 套餐内含的配置项（模板「配置内全包价」）。 */
+export interface BudgetPackageItem {
+  itemKey: string;
+  label: string;
+}
+
+/** PACKAGE 模式下命中的套餐。套餐价是确定值，所以 baseCostLow 与 baseCostHigh 相等。 */
+export interface BudgetPackageProduct {
+  id: string;
+  name: string;
+  /** 企业自报价套餐有值；平台通用套餐为 null。 */
+  companyName: string | null;
+  pricePerSqm: number;
+  minArea: number;
+  /** 按输入面积推算的外墙周长（米）。 */
+  perimeterEstimate: number;
+  /** 实测框架面积 = 套内面积 + 外墙厚度 × 周长。 */
+  measuredArea: number;
+  /** 实际计价面积 = max(实测框架面积, 最低计价面积)。 */
+  billableArea: number;
+  minAreaApplied: boolean;
+  baseCostLow: number;
+  baseCostHigh: number;
+}
+
 export interface EstimateResult {
   totalLow: number;
   totalHigh: number;
   targetBudget: number | null;
   overBudgetStatus: 'OVER' | 'UNDER' | 'WITHIN' | null;
-  dataQuality: 'REFERENCE' | 'PARTIAL' | 'QUOTED';
+  dataQuality: 'REFERENCE' | 'PARTIAL' | 'QUOTED' | 'PACKAGE';
   pricingMode: 'LIST' | 'PACKAGE';
   modelVersion: string;
   interiorArea: number;
@@ -61,6 +86,13 @@ export interface EstimateResult {
   materialCostHigh: number;
   laborCostLow: number;
   laborCostHigh: number;
+  /** PACKAGE 模式下命中的套餐；LIST 模式为 null。 */
+  packageProduct: BudgetPackageProduct | null;
+  /** 套餐已含的配置项；LIST 模式为空。 */
+  packageItems: BudgetPackageItem[];
+  /** 套餐外的增项；LIST 模式为空。与 items 互斥，不能相加。 */
+  addonItems: BudgetItem[];
+  /** 逐板块清单；PACKAGE 模式为空。 */
   items: BudgetItem[];
   warnings: string[];
   generatedAt: string;
@@ -83,6 +115,10 @@ export interface EstimateInput {
   region?: string;
   finishLevel?: 'BASIC' | 'STANDARD' | 'PREMIUM';
   spaceType?: string;
+  /** LIST 逐板块计价，PACKAGE 按套餐单价 × 实测框架面积；缺省 LIST。两种模式的结果不能相加。 */
+  pricingMode?: 'LIST' | 'PACKAGE';
+  /** PACKAGE 模式下指定套餐；缺省用平台通用套餐。 */
+  packageId?: string | null;
   projectId?: string | null;
   disabledItems?: string[];
   enabledItems?: string[];

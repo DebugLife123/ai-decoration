@@ -2479,6 +2479,22 @@ components:
           maxLength: 40
           default: WHOLE_HOME
           description: Defaults to WHOLE_HOME when omitted.
+        pricingMode:
+          type: string
+          enum: [LIST, PACKAGE]
+          default: LIST
+          description: >-
+            LIST prices every section of the breakdown separately; PACKAGE prices a package product by unit
+            price times measured area and only adds the items the caller explicitly names in enabledItems.
+            Defaults to LIST when omitted. The results of the two modes must never be added together: a
+            package price already covers flooring, walls and plumbing, so stacking the section list on top
+            of it doubles the estimate.
+        packageId:
+          type: [string, 'null']
+          format: uuid
+          description: >-
+            Package to price in PACKAGE mode; omitted means the platform-wide package (company_id is null).
+            Ignored in LIST mode.
         projectId:
           type: [string, 'null']
           format: uuid
@@ -2573,11 +2589,51 @@ components:
         quoteSamples:
           type: array
           items: { $ref: '#/components/schemas/BudgetQuoteSample' }
+    BudgetPackageItem:
+      type: object
+      required: [itemKey, label]
+      additionalProperties: false
+      properties:
+        itemKey: { type: string }
+        label: { type: string }
+    BudgetPackageProduct:
+      type: object
+      description: >-
+        The package product a PACKAGE estimate was priced from. The package price is a fixed number rather
+        than a range, so baseCostLow and baseCostHigh are equal; both are kept so the client can render a
+        range for either pricing mode without branching.
+      required: [id, name, pricePerSqm, minArea, perimeterEstimate, measuredArea, billableArea,
+                 minAreaApplied, baseCostLow, baseCostHigh]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        companyName:
+          type: [string, 'null']
+          description: Set for a company-owned package; null for the platform-wide package.
+        pricePerSqm:
+          type: number
+          description: Package unit price in yuan per square metre of measured area, not gross floor area.
+        minArea:
+          type: number
+          description: Floor applied to the billable area; below it the package is still charged as if it were this size.
+        perimeterEstimate:
+          type: number
+          description: Exterior perimeter in metres estimated from the gross floor area.
+        measuredArea:
+          type: number
+          description: Interior area plus exterior wall thickness times the perimeter estimate.
+        billableArea:
+          type: number
+          description: max(measuredArea, minArea).
+        minAreaApplied: { type: boolean }
+        baseCostLow: { type: number }
+        baseCostHigh: { type: number }
     BudgetEstimateResult:
       type: object
       required: [totalLow, totalHigh, overBudgetStatus, dataQuality, pricingMode, modelVersion,
                  interiorArea, wallArea, materialCostLow, materialCostHigh, laborCostLow, laborCostHigh,
-                 items, warnings, generatedAt]
+                 packageProduct, packageItems, addonItems, items, warnings, generatedAt]
       additionalProperties: false
       properties:
         totalLow: { type: number }
@@ -2589,21 +2645,51 @@ components:
           description: OVER when the target sits below totalLow, UNDER when above totalHigh, otherwise WITHIN.
         dataQuality:
           type: string
-          enum: [QUOTED, PARTIAL, REFERENCE]
-        pricingMode: { type: string, description: Currently LIST. }
+          enum: [QUOTED, PARTIAL, REFERENCE, PACKAGE]
+          description: >-
+            PACKAGE is reported in package mode, where the whole total comes from one package price and the
+            per-section quote coverage does not apply.
+        pricingMode:
+          type: string
+          enum: [LIST, PACKAGE]
+          description: >-
+            Echoes the requested mode. The two modes must never be added together — a package price already
+            includes the sections a LIST estimate would itemise.
         modelVersion:
           type: string
           description: >-
-            Currently v4. Bumped from v3 when sections started pricing material and labor independently,
-            because the totals of a PARTIAL estimate differ from what v3 produced for the same quotes.
+            Currently v5. Bumped from v4 when PACKAGE mode was added, and v3 to v4 when sections started
+            pricing material and labor independently, because the totals differ from what the previous
+            version produced for the same input.
         interiorArea: { type: number }
         wallArea: { type: number }
         materialCostLow: { type: number }
         materialCostHigh: { type: number }
         laborCostLow: { type: number }
         laborCostHigh: { type: number }
+        packageProduct:
+          oneOf:
+            - $ref: '#/components/schemas/BudgetPackageProduct'
+            - type: 'null'
+          description: The package that was priced in PACKAGE mode; null in LIST mode.
+        packageItems:
+          type: array
+          description: >-
+            What the package already covers. Always empty in LIST mode. Package mode deliberately lists
+            furniture and structural work here only when the product includes them, so a reader can tell
+            "not charged extra" from "not included at all".
+          items: { $ref: '#/components/schemas/BudgetPackageItem' }
+        addonItems:
+          type: array
+          description: >-
+            Sections the caller named in enabledItems that the package does not cover. Priced with the same
+            LIST engine, so an addon costs the same in either mode. Always empty in LIST mode.
+          items: { $ref: '#/components/schemas/BudgetItem' }
         items:
           type: array
+          description: >-
+            The per-section breakdown. Always empty in PACKAGE mode: the package price already covers those
+            sections, so returning them would invite the client to add both totals together.
           items: { $ref: '#/components/schemas/BudgetItem' }
         warnings:
           type: array
