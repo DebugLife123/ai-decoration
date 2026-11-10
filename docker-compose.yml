@@ -3,7 +3,8 @@
 # 这套环境访问不了 docker.io（registry-1.docker.io 直接超时），所以凡是需要
 # 从网络拉取的镜像都走 DaoCloud 代理。若哪天 runner 配了 registry-mirrors
 # 或能直连 Docker Hub，在 .env 里写 REGISTRY= 留空即可回到默认仓库。
-# 注意 compose 的 image 字段不做默认值拼接，所以这里直接写成完整表达式。
+# REGISTRY 的值必须带结尾斜杠（它是仓库前缀，不是主机名），所以这里写成
+# ${REGISTRY:-docker.m.daocloud.io/library/} 再接镜像名，而不是另起一段路径。
 services:
   postgres:
     image: ${REGISTRY:-docker.m.daocloud.io/library/}postgres:16-alpine
