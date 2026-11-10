@@ -28,3 +28,15 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+# runner 的 Docker 默认地址池被占满过：
+#   04 (decimal) 4049842243: Network wyx-decoration-test_default Error
+#   "all predefined address pools have been fully subnetted"
+# 那是 daemon 里默认的 /16 池被历史网络切光了，不指定子网就分不出地址。
+# 这里显式给一个小网段，绕开默认池；子网选得偏僻一些，避免和别的网络撞车。
+# 配套地，CI 在 up 之前会先 docker network prune 清掉失联网络（见 .gitlab-ci.yml）。
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.213.7.0/24

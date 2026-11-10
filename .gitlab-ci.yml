@@ -83,8 +83,18 @@ verify_backend:
       & "$env:JAVA_HOME\bin\java.exe" -version
     - |
       # 先把测试库拉起来，再跑测试。失败要立刻停，不要带着没有数据库的状态往下跑。
+      #
+      # 先清掉悬空网络：runner 的 daemon 上默认地址池曾被历史网络切光，
+      # 报 "all predefined address pools have been fully subnetted"，连网络都建不出来。
+      # 清掉已失联的（非 running 容器在用的）网络，再由 compose 用固定子网重建。
+      docker network prune --force | Out-Host
       docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml up -d --wait
-      if ($LASTEXITCODE -ne 0) { throw "测试用 PostgreSQL 启动失败。" }
+      if ($LASTEXITCODE -ne 0) {
+        # 起不来时把现场打出来：网络列表能直接看出地址池还剩多少，日志里也能看到容器状态。
+        docker network ls | Out-Host
+        docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml ps | Out-Host
+        throw "测试用 PostgreSQL 启动失败。"
+      }
     - |
       # mvnw.cmd 会从当前目录往上找 .mvn 目录，所以在仓库根目录直接调用
       # backend\mvnw.cmd 是找不到 backend/.mvn/wrapper/maven-wrapper.properties 的
