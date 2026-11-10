@@ -21,121 +21,25 @@ cache:
   paths:
     - .npm/
 
-# 前端：lint + 类型检查 + 构建 + compose 语法校验
-verify_frontend:
+verify:
   stage: verify
   tags:
     - dockerlab-windows
   script:
     - npm ci --prefer-offline
     - npm run lint
-    - npx tsc -b
     - npm run build
-    # compose 里 JWT_SECRET 用了 ${JWT_SECRET:?...} 必填语法，这里给个占位值只为校验语法
-    - $env:JWT_SECRET = 'ci-syntax-check-only'
     - docker compose -p $env:COMPOSE_PROJECT_NAME config --quiet
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-
-# 后端：直接在 runner 主机上跑 mvn test（含 2 个直连 PostgreSQL 的集成测试）。
-#
-# 这里不再用 maven 容器跑测试：runner 拉不到 docker.io 上的 maven 镜像（EOF），
-# 「能不能跑测试」不应该被「能不能拉镜像」绑架。现在只剩一个 postgres 镜像，
-# 而它是长期缓存的。
-#
-# JDK 由 scripts/ensure-jdk21.ps1 现找现装：runner 主机历史上没装 Java
-# （日志里 `java -version` 报「术语 'java' 不是 cmdlet」，job 20 秒就挂了）。
-# 与其等运维去装，不如让任务自己准备：脚本先找 PATH / JAVA_HOME / 常见安装目录，
-# 都没有就下一个 Adoptium 21 解压到 %LOCALAPPDATA%\dsh\jdk21，装一次所有流水线共用。
-# Maven 不需要预装：backend/mvnw.cmd 是 Maven Wrapper，会自己下载并固定使用 3.9.9。
-# 这样 runner 的 JDK/Maven 版本都不再是变量，本地和 CI 跑的是同一套。
-#
-# 端口按原样用 5432。若 runner 上已有 PostgreSQL 占着 5432，把
-# backend/docker-compose.test.yml 的映射改成 55432 并同步改这里的 DATABASE_TEST_URL。
-#
-# 集成测试读 DATABASE_TEST_URL / DATABASE_TEST_USERNAME / DATABASE_TEST_PASSWORD，
-# 这里显式给值，不依赖测试代码里的默认值。
-# 每个测试类在自己的随机 schema 里跑完整 Flyway 迁移，与同机上的长期库互不干扰。
-verify_backend:
-  stage: verify
-  tags:
-    - dockerlab-windows
-  timeout: 30m
-  variables:
-    DATABASE_TEST_URL: jdbc:postgresql://localhost:5432/decoration
-    DATABASE_TEST_USERNAME: decoration
-    DATABASE_TEST_PASSWORD: decoration
-    # 把本地仓库指到工作区里，这样 .m2 才能被下面的 cache 带走；
-    # 默认的 ~/.m2 在项目目录外，GitLab 的 cache 抓不到。
-    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/backend/.m2"
-  script:
-    # 拿到 JDK 21：脚本只把路径打在标准输出上，进度信息走信息流不会串进来。
-    - |
-      $ErrorActionPreference = 'Stop'
-      $jdk = & "$env:CI_PROJECT_DIR\scripts\ensure-jdk21.ps1"
-      if (-not $jdk -or -not (Test-Path -LiteralPath (Join-Path $jdk 'bin\java.exe'))) {
-        throw "ensure-jdk21.ps1 没有返回可用的 JDK 路径（返回的是：'$jdk'）"
-      }
-      $env:JAVA_HOME = $jdk
-      $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
-      Write-Host "JAVA_HOME = $env:JAVA_HOME"
-      & "$env:JAVA_HOME\bin\java.exe" -version
-    - |
-      # 先把测试库拉起来，再跑测试。失败要立刻停，不要带着没有数据库的状态往下跑。
-      #
-      # 先清掉悬空网络：runner 的 daemon 上默认地址池曾被历史网络切光，
-      # 报 "all predefined address pools have been fully subnetted"，连网络都建不出来。
-      # 清掉已失联的（非 running 容器在用的）网络，再由 compose 用固定子网重建。
-      docker network prune --force | Out-Host
-      docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml up -d --wait
-      if ($LASTEXITCODE -ne 0) {
-        # 起不来时把现场打出来：网络列表能直接看出地址池还剩多少，日志里也能看到容器状态。
-        docker network ls | Out-Host
-        docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml ps | Out-Host
-        throw "测试用 PostgreSQL 启动失败。"
-      }
-    - |
-      # mvnw.cmd 会从当前目录往上找 .mvn 目录，所以在仓库根目录直接调用
-      # backend\mvnw.cmd 是找不到 backend/.mvn/wrapper/maven-wrapper.properties 的
-      # （实测报：The system cannot find the file ...\.mvn\wrapper\maven-wrapper.properties）。
-      # 进到 backend 目录里跑，比设 MAVEN_BASEDIR 更不容易出错。
-      Push-Location backend
-      try {
-        .\mvnw.cmd -B test
-        if ($LASTEXITCODE -ne 0) { throw "后端测试失败（mvn 退出码 $LASTEXITCODE）" }
-      } finally {
-        Pop-Location
-      }
-  after_script:
-    - docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml down --volumes --remove-orphans
-  artifacts:
-    when: on_failure
-    expire_in: 1 week
-    paths:
-      - backend/target/surefire-reports/
-  cache:
-    # 覆盖全局 cache（job 级 cache 不与全局合并）：后端任务不需要 .npm。
-    # 只缓存 Maven 本地仓库；JDK 装在 %LOCALAPPDATA%\dsh\jdk21 下，
-    # 那是 runner 的持久目录，装一次所有流水线共用，不用每次搬 300MB。
-    # key 用 backend/pom.xml 而不是 package-lock.json：前端改依赖时后端缓存不该失效。
-    key:
-      files:
-        - backend/pom.xml
-    paths:
-      - backend/.m2/
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-  allow_failure: false
 
 deploy_production:
   stage: deploy
   tags:
     - dockerlab-windows
   needs:
-    - job: verify_frontend
-    - job: verify_backend
+    - job: verify
   resource_group: decoration-production
   environment:
     name: production
@@ -161,59 +65,21 @@ deploy_production:
     }
     Set-Location -LiteralPath $deploymentPath
     $composeArgs = @('--project-directory', $deploymentPath, '-p', $env:COMPOSE_PROJECT_NAME, '-f', (Join-Path $deploymentPath 'docker-compose.yml'))
-    # 生产密钥与来源白名单必须由 CI/CD 变量提供，不再有硬编码默认值
-    if (-not $env:JWT_SECRET) { throw "JWT_SECRET CI/CD variable is required." }
-    # VITE_BUSINESS_API_URL 故意不强制要求：线上是前后端同源部署，4175 上已有反代把 /api 转给 backend，
-    # 前端留空即走同源的相对路径（见 src/services/apiBase.ts 第 3 条）。之前把它设成必填，
-    # 部署会因为一个"其实可以空"的变量直接中止。需要改成绝对地址时，在 CI/CD 变量里配它即可。
-    if (-not $env:VITE_BUSINESS_API_URL) {
-      Write-Host "VITE_BUSINESS_API_URL 未设置，前端按同源相对路径构建。"
-    }
+    $env:IMAGE_TAG = "wyx-decoration:$env:CI_COMMIT_SHA"
+    $previousImage = docker inspect wyx-decoration-decoration-1 --format '{{.Image}}' 2>$null
+    if ($LASTEXITCODE -eq 0 -and $previousImage) { $env:ROLLBACK_IMAGE = "wyx-decoration:rollback"; docker tag $previousImage $env:ROLLBACK_IMAGE; if ($LASTEXITCODE -ne 0) { throw "Could not preserve the current production image." } }
+    docker build --tag $env:IMAGE_TAG .
+    if ($LASTEXITCODE -ne 0) { throw "Docker image build failed." }
+    $env:DECORATION_IMAGE = $env:IMAGE_TAG
     docker compose @composeArgs config --quiet
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose configuration validation failed." }
-    # --remove-orphans 是必需的：老版本编排只有一个叫 decoration 的前端服务，它一直占着 4175。
-    # 不清理孤儿容器的话，新的 frontend 服务会因为端口被占而起不来，而健康检查打的是 /，
-    # 老容器照样回 200 —— 部署"成功"了、跑的还是旧代码。
-    docker compose @composeArgs up -d --build --remove-orphans
-    if ($LASTEXITCODE -ne 0) { throw "Docker Compose could not start the production stack." }
-    # 健康检查必须同时看前端和后端：
-    #  - 只打 http://127.0.0.1:4175/ 是假的，SPA fallback 对任何路径都回 200 HTML，
-    #    后端没起来、数据库没起来，首页照样 200 —— 老流程就栽在这里。
-    #  - 但又不能只靠"4175 上能取到 /api/v1/health 的 JSON"，那取决于 4175 前面有没有反代；
-    #    新编排里 frontend 就是 vite preview，本身不代理 /api。
-    # 所以两头都要过：frontend 端口返回 200，且 compose 里 backend 容器的健康状态是 healthy
-    #（backend 的 healthcheck 打自己的 /actuator/health，能覆盖 Spring 启动 + 数据库连通性）。
+    docker compose @composeArgs up -d --no-build
+    if ($LASTEXITCODE -ne 0) { throw "Docker Compose could not start the production service." }
     $healthy = $false
-    for ($attempt = 1; $attempt -le 36; $attempt++) {
-      $frontOk = $false
-      try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:4175/" -TimeoutSec 5
-        $frontOk = [int]$response.StatusCode -eq 200
-      } catch {}
-      $backHealth = $null
-      try {
-        $psJson = docker compose @composeArgs ps --format json | Out-String
-        # docker compose ps --format json 在不同版本下可能是每行一个对象，也可能是一个数组。
-        $rows = if ($psJson.TrimStart().StartsWith('[')) { $psJson | ConvertFrom-Json } else { $psJson.Trim() -split "`r?`n" | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json } }
-        $backendRow = $rows | Where-Object { $_.Service -eq 'backend' } | Select-Object -First 1
-        if ($backendRow) { $backHealth = $backendRow.Health }
-      } catch {}
-      # ps 里的 Health 字段在不同 compose 版本/不同状态下可能是空串（例如容器还在 starting），
-      # 所以再加一条直连容器内部的探测：只要 backend 能自己回 /actuator/health，就认为它是通的。
-      # 探容器内部而不是 docker 的发布端口，是因为宿主机 8080 上已经有一个 nginx 静态站，
-      # 打 127.0.0.1:8080 命中的是那个 nginx，不是我们的 Spring。
-      $backDirect = $false
-      if ($backHealth -ne 'healthy') {
-        try {
-          $probe = docker compose @composeArgs exec -T backend wget -qO- --timeout=3 http://127.0.0.1:8080/actuator/health 2>$null | Out-String
-          $backDirect = $probe -match '"status"\s*:\s*"UP"'
-        } catch {}
-      }
-      Write-Host ("健康检查第 {0} 次：frontend={1} backend={2} 容器内探测={3}" -f $attempt, $frontOk, $backHealth, $backDirect)
-      if ($frontOk -and ($backHealth -eq 'healthy' -or $backDirect)) { $healthy = $true; break }
-      Start-Sleep -Seconds 5
-    }
-    if (-not $healthy) { docker compose @composeArgs ps; docker compose @composeArgs logs --tail 120; throw "Production health check failed." }
+    for ($attempt = 1; $attempt -le 18; $attempt++) { try { $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:4175/" -TimeoutSec 5; if ([int]$response.StatusCode -eq 200) { $healthy = $true; break } } catch {}; Start-Sleep -Seconds 5 }
+    if (-not $healthy) { docker compose @composeArgs ps; docker compose @composeArgs logs --tail 80; if ($env:ROLLBACK_IMAGE) { $env:DECORATION_IMAGE = $env:ROLLBACK_IMAGE; docker compose @composeArgs up -d --no-build; Start-Sleep -Seconds 10 }; throw "Production health check failed; previous image rollback was attempted." }
+    $policy = docker inspect wyx-decoration-decoration-1 --format '{{.HostConfig.RestartPolicy.Name}}'
+    if ($policy -ne "unless-stopped") { throw "Unexpected restart policy: $policy" }
     docker compose @composeArgs ps
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

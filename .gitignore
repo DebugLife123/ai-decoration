@@ -29,11 +29,6 @@ test-output/
 # Java / Spring Boot build output
 backend/target/
 
-# scripts/ensure-jdk21.ps1 默认把 JDK 装到 %LOCALAPPDATA%\dsh\jdk21（不在仓库里），
-# 但保留这两条：有人可能用 -TargetDirectory .jdk 手动装，几百 MB 绝不能进版本库。
-.jdk/
-backend/.m2/
-
 # Spring Boot runtime file uploads (local dev default ./var/uploads)
 backend/var/uploads/
 

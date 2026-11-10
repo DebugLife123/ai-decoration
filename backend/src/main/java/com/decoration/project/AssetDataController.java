@@ -6,6 +6,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -15,10 +19,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}/assets")
@@ -36,6 +43,27 @@ public class AssetDataController {
                                                        @Valid @RequestBody AssetRequest request) {
         var asset = service.create(ownerId(jwt), projectId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(asset));
+    }
+
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR', 'PERSONAL_USER')")
+    public ResponseEntity<ApiResponse<Asset>> upload(@AuthenticationPrincipal Jwt jwt,
+                                                       @PathVariable UUID projectId,
+                                                       @RequestPart("file") MultipartFile file) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.success(service.upload(ownerId(jwt), projectId, file)));
+    }
+
+    @GetMapping("/{assetId}/content")
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR', 'COMPANY_VIEWER', 'PERSONAL_USER')")
+    public ResponseEntity<Resource> content(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID projectId,
+                                             @PathVariable UUID assetId) {
+        var asset = service.content(ownerId(jwt), projectId, assetId);
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(asset.mediaType()))
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=3600")
+                .header("X-Content-Type-Options", "nosniff")
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
+                        .filename(asset.originalName(), StandardCharsets.UTF_8).build().toString())
+                .body(new org.springframework.core.io.PathResource(asset.path()));
     }
 
     @GetMapping
@@ -59,4 +87,5 @@ public class AssetDataController {
 
     public record Asset(UUID id, UUID projectId, String originalName, String mediaType, long byteSize,
                         String objectKey, String checksumSha256, java.time.Instant createdAt) { }
+    public record StoredAsset(String originalName, String mediaType, Resource resource) { }
 }

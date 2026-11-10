@@ -1,101 +1,70 @@
-# 基础镜像的仓库前缀。
-#
-# 这套环境访问不了 docker.io（registry-1.docker.io 直接超时），所以凡是需要
-# 从网络拉取的镜像都走 DaoCloud 代理。若哪天 runner 配了 registry-mirrors
-# 或能直连 Docker Hub，在 .env 里写 REGISTRY= 留空即可回到默认仓库。
-# REGISTRY 的值必须带结尾斜杠（它是仓库前缀，不是主机名），所以这里写成
-# ${REGISTRY:-docker.m.daocloud.io/library/} 再接镜像名，而不是另起一段路径。
 services:
   postgres:
-    image: ${REGISTRY:-docker.m.daocloud.io/library/}postgres:16-alpine
-    restart: unless-stopped
+    image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${DATABASE_USERNAME:-decoration}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-decoration}
-      POSTGRES_DB: ${DATABASE_DB:-decoration}
-      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_DB: decoration
+      POSTGRES_USER: decoration
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - decoration-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-decoration} -d ${DATABASE_DB:-decoration}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U decoration -d decoration"]
+      interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 15s
+      retries: 12
+    restart: unless-stopped
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      args:
-        # 和 Dockerfile 里的 ARG 默认值保持一致；集中在这里是为了让 .env 一口气改全。
-        REGISTRY: ${REGISTRY:-docker.m.daocloud.io/library/}
+    build: ./backend
     image: ${BACKEND_IMAGE:-wyx-decoration-backend:local}
-    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8080
+      DATABASE_URL: jdbc:postgresql://postgres:5432/decoration
+      DATABASE_USERNAME: decoration
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      APP_UPLOAD_DIR: /data/uploads
+      ADMIN_BOOTSTRAP_ENABLED: ${ADMIN_BOOTSTRAP_ENABLED:-false}
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+    volumes:
+      - decoration-upload-data:/data/uploads
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      DATABASE_URL: jdbc:postgresql://postgres:5432/${DATABASE_DB:-decoration}
-      DATABASE_USERNAME: ${DATABASE_USERNAME:-decoration}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-decoration}
-      APP_UPLOAD_DIR: /data/uploads
-      # prod profile 里 jwt-secret 没有默认值，这里不注入就会启动失败。
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set it}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
-      ADMIN_BOOTSTRAP_ENABLED: "false"
-    volumes:
-      - uploads-data:/data/uploads
-    ports:
-      - "${BACKEND_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/actuator/health/readiness | grep -q UP"]
       interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 40s
-
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        VITE_BUSINESS_API_URL: ${VITE_BUSINESS_API_URL:-}
-        REGISTRY: ${REGISTRY:-docker.m.daocloud.io/library/}
-    image: ${FRONTEND_IMAGE:-wyx-decoration:local}
+      retries: 12
+      start_period: 45s
     restart: unless-stopped
+
+  decoration:
+    build: .
+    image: ${DECORATION_IMAGE:-wyx-decoration:local}
+    ports:
+      - "4175:4173"
+    environment:
+      BACKEND_URL: http://backend:8080
+      CODEX2API_API_KEY: ${CODEX2API_API_KEY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://codex2api.com}
+      AI_VISION_MODEL: ${AI_VISION_MODEL:-gpt-6.1-sol}
+      AI_IMAGE_MODEL: ${AI_IMAGE_MODEL:-grok-imagine-image-quality}
+      AI_ANALYSIS_TIMEOUT_MS: ${AI_ANALYSIS_TIMEOUT_MS:-90000}
+      AI_REVIEW_TIMEOUT_MS: ${AI_REVIEW_TIMEOUT_MS:-90000}
+      AI_IMAGE_TIMEOUT_MS: ${AI_IMAGE_TIMEOUT_MS:-180000}
     depends_on:
       backend:
         condition: service_healthy
-    ports:
-      - "${FRONTEND_PORT:-4175}:4173"
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/').then((r) => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
 
-  # 每日 pg_dump；卷 db-backups 需要在宿主机上另行同步走（见 README）。
-  db-backup:
-    image: ${REGISTRY:-docker.m.daocloud.io/library/}postgres:16-alpine
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DB_HOST: postgres
-      DB_NAME: ${DATABASE_DB:-decoration}
-      DB_USER: ${DATABASE_USERNAME:-decoration}
-      PGPASSWORD: ${DATABASE_PASSWORD:-decoration}
-      DB_BACKUP_DIR: /backups
-    volumes:
-      - ./scripts/backup-postgres.sh:/usr/local/bin/backup-postgres.sh:ro
-      - db-backups:/backups
-    entrypoint: ["/bin/sh", "/usr/local/bin/backup-postgres.sh"]
-
 volumes:
-  postgres-data:
-  uploads-data:
-  db-backups:
+  decoration-postgres-data:
+  decoration-upload-data:

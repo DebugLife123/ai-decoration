@@ -37,10 +37,7 @@ public class MaterialCatalogService {
             rs.getObject("valid_until", LocalDate.class),
             rs.getObject("image_id", java.util.UUID.class),
             List.of(),
-            instant(rs, "updated_at"),
-            rs.getString("unit_kind"),
-            rs.getBoolean("unit_unknown"),
-            rs.getString("item_nature"));
+            instant(rs, "updated_at"));
 
     /** 只取出已认证且在有效期内的报价，并带上企业展示名。 */
     private static final String BASE_FROM = """
@@ -99,8 +96,7 @@ public class MaterialCatalogService {
         return new CatalogMaterial(item.id(), item.companyId(), item.companyName(), item.companyContactName(),
                 item.companyContactInfo(), item.name(), item.spec(), item.unit(), item.price(), item.brand(),
                 item.category(), item.region(), item.validUntil(),
-                imageIds.isEmpty() ? item.imageId() : imageIds.getFirst(), imageIds, item.updatedAt(),
-                item.unitKind(), item.unitUnknown(), item.itemNature());
+                imageIds.isEmpty() ? item.imageId() : imageIds.getFirst(), imageIds, item.updatedAt());
     }
 
     private static String order(String sort) {

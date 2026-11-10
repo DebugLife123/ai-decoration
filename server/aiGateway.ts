@@ -6,7 +6,7 @@ type RoomBounds = { x: number; y: number; width: number; height: number };
 type RoomEvidence = { type: string; detail: string };
 type IdentifiedRoom = { id?: string; name: string; description: string; suggestedName?: string; confidence?: number | null; status?: 'confirmed' | 'identified' | 'unknown'; evidence?: RoomEvidence[]; adjacentTo?: string[]; bounds?: RoomBounds | null };
 type PlanImageMeta = { sourceWidth: number; sourceHeight: number; sentWidth: number; sentHeight: number; sourceBytes: number };
-type GenerateRequest = { mode: 'photo' | 'floorplan'; style: string; prompt?: string; photo?: string; floorPlan?: string; imageMeta?: PlanImageMeta; photos?: string[]; source?: 'cad' | 'floorplan'; analysis?: string; rooms?: IdentifiedRoom[]; selectedRooms?: string[]; roomReferenceImages?: { name: string; image: string }[] };
+type GenerateRequest = { mode: 'photo' | 'floorplan'; style: string; prompt?: string; photo?: string; floorPlan?: string; imageMeta?: PlanImageMeta; photos?: string[]; source?: 'cad' | 'floorplan'; analysis?: string; rooms?: IdentifiedRoom[]; selectedRooms?: string[]; roomReferenceImages?: { name: string; image: string }[]; taskId?: string };
 type AnalyzeRequest = { floorPlan?: string; imageMeta?: PlanImageMeta; source?: 'cad' | 'floorplan' };
 type RoomImageEditRequest = { image?: string; mask?: string; instruction?: string; roomName?: string; style?: string };
 type ImageResult = { imageUrl: string };
@@ -163,12 +163,32 @@ export async function analyze(config: GatewayConfig, image: string, mode: 'photo
   return textFrom(payload);
 }
 
-function roomsFrom(text: string): IdentifiedRoom[] {
+type RoomCategory = '卧室' | '卫生间' | '厨房' | '餐厅' | '客厅' | '阳台' | '玄关' | '过道' | '功能区';
+
+const ROOM_CATEGORY_RULES: Array<{ category: RoomCategory; pattern: RegExp }> = [
+  { category: '卫生间', pattern: /卫生间|洗手间|厕所|主卫|次卫|洁具|马桶|坐便|洗手盆|淋浴|地漏|排水/ },
+  { category: '厨房', pattern: /厨房|灶具|灶台|操作台|水槽|橱柜/ },
+  { category: '餐厅', pattern: /餐厅|餐桌|餐椅/ },
+  { category: '客厅', pattern: /客厅|起居|沙发|电视|茶几/ },
+  { category: '阳台', pattern: /阳台|露台|外接空间|临外墙/ },
+  { category: '玄关', pattern: /玄关|入户/ },
+  { category: '过道', pattern: /过道|走廊|通道/ },
+  { category: '卧室', pattern: /卧室|床具|床头|床|衣柜/ },
+];
+
+function inferRoomCategory(candidate: string, description: string, evidence: RoomEvidence[]): RoomCategory {
+  const source = [candidate, description, ...evidence.map((item) => item.detail)].join(' ');
+  return ROOM_CATEGORY_RULES.find((rule) => rule.pattern.test(source))?.category || '功能区';
+}
+
+export function roomsFrom(text: string): IdentifiedRoom[] {
   let parsed: any;
   try {
     parsed = JSON.parse(text.replace(/^```json\s*/i, '').replace(/```$/i, '').trim());
   } catch { /* Fall through to an explicit model-output error. */ }
   if (Array.isArray(parsed?.rooms) && parsed.rooms.length > 0) {
+    const categoryCounts = new Map<RoomCategory, number>();
+    const usedNames = new Set<string>();
     const rooms: IdentifiedRoom[] = parsed.rooms.slice(0, 20).map((room: any, index: number) => {
       const candidate = String(room?.name || '').trim();
       const evidence: RoomEvidence[] = Array.isArray(room?.evidence) ? room.evidence.slice(0, 12).map((item: any) => ({ type: String(item?.type || 'geometry'), detail: String(item?.detail || '').trim() })).filter((item: RoomEvidence) => item.detail) : [];
@@ -176,15 +196,26 @@ function roomsFrom(text: string): IdentifiedRoom[] {
       const suiteEvidence = evidence.some((item) => item.type === 'adjacency' && /(套卫|主卫|衣帽间|套间)/.test(item.detail));
       const unsupportedBedroomRank = /^(主卧|次卧|主人房|主卧室|次卧室)$/.test(candidate) && !labelEvidence && !suiteEvidence;
       const unsupportedBathroom = /^(卫生间|主卫|次卫|公卫)$/.test(candidate) && !labelEvidence && !evidence.some((item) => item.type === 'fixture' && /(洁具|马桶|坐便|洗手盆|淋浴|地漏|排水)/.test(item.detail));
-      const uncertain = unsupportedBedroomRank || unsupportedBathroom || !candidate || /^(空间|房间|区域)\s*\d+$/.test(candidate);
+      const genericModelName = !candidate || /^(空间|房间|区域)\s*\d+$/.test(candidate) || /^待确认/.test(candidate);
+      const uncertain = unsupportedBedroomRank || unsupportedBathroom || genericModelName;
       const rawBounds = room?.bounds;
       const bounds = rawBounds && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(rawBounds[key])) && rawBounds.x >= 0 && rawBounds.y >= 0 && rawBounds.width > 0 && rawBounds.height > 0 && rawBounds.x + rawBounds.width <= 1.001 && rawBounds.y + rawBounds.height <= 1.001
         ? { x: rawBounds.x, y: rawBounds.y, width: rawBounds.width, height: rawBounds.height }
         : null;
-      const location = evidence.find((item) => item.type === 'geometry')?.detail || '位置待核对';
+      const category = inferRoomCategory(candidate, String(room?.description || ''), evidence);
+      let categoryIndex = (categoryCounts.get(category) || 0) + 1;
+      categoryCounts.set(category, categoryIndex);
+      let normalizedName = uncertain ? `${category}${categoryIndex}` : candidate;
+      if (!uncertain && normalizedName === category && categoryIndex > 1) normalizedName = `${category}${categoryIndex}`;
+      while (usedNames.has(normalizedName)) {
+        categoryIndex += 1;
+        categoryCounts.set(category, categoryIndex);
+        normalizedName = `${category}${categoryIndex}`;
+      }
+      usedNames.add(normalizedName);
       return {
         id: String(room?.id || `room_${index + 1}`),
-        name: uncertain ? `待确认房间（${location}）` : candidate,
+        name: normalizedName,
         ...(uncertain && candidate ? { suggestedName: candidate } : {}),
         description: String(room?.description || '根据户型图识别的空间'),
         confidence: Number.isFinite(room?.confidence) ? Math.max(0, Math.min(1, room.confidence)) : null,
@@ -343,7 +374,7 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
   };
   const config: GatewayConfig = {
     baseUrl: env.AI_BASE_URL || 'https://codex2api.com', apiKey: env.CODEX2API_API_KEY || env.AI_API_KEY || '',
-    visionModel: env.AI_VISION_MODEL || env.AI_MODEL || 'gpt-4o-mini', imageModel: env.AI_IMAGE_MODEL || env.IMAGE_MODEL || 'gpt-image-1',
+    visionModel: env.AI_VISION_MODEL || env.AI_MODEL || 'gpt-6.1-sol', imageModel: env.AI_IMAGE_MODEL || env.IMAGE_MODEL || 'gpt-image-1',
     analysisTimeoutMs: timeoutValue('AI_ANALYSIS_TIMEOUT_MS', DEFAULT_ANALYSIS_TIMEOUT_MS),
     reviewTimeoutMs: timeoutValue('AI_REVIEW_TIMEOUT_MS', DEFAULT_REVIEW_TIMEOUT_MS),
     imageTimeoutMs: timeoutValue('AI_IMAGE_TIMEOUT_MS', DEFAULT_IMAGE_TIMEOUT_MS),
@@ -371,7 +402,7 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
         if (oldest) { jobs.delete(oldest.id); retryInputs.delete(oldest.id); }
       }
       const requestId = crypto.randomUUID();
-      const id = crypto.randomUUID();
+      const id = typeof request.taskId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(request.taskId) ? request.taskId : crypto.randomUUID();
       const job: GenerationJob = { id, requestId, status: 'queued', stage: 'queued', message: '请求已进入生成队列。', completedRooms: 0, totalRooms: request.selectedRooms?.length || request.rooms?.length || 0, rooms: [], updatedAt: new Date().toISOString() };
       jobs.set(id, job);
       logAiEvent({ event: 'workflow_started', requestId, jobId: id, operation: 'whole-home-generation', stage: 'queued', model: config.imageModel, inputImageBytes: request.floorPlan ? imageByteLength(request.floorPlan) : 0, imageMeta: safeImageMeta(request.imageMeta), roomCount: job.totalRooms });

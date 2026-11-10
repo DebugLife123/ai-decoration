@@ -4,7 +4,6 @@ import com.decoration.shared.api.ApiResponse;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -31,11 +30,9 @@ public class BusinessAssetController {
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR')")
-    public ResponseEntity<ApiResponse<BusinessAssetService.BusinessAsset>> upload(
-            @AuthenticationPrincipal Jwt jwt, @RequestPart("file") MultipartFile file) {
-        // 创建资源统一返回 201，与案例/报价等接口保持一致。
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(service.upload(companyId(jwt), file)));
+    public ApiResponse<BusinessAssetService.BusinessAsset> upload(@AuthenticationPrincipal Jwt jwt,
+                                                                  @RequestPart("file") MultipartFile file) {
+        return ApiResponse.success(service.upload(companyId(jwt), file));
     }
 
     @GetMapping("/{assetId}")

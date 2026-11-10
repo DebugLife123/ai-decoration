@@ -27,10 +27,7 @@ public final class MaterialCatalogDtos {
             LocalDate validUntil,
             UUID imageId,
             List<UUID> imageIds,
-            Instant updatedAt,
-            String unitKind,
-            boolean unitUnknown,
-            String itemNature) {
+            Instant updatedAt) {
     }
 
     public record PageMeta(int page, int size, long total, int totalPages) {

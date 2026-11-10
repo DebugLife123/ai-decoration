@@ -20,6 +20,12 @@ export interface DesignVersion {
   analysis: string;
   coverImageUrl: string;
   images: DesignImage[];
+  taskId?: string;
+  source?: PlanSource;
+  floorPlanAnalysis?: string;
+  identifiedRooms?: IdentifiedRoom[];
+  selectedRooms?: string[];
+  warning?: string;
 }
 
 export interface GenerationTask {
@@ -31,6 +37,7 @@ export interface GenerationTask {
   startedAt: string;
   completedAt?: string;
   error?: string;
+  result?: { versionId: string; roomCount: number; coverReady: boolean };
 }
 
 export interface Project {
@@ -73,11 +80,6 @@ export interface MaterialRecord {
   imageId?: string | null;
   imageIds?: string[];
   brand?: string;
-  /** 计量单位枚举（BudgetUnitKind）。UNKNOWN 表示单位无法识别，预算计算会跳过。 */
-  unitKind?: string;
-  unitUnknown?: boolean;
-  /** INCLUDED 计价项 / GIFT 赠送项 / OWNER_SUPPLIED 业主自购，后两者不计入合同造价。 */
-  itemNature?: 'INCLUDED' | 'GIFT' | 'OWNER_SUPPLIED';
 }
 
 export interface WorkspaceDataAdapter {
@@ -104,10 +106,6 @@ export interface GenerateDesignInput {
   rooms?: IdentifiedRoom[];
   /** 本次选择要生成的空间名称。 */
   selectedRooms?: string[];
-  /** 上传图纸的尺寸信息，供后端判断是否需要二次压缩。 */
-  imageMeta?: PlanImageMeta;
-  /** 按空间裁切的户型局部参考图，帮助模型对齐空间位置。 */
-  roomReferenceImages?: { name: string; image: string }[];
 }
 
 export interface DesignGenerationAdapter {
@@ -120,18 +118,10 @@ export interface PhotoGeneration {
   analysis: string;
 }
 
-/** 单张空间效果图的自动复核结论。 */
-export interface RoomReview {
-  status: 'pass' | 'check' | 'unverified';
-  note: string;
-}
-
 export interface RoomGeneration {
   name: string;
   description: string;
   imageUrl: string;
-  /** 生成后的自动复核结果；缺失时前端按 unverified 展示。 */
-  review?: RoomReview;
 }
 
 export interface FloorPlanGeneration {
@@ -141,28 +131,10 @@ export interface FloorPlanGeneration {
   rooms: RoomGeneration[];
 }
 
-/** 上传图纸在浏览器端的尺寸记录。 */
-export interface PlanImageMeta {
-  sourceWidth: number;
-  sourceHeight: number;
-  sentWidth: number;
-  sentHeight: number;
-  sourceBytes: number;
-}
-
 /** 户型/CAD 识别出的单个空间。 */
 export interface IdentifiedRoom {
   name: string;
   description: string;
-  /** 模型给出的候选名称，需人工确认后才可作为定名。 */
-  id?: string;
-  suggestedName?: string;
-  confidence?: number | null;
-  status?: 'confirmed' | 'identified' | 'unknown';
-  evidence?: { type: string; detail: string }[];
-  adjacentTo?: string[];
-  /** 在原图中的相对位置（0~1），用于裁切空间参考图。 */
-  bounds?: { x: number; y: number; width: number; height: number } | null;
 }
 
 /** 户型/CAD 识别结果。 */
@@ -172,21 +144,3 @@ export interface FloorPlanAnalysis {
 }
 
 export type GenerationResult = PhotoGeneration | FloorPlanGeneration;
-
-/** 全屋生成任务的后端快照，轮询进度时逐步合并。 */
-export interface GenerationJob {
-  id: string;
-  requestId: string;
-  status: 'queued' | 'running' | 'completed' | 'partial' | 'failed';
-  stage: string;
-  message: string;
-  completedRooms: number;
-  totalRooms: number;
-  coverReady?: boolean;
-  completedRoomNames?: string[];
-  cover?: string;
-  analysis?: string;
-  rooms?: RoomGeneration[];
-  failedRooms?: string[];
-  error?: string;
-}

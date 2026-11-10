@@ -39,7 +39,7 @@ public class SecurityConfiguration {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/api/v1/health", "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/admin/login", "/api/v1/styles/recommendations", "/api/v1/budgets/estimate", "/actuator/health/**", "/actuator/info").permitAll()
+                        .requestMatchers("/api/v1/health", "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/admin/login", "/api/v1/styles/recommendations", "/actuator/health/**", "/actuator/info").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
@@ -51,20 +51,12 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    CorsConfigurationSource corsConfigurationSource(
-            @Value("${app.security.cors-allowed-origins:}") String configuredOrigins) {
+    CorsConfigurationSource corsConfigurationSource(@Value("${app.security.cors-allowed-origins}") String allowedOrigins) {
         var configuration = new CorsConfiguration();
-        var extraOrigins = Arrays.stream(configuredOrigins.split(","))
+        configuration.setAllowedOrigins(Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
-                .filter(origin -> !origin.isEmpty())
-                .toList();
-        var origins = new java.util.ArrayList<>(List.of(
-                "http://localhost:5173", "http://127.0.0.1:5173",
-                "http://localhost:5174", "http://127.0.0.1:5174",
-                "http://localhost:4173", "http://127.0.0.1:4173",
-                "http://localhost:4175", "http://127.0.0.1:4175"));
-        origins.addAll(extraOrigins);
-        configuration.setAllowedOrigins(origins);
+                .filter(origin -> !origin.isBlank())
+                .toList());
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "Idempotency-Key"));
         configuration.setExposedHeaders(List.of("Location"));

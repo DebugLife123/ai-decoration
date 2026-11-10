@@ -4,7 +4,6 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Null;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -46,11 +45,6 @@ public final class BusinessDtos {
             @Digits(integer = 8, fraction = 2) @DecimalMin("0.00") BigDecimal area,
             @Size(max = 80) String style,
             @Digits(integer = 12, fraction = 2) @DecimalMin("0.00") BigDecimal budget,
-            /**
-             * 创建只允许草稿。发布必须走 POST /api/v1/business/cases/{caseId}/publish，
-             * 这样「创建」与「发布」在审计日志里是两个可区分的事件。
-             */
-            @Null(message = "案例创建只支持草稿，发布请使用 POST /cases/{caseId}/publish")
             CaseStatus status,
             @Size(max = 30) List<@NotNull UUID> fileIds) {
     }
@@ -83,13 +77,7 @@ public final class BusinessDtos {
             @NotNull LocalDate validUntil,
             UUID imageId,
             @Size(max = 120) String brand,
-            @Size(max = 8) List<@NotNull UUID> imageIds,
-            @Size(max = 20) String itemNature) {
-
-        /** 未指定时按计价项处理；非法值由服务层拒绝。 */
-        public String itemNatureOrDefault() {
-            return itemNature == null || itemNature.isBlank() ? "INCLUDED" : itemNature.trim();
-        }
+            @Size(max = 8) List<@NotNull UUID> imageIds) {
     }
 
     public record MaterialQuotePatch(
@@ -104,17 +92,15 @@ public final class BusinessDtos {
             boolean clearImage,
             @Size(max = 120) String brand,
             @Size(max = 8) List<@NotNull UUID> imageIds,
-            @Size(max = 20) String itemNature,
             @NotNull Integer version) {
         public boolean hasChanges() {
-            return name != null || spec != null || unit != null || price != null || category != null || region != null || validUntil != null || imageId != null || clearImage || brand != null || imageIds != null || itemNature != null;
+            return name != null || spec != null || unit != null || price != null || category != null || region != null || validUntil != null || imageId != null || clearImage || brand != null || imageIds != null;
         }
     }
 
     public record MaterialQuote(UUID id, String name, String spec, String unit, BigDecimal price, String brand,
                                 String category, String region, LocalDate validUntil, UUID imageId, List<UUID> imageIds, int version,
-                                Instant createdAt, Instant updatedAt,
-                                String unitKind, boolean unitUnknown, String itemNature) {
+                                Instant createdAt, Instant updatedAt) {
     }
 
     public record LaborQuoteRequest(
@@ -122,12 +108,7 @@ public final class BusinessDtos {
             @NotBlank @Size(max = 40) String unit,
             @NotNull @Digits(integer = 12, fraction = 2) @DecimalMin(value = "0.01") BigDecimal price,
             @NotBlank @Size(max = 80) String region,
-            @NotNull LocalDate validUntil,
-            @Size(max = 20) String itemNature) {
-
-        public String itemNatureOrDefault() {
-            return itemNature == null || itemNature.isBlank() ? "INCLUDED" : itemNature.trim();
-        }
+            @NotNull LocalDate validUntil) {
     }
 
     public record LaborQuotePatch(
@@ -136,16 +117,14 @@ public final class BusinessDtos {
             @Digits(integer = 12, fraction = 2) @DecimalMin(value = "0.01") BigDecimal price,
             @Size(max = 80) String region,
             LocalDate validUntil,
-            @Size(max = 20) String itemNature,
             @NotNull Integer version) {
         public boolean hasChanges() {
-            return type != null || unit != null || price != null || region != null || validUntil != null || itemNature != null;
+            return type != null || unit != null || price != null || region != null || validUntil != null;
         }
     }
 
     public record LaborQuote(UUID id, String type, String unit, BigDecimal price, String region,
-                             LocalDate validUntil, int version, Instant createdAt, Instant updatedAt,
-                             String unitKind, boolean unitUnknown, String itemNature, boolean adminHidden) {
+                             LocalDate validUntil, int version, Instant createdAt, Instant updatedAt) {
     }
 
     public record PageMeta(int page, int size, long total, int totalPages) {

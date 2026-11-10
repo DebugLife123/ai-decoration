@@ -1,17 +1,7 @@
-.git
-.DS_Store
-Thumbs.db
-*.pyc
-
-# 前端镜像不需要后端源码与构建产物，排除以缩小上下文
-backend/
-var/
-scripts/
-
 node_modules
 dist
-dist-ssr
+.git
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 npm-debug.log*

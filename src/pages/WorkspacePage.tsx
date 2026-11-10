@@ -5,28 +5,30 @@ import { analyzeFloorPlan, editRoomImage, generateDesign, retryGenerationRooms, 
 import { deleteDesignHistory, listDesignHistory, saveDesignHistory, type DesignHistoryRecord } from '../services/designHistory';
 import RoomImageEditor, { type RoomImageVersion } from '../components/RoomImageEditor';
 import { templates } from './HomePage';
-import { recommendStyles, type StyleRecommendationProfile } from '../services/styleRecommendation';
-import { loadPlatformStyleProfiles } from '../services/styleProfileSource';
-import { styleCatalog } from '../services/styleCatalog';
-import type { Project } from '../services/dataContracts';
+import { persistWorkspaceProject } from '../services/workspaceData';
+import type { Project, DesignVersion, GenerationTask } from '../services/dataContracts';
+import { createId } from '../utils/id';
 import './WorkspacePage.css';
 
 type Stage = 1 | 2 | 3 | 4;
 type UploadedFile = { name: string; size: string; preview: string };
 type PlanImageMeta = { sourceWidth: number; sourceHeight: number; sentWidth: number; sentHeight: number; sourceBytes: number };
 type WorkKind = 'recognizing' | 'generating' | null;
-// 风格清单以 styleCatalog 为唯一来源（8 种，和 recommendStyles 一一对应）；
-// templates 只补充灵感页已有的配图与生成提示词，缺失时降级为纯文字。
-const templateByStyle = new Map(templates.map((template) => [template.styleKey, template]));
-const styleOptions = styleCatalog.map((entry) => ({
-  ...entry,
-  image: templateByStyle.get(entry.key)?.image,
-  prompt: templateByStyle.get(entry.key)?.prompt,
-}));
 type GenerationInput = { analysis: string; rooms: IdentifiedRoom[]; selectedRooms: string[] };
-type RoomReview = { status: 'pass' | 'check' | 'unverified'; note: string };
-type ReportResult = { name: string; imageUrl: string; review?: RoomReview; versions?: RoomImageVersion[]; currentVersionId?: string };
+type ReportResult = { name: string; imageUrl: string; review?: { status: 'pass' | 'check' | 'unverified'; note: string }; versions?: RoomImageVersion[]; currentVersionId?: string };
+const styleNotes: Partial<Record<DesignStyle, string>> = {
+  modern: '暖白 · 浅木 · 隐藏收纳',
+  song: '深木 · 陶器 · 东方留白',
+  smallAmerican: '奶油线框 · 橄榄绿 · 复古细节',
+};
+const reportDetails: Record<string, { subtitle: string; principles: { title: string; body: string }[]; notes: string[] }> = {
+  modern: { subtitle: '明亮、克制且适合日常居住的现代空间', principles: [{ title: '统一基底', body: '以暖白墙面与浅木色建立连续、明亮的空间感。' }, { title: '收纳隐形', body: '整合柜体与简洁线条，减少视觉干扰并保持动线通畅。' }, { title: '自然采光', body: '优先保留窗边采光，让灯光作为柔和补充。' }], notes: ['效果图用于方案沟通，实际尺寸以现场测量为准。', '柜体、门窗及固定设施位置请在施工前复核。'] },
+  song: { subtitle: '以木、陶与留白表达安静含蓄的东方居住气质', principles: [{ title: '疏朗留白', body: '控制装饰密度，以非对称陈设保留空间呼吸感。' }, { title: '自然材质', body: '结合深木、肌理墙面、石材与手作陶器，呈现温润层次。' }, { title: '当代宋韵', body: '提取宋式审美的克制气质，保持现代住宅的实用尺度。' }], notes: ['木作颜色与墙面肌理会受现场光线和材料批次影响。', '效果图不替代施工图，尺寸与结构需由专业人员复核。'] },
+  smallAmerican: { subtitle: '温柔奶油色与复古线条结合的轻松居家方案', principles: [{ title: '经典线条', body: '以简洁线框门板和适度装饰线条建立复古基调。' }, { title: '温暖配色', body: '奶油白搭配橄榄绿、深木色与少量黄铜细节。' }, { title: '小户型友好', body: '优先考虑轻巧家具、整合收纳与清晰活动空间。' }], notes: ['复古线条与五金细节可按预算和现货情况调整。', '家具尺度、收纳容量与过道宽度请结合现场尺寸确认。'] },
+};
+const styleOptions = templates.map((template) => ({ ...template, key: template.styleKey, name: template.style, note: styleNotes[template.styleKey] ?? template.style, details: reportDetails[template.styleKey] ?? reportDetails.modern }));
 function formatSize(bytes: number) { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`; }
+function newId() { return createId(); }
 function readImage(file: File) { return new Promise<{ data: string; meta: PlanImageMeta }>((resolve, reject) => {
   if (!file.type.startsWith('image/')) return reject(new Error('请上传 PNG、JPG 或 WEBP 户型图片；CAD/PDF 需先导出为图片。'));
   const reader = new FileReader();
@@ -109,13 +111,13 @@ function PlanComparison({ original, render, title }: { original: string; render:
           if (board) updatePosition(event.clientX, board);
         }}
         onKeyDown={(event) => {
-          const step = event.shiftKey ? 10 : 2;
-          if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') setPosition((current) => Math.max(0, current - step));
-          else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') setPosition((current) => Math.min(100, current + step));
-          else if (event.key === 'Home') setPosition(0);
-          else if (event.key === 'End') setPosition(100);
-          else return;
-          event.preventDefault();
+      const step = event.shiftKey ? 10 : 2;
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') setPosition((current) => Math.max(0, current - step));
+      else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') setPosition((current) => Math.min(100, current + step));
+      else if (event.key === 'Home') setPosition(0);
+      else if (event.key === 'End') setPosition(100);
+      else return;
+      event.preventDefault();
         }}
       />
     </span>
@@ -124,7 +126,7 @@ function PlanComparison({ original, render, title }: { original: string; render:
 
 export default function WorkspacePage() {
   const [searchParams] = useSearchParams();
-  const { selectedStyle, setSelectedStyle, saveProject } = useAppStore();
+  const { selectedStyle, setSelectedStyle, loadProjects } = useAppStore();
   const routeSourceType: PlanSource = searchParams.get('source') === 'floorplan' ? 'floorplan' : 'cad';
   const [sourceOverride, setSourceOverride] = useState<{ route: PlanSource; value: PlanSource } | null>(null);
   const sourceType = sourceOverride?.route === routeSourceType ? sourceOverride.value : routeSourceType;
@@ -143,48 +145,51 @@ export default function WorkspacePage() {
   const [workElapsed, setWorkElapsed] = useState(0);
   const [generationProgress, setGenerationProgress] = useState<GenerationJob | null>(null);
   const [generationJobId, setGenerationJobId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const savedProjects = useAppStore((state) => state.projects);
   const isWorking = workKind !== null;
   const [message, setMessage] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  // 预算资料（BUS-02）：面积、预算、地区，参与推荐与方案保存。
-  // 预算页「采用此风格」和项目页「继续编辑」都会带 query 参数进来，这里作为初始值。
-  const [projectName, setProjectName] = useState(searchParams.get('projectName')?.trim() || '我的全屋方案');
-  const [budgetInput, setBudgetInput] = useState(searchParams.get('budget')?.trim() ?? '');
-  const [areaInput, setAreaInput] = useState(searchParams.get('area')?.trim() ?? '');
-  const [regionInput, setRegionInput] = useState(searchParams.get('region')?.trim() ?? '');
   const requestedStyle = searchParams.get('style');
   const routeStyle = styleOptions.some((style) => style.key === requestedStyle) ? requestedStyle as DesignStyle : null;
   const [styleOverride, setStyleOverride] = useState<{ route: string | null; value: DesignStyle } | null>(null);
   const workflowStyle = styleOverride?.route === requestedStyle ? styleOverride.value : routeStyle ?? selectedStyle;
   const activeStyle = useMemo(() => styleOptions.find((style) => style.key === workflowStyle) ?? styleOptions[0], [workflowStyle]);
   const preferences = [['色调', searchParams.get('tone')], ['光线', searchParams.get('light')], ['材质', searchParams.get('material')]].filter((entry): entry is [string, string] => Boolean(entry[1]));
-  // 平台已有的企业风格资料优先；读不到（未接入平台或暂无企业配置）时回退内置资料。
-  const [platformStyleProfiles, setPlatformStyleProfiles] = useState<StyleRecommendationProfile[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    loadPlatformStyleProfiles()
-      .then((profiles) => { if (!cancelled) setPlatformStyleProfiles(profiles); })
-      .catch(() => { /* 回退到内置风格资料 */ });
-    return () => { cancelled = true; };
-  }, []);
-  const recommendedStyleKeys = useMemo(() => {
-    const budgetWan = Number(budgetInput);
-    const area = Number(areaInput);
-    return recommendStyles({
-      budgetWan: Number.isFinite(budgetWan) ? budgetWan : 0,
-      area: Number.isFinite(area) && area > 0 ? area : undefined,
-      region: regionInput.trim() || undefined,
-    }, platformStyleProfiles ?? undefined).map((profile) => profile.style);
-  }, [areaInput, budgetInput, platformStyleProfiles, regionInput]);
-  const orderedStyleOptions = recommendedStyleKeys.length
-    ? [...styleOptions.filter((style) => recommendedStyleKeys.includes(style.key)), ...styleOptions.filter((style) => !recommendedStyleKeys.includes(style.key))]
-    : styleOptions;
 
   useEffect(() => {
     void listDesignHistory().then(setHistory).catch((error: unknown) => {
       setHistoryMessage(error instanceof Error ? error.message : '读取本地方案记录失败。');
     });
   }, []);
+
+  useEffect(() => {
+    const requestedProject = searchParams.get('projectId');
+    const requestedVersion = searchParams.get('versionId');
+    if (!requestedProject || !savedProjects.length) return;
+    const project = savedProjects.find((item) => item.id === requestedProject);
+    const version = project?.versions.find((item) => item.id === requestedVersion) || project?.versions.at(-1);
+    if (!project || !version) return;
+    const record: DesignHistoryRecord = {
+      id: version.id, name: `${project.name} · ${new Date(version.createdAt).toLocaleDateString('zh-CN')}`, createdAt: version.createdAt,
+      style: version.style, source: version.source || 'floorplan', floorPlan: project.floorPlanUrl || '', analysis: version.floorPlanAnalysis || version.analysis,
+      rooms: version.identifiedRooms || [], selectedRooms: version.selectedRooms || [], warning: version.warning,
+      generationJobId: version.taskId,
+      results: [{ name: '全屋总览', imageUrl: version.coverImageUrl }, ...version.images.map((image) => ({ name: image.title, imageUrl: image.imageUrl, review: undefined }))],
+    };
+    setProjectId(project.id);
+    setFile(null);
+    setImageData(record.floorPlan);
+    setRooms(record.rooms);
+    setSelectedRooms(record.selectedRooms);
+    setResults(record.results);
+    setGenerationJobId(version.taskId || null);
+    setStyleOverride({ route: requestedStyle, value: version.style });
+    setSelectedStyle(version.style);
+    setActiveHistoryId(record.id);
+    setHistory((current) => [record, ...current.filter((item) => item.id !== record.id)]);
+    setStage(4);
+  }, [searchParams, savedProjects, requestedStyle, setSelectedStyle]);
 
   useEffect(() => {
     if (!workKind) return;
@@ -200,96 +205,66 @@ export default function WorkspacePage() {
   };
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => { void selectFile(event.target.files?.[0]); event.target.value = ''; };
   const handleDrop = (event: DragEvent<HTMLDivElement>) => { event.preventDefault(); void selectFile(event.dataTransfer.files[0]); };
-  const parseNumber = (input: string) => {
-    const parsed = Number(input);
-    return input.trim() && Number.isFinite(parsed) ? parsed : undefined;
-  };
-  const saveWorkspaceProject = (payload: { prompt: string; cover: string; analysis: string; roomImages: { name: string; imageUrl: string; description?: string }[] }) => {
-    const now = new Date().toISOString();
-    const budget = parseNumber(budgetInput);
-    const area = parseNumber(areaInput);
-    const project: Project = {
-      id: crypto.randomUUID(),
-      name: projectName.trim() || '我的全屋方案',
-      spaceType: sourceType === 'cad' ? 'CAD 图纸' : '全屋',
-      style: workflowStyle,
-      budget,
-      area,
-      city: regionInput.trim() || undefined,
-      region: regionInput.trim() || undefined,
-      preferences: `面积 ${area ?? '未填'}㎡；预算 ${budget ?? '未填'} 万元；地区 ${regionInput.trim() || '未填'}`,
-      createdAt: now,
-      updatedAt: now,
-      status: 'completed',
-      thumbnail: payload.cover,
-      floorPlanUrl: imageData,
-      photoUrls: [],
-      versions: [{
-        id: crypto.randomUUID(),
-        mode: 'floorplan',
-        style: workflowStyle,
-        prompt: payload.prompt,
-        createdAt: now,
-        analysis: payload.analysis,
-        coverImageUrl: payload.cover,
-        images: [
-          { id: crypto.randomUUID(), title: '方案总览', imageUrl: payload.cover },
-          ...payload.roomImages.filter((room) => room.name !== '全屋总览').map((room) => ({ id: crypto.randomUUID(), title: room.name, imageUrl: room.imageUrl, description: room.description })),
-        ],
-      }],
-      tasks: [{
-        id: crypto.randomUUID(),
-        mode: 'floorplan',
-        style: workflowStyle,
-        prompt: payload.prompt,
-        status: 'completed',
-        startedAt: now,
-        completedAt: now,
-      }],
-      materialIds: [],
-    };
-    saveProject(project);
-  };
   const runRecognition = async () => {
     if (!imageData) { setMessage('请先上传户型图片。'); return; }
     setWorkElapsed(0); setWorkKind('recognizing'); setGenerationProgress(null); setGenerationJobId(null); setMessage('');
+    const now = new Date().toISOString();
+    const persistentProjectId = newId();
+    const taskId = newId();
+    const task: GenerationTask = { id: taskId, mode: 'floorplan', style: workflowStyle, prompt: `${sourceType} floor plan recognition and whole-home generation`, status: 'generating', startedAt: now };
+    const project: Project = { id: persistentProjectId, name: `${activeStyle.name}全屋方案`, spaceType: sourceType === 'cad' ? 'CAD 全屋设计' : '户型图全屋设计', style: workflowStyle, createdAt: now, updatedAt: now, status: 'generating', floorPlanUrl: imageData, photoUrls: [], versions: [], tasks: [task], materialIds: [] };
+    let persistedProject: Project;
+    try {
+      persistedProject = await persistWorkspaceProject(project);
+      setProjectId(persistentProjectId);
+      await loadProjects();
+    } catch (error) {
+      setWorkKind(null);
+      setMessage(error instanceof Error ? `项目初始化失败：${error.message}` : '项目初始化失败，请稍后重试。');
+      return;
+    }
     try {
       const result = await analyzeFloorPlan(imageData, sourceType, imageMeta || undefined);
       const selected = result.rooms.map((room) => room.name);
       setRooms(result.rooms);
       setSelectedRooms(selected);
       setStage(2);
-      await generatePlan({ analysis: result.analysis, rooms: result.rooms, selectedRooms: selected });
+      await generatePlan({ analysis: result.analysis, rooms: result.rooms, selectedRooms: selected }, taskId, persistedProject);
     }
     catch (error) {
       console.error('Floor-plan recognition failed:', error);
       setStage(1);
       setMessage(error instanceof Error ? `户型识别失败：${error.message}` : '户型识别失败，请检查图片后重试。');
+      const failedTask = { ...task, status: 'failed' as const, completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : '户型识别失败' };
+      await persistWorkspaceProject({ ...project, updatedAt: failedTask.completedAt, status: 'failed', tasks: [failedTask] }).then(loadProjects).catch(() => undefined);
     }
     finally { setWorkKind(null); }
   };
-  const generatePlan = async (input: GenerationInput) => {
+  const generatePlan = async (input: GenerationInput, taskId: string, baseProject: Project) => {
     if (!imageData) { setMessage('请先上传户型图片。'); setStage(1); return; }
     setWorkElapsed(0); setWorkKind('generating'); setGenerationProgress(null); setMessage(''); setResults([]); setStage(2);
     const sourcePrompt = sourceType === 'cad' ? '输入来源为 CAD 导出的住宅平面图，严格参考图中墙体、门窗和尺寸标注。' : '输入来源为住宅户型图，严格参考图中可见的房间边界与空间连接。';
-    const budgetBrief = [areaInput.trim() && `户型面积 ${areaInput} ㎡`, budgetInput.trim() && `装修总预算 ${budgetInput} 万元`, regionInput.trim() && `所在地区 ${regionInput.trim()}`].filter(Boolean).join('；');
-    const prompt = [sourcePrompt, budgetBrief && `项目预算资料：${budgetBrief}`, searchParams.get('prompt'), ...preferences.map(([label, value]) => `${label}:${value}`), `户型识别结果：${input.analysis}`, `识别空间：${input.rooms.map((room) => `${room.name}${room.suggestedName ? `（候选：${room.suggestedName}）` : ''}（${room.description}；${room.evidence?.map((item) => item.detail).join('、') || '无额外可见证据'}）`).join('；')}`].filter(Boolean).join('。');
+    const prompt = [sourcePrompt, searchParams.get('prompt'), ...preferences.map(([label, value]) => `${label}:${value}`), `户型识别结果：${input.analysis}`, `识别空间：${input.rooms.map((room) => `${room.name}${room.suggestedName ? `（候选：${room.suggestedName}）` : ''}（${room.description}；${room.evidence?.map((item) => item.detail).join('、') || '无额外可见证据'}）`).join('；')}`].filter(Boolean).join('。');
     try {
       const roomReferenceImages = await Promise.all(input.rooms.filter((room) => input.selectedRooms.includes(room.name) && room.bounds).map(async (room) => ({ name: room.name, image: await makeRoomReferenceSheet(imageData, room.bounds!) })));
-      const result = await generateDesign({ mode: 'floorplan', style: workflowStyle, prompt, floorPlan: imageData, imageMeta: imageMeta || undefined, source: sourceType, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, roomReferenceImages }, setGenerationProgress);
+      const result = await generateDesign({ mode: 'floorplan', style: workflowStyle, prompt, floorPlan: imageData, imageMeta: imageMeta || undefined, source: sourceType, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, roomReferenceImages, taskId }, setGenerationProgress);
       if (result.type !== 'floorplan') throw new Error('返回结果类型不正确。');
       setGenerationJobId(result.jobId || null);
       const generatedResults: ReportResult[] = [{ name: '全屋总览', imageUrl: result.cover }, ...result.rooms.map((room) => {
-        const originalVersion: RoomImageVersion = { id: crypto.randomUUID(), parentVersionId: null, imageUrl: room.imageUrl, instruction: '', createdAt: new Date().toISOString(), model: 'original-generation' };
+        const originalVersion: RoomImageVersion = { id: newId(), parentVersionId: null, imageUrl: room.imageUrl, instruction: '', createdAt: new Date().toISOString(), model: 'original-generation' };
         return { name: room.name, imageUrl: room.imageUrl, review: room.review, versions: [originalVersion], currentVersionId: originalVersion.id };
       })];
       setResults(generatedResults);
       setMessage(result.warning ? `部分效果图未完成：${result.warning}` : '');
       setStage(3);
-      // 预算页/项目页需要能在「项目」列表里看到这次方案，所以生成成功后同时落一份项目记录。
-      saveWorkspaceProject({ prompt, cover: result.cover, analysis: result.analysis, roomImages: result.rooms });
+      const completedAt = new Date().toISOString();
+      const versionId = newId();
+      const task: GenerationTask = { ...baseProject.tasks[0], status: result.warning ? 'failed' : 'completed', completedAt, error: result.warning, result: { versionId, roomCount: generatedResults.length - 1, coverReady: true } };
+      const version: DesignVersion = { id: versionId, mode: 'floorplan', style: workflowStyle, prompt, createdAt: completedAt, analysis: result.analysis, coverImageUrl: result.cover, images: generatedResults.slice(1).map((item) => ({ id: newId(), title: item.name, imageUrl: item.imageUrl, description: input.rooms.find((room) => room.name === item.name)?.description })), taskId, source: sourceType, floorPlanAnalysis: input.analysis, identifiedRooms: input.rooms, selectedRooms: input.selectedRooms, warning: result.warning };
+      await persistWorkspaceProject({ ...baseProject, updatedAt: completedAt, status: result.warning ? 'failed' : 'completed', thumbnail: result.cover, versions: [...baseProject.versions, version], tasks: [task] });
+      await loadProjects();
       const record: DesignHistoryRecord = {
-        id: crypto.randomUUID(), name: `${activeStyle.name} · ${new Date().toLocaleDateString('zh-CN')}`, createdAt: new Date().toISOString(),
+        id: version.id, name: `${activeStyle.name} · ${new Date().toLocaleDateString('zh-CN')}`, createdAt: completedAt,
         style: workflowStyle, source: sourceType, floorPlan: imageData, analysis: result.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, warning: result.warning, generationJobId: result.jobId, results: generatedResults,
       };
       setActiveHistoryId(record.id);
@@ -300,7 +275,13 @@ export default function WorkspacePage() {
       } catch (error) {
         setHistoryMessage(error instanceof Error ? `本次方案已生成，但本地记录保存失败：${error.message}` : '本次方案已生成，但本地记录保存失败。');
       }
-    } catch (error) { console.error('Whole-home generation failed:', error); setStage(1); setMessage(error instanceof Error ? '方案生成失败：' + error.message : '方案生成失败，请稍后重试。'); }
+    } catch (error) {
+      console.error('Whole-home generation failed:', error);
+      setStage(1); setMessage(error instanceof Error ? '方案生成失败：' + error.message : '方案生成失败，请稍后重试。');
+      const completedAt = new Date().toISOString();
+      const task: GenerationTask = { ...baseProject.tasks[0], status: 'failed', completedAt, error: error instanceof Error ? error.message : '方案生成失败' };
+      await persistWorkspaceProject({ ...baseProject, updatedAt: completedAt, status: 'failed', tasks: [task] }).then(loadProjects).catch(() => undefined);
+    }
     finally { setWorkKind(null); }
   };
   const retryFailedRooms = async () => {
@@ -312,7 +293,7 @@ export default function WorkspacePage() {
       const updated = await retryGenerationRooms(generationJobId, previous, setGenerationProgress);
       const existing = new Set(results.slice(1).map((item) => item.name));
       const additions: ReportResult[] = updated.rooms.filter((room) => !existing.has(room.name)).map((room) => {
-        const version: RoomImageVersion = { id: crypto.randomUUID(), parentVersionId: null, imageUrl: room.imageUrl, instruction: '', createdAt: new Date().toISOString(), model: 'original-generation' };
+        const version: RoomImageVersion = { id: createId(), parentVersionId: null, imageUrl: room.imageUrl, instruction: '', createdAt: new Date().toISOString(), model: 'original-generation' };
         return { name: room.name, imageUrl: room.imageUrl, review: room.review, versions: [version], currentVersionId: version.id };
       });
       const nextResults = [...results, ...additions];
@@ -320,7 +301,24 @@ export default function WorkspacePage() {
       setMessage(updated.warning ? `部分效果图未完成：${updated.warning}` : '');
       if (record) {
         const nextRecord = { ...record, results: nextResults, warning: updated.warning };
-        try { await saveDesignHistory(nextRecord); setHistory((current) => current.map((item) => item.id === record.id ? nextRecord : item)); }
+        try {
+          await saveDesignHistory(nextRecord);
+          setHistory((current) => current.map((item) => item.id === record.id ? nextRecord : item));
+          const project = savedProjects.find((item) => item.id === projectId);
+          const version = project?.versions.find((item) => item.id === record.id);
+          const task = project?.tasks.find((item) => item.id === generationJobId);
+          if (project && version && task) {
+            const completedAt = new Date().toISOString();
+            const nextVersion: DesignVersion = {
+              ...version,
+              warning: updated.warning,
+              images: nextResults.slice(1).map((item) => ({ id: newId(), title: item.name, imageUrl: item.imageUrl, description: rooms.find((room) => room.name === item.name)?.description })),
+            };
+            const nextTask: GenerationTask = { ...task, status: updated.warning ? 'failed' : 'completed', completedAt, error: updated.warning };
+            await persistWorkspaceProject({ ...project, updatedAt: completedAt, status: updated.warning ? 'failed' : 'completed', versions: project.versions.map((item) => item.id === version.id ? nextVersion : item), tasks: project.tasks.map((item) => item.id === task.id ? nextTask : item) });
+            await loadProjects();
+          }
+        }
         catch (error) { setHistoryMessage(error instanceof Error ? `重试结果已显示，但记录保存失败：${error.message}` : '重试结果保存失败。'); }
       }
     } catch (error) { setMessage(error instanceof Error ? `空间重试失败：${error.message}` : '空间重试失败。'); }
@@ -375,7 +373,7 @@ export default function WorkspacePage() {
     {stage < 4 && searchParams.has('template') && <aside className="design-preferences"><span><strong>灵感参考已带入</strong><small>{styleOptions.find((style) => style.key === searchParams.get('style'))?.name}</small></span></aside>}
     {stage < 4 && <div className="workspace-stepper"><span className="workspace-stepper-label">全屋方案流程</span>{[['上传资料与风格', '图片 · 风格'], ['识别空间并生成', '户型 · 效果图'], ['查看生成结果', '预览 · 汇报']].map(([label, note], index) => <div className={`workspace-step ${stage === index + 1 ? 'active' : ''} ${stage > index + 1 ? 'done' : ''}`} key={label}><span className="step-index">{stage > index + 1 ? <Icon name="check" /> : `0${index + 1}`}</span><span><strong>{label}</strong><small>{note}</small></span></div>)}</div>}
     {stage < 4 && !isWorking && <div className="flow-content">
-      {stage === 1 && <section className="flow-panel"><div className="panel-title"><span><b>01</b>上传资料并选择风格</span><small>{sourceType === 'cad' ? 'CAD 图纸导出图片' : '户型平面图图片'}</small></div><div className="source-tabs" role="tablist" aria-label="识别方案"><button type="button" role="tab" aria-selected={sourceType === 'cad'} className={sourceType === 'cad' ? 'active' : ''} onClick={() => { setSourceOverride({ route: routeSourceType, value: 'cad' }); setFile(null); setImageData(''); setMessage(''); }}><Icon name="file" /><span><strong>CAD 图纸全屋渲染</strong><small>DWG / DXF 导出为图片后上传</small></span></button><button type="button" role="tab" aria-selected={sourceType === 'floorplan'} className={sourceType === 'floorplan' ? 'active' : ''} onClick={() => { setSourceOverride({ route: routeSourceType, value: 'floorplan' }); setFile(null); setImageData(''); setMessage(''); }}><Icon name="upload" /><span><strong>户型图设计</strong><small>上传户型平面图图片</small></span></button></div><div className={`upload-zone ${file ? 'has-file' : ''}`} role="button" tabIndex={0} onClick={() => inputRef.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter') inputRef.current?.click(); }} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>{file ? <><span className="file-preview"><img src={file.preview} alt={sourceType === 'cad' ? 'CAD 平面图预览' : '户型图预览'} /></span><span className="file-info"><strong>{file.name}</strong><small>{file.size} · {sourceType === 'cad' ? 'CAD 平面图' : '户型图'}</small></span><button className="remove-file" onClick={(event) => { event.stopPropagation(); setFile(null); setImageData(''); }} aria-label="移除文件"><Icon name="close" /></button></> : <><span className="upload-zone-icon"><Icon name="upload" /></span><strong>{sourceType === 'cad' ? '拖入 CAD 导出图，或点击选择图片' : '拖入户型图，或点击选择图片'}</strong><small>{sourceType === 'cad' ? 'DWG / DXF / PDF 请先导出为 PNG、JPG 或 WEBP' : '支持 PNG、JPG、WEBP 格式的户型平面图'}</small></>}<input ref={inputRef} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={handleChange} /></div><div className="panel-tip"><span>i</span>{sourceType === 'cad' ? '按 CAD 图纸的墙体、门窗和尺寸标注识别；目前请先导出为图片，暂不直接读取 DWG / DXF / PDF 文件。' : '识别户型图中的房间、门窗和空间动线；请上传清晰、完整的平面图。'}</div><div className="budget-fields"><label>项目名称<input value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="例如：三居室全屋方案" /></label><label>户型面积（㎡）<input type="number" min="0" step="0.1" value={areaInput} onChange={(event) => setAreaInput(event.target.value)} placeholder="例如 120" /></label><label>装修预算（万元）<input type="number" min="0" step="0.1" value={budgetInput} onChange={(event) => setBudgetInput(event.target.value)} placeholder="例如 20" /></label><label>所在地区<input value={regionInput} onChange={(event) => setRegionInput(event.target.value)} placeholder="例如：上海" /></label></div><p className="budget-hint">预算资料仅用于方案沟通与风格建议，不代表实际报价。</p><div className="style-picker-row" aria-label="选择设计风格">{orderedStyleOptions.map((style) => <button key={style.key} type="button" className={`style-chip ${workflowStyle === style.key ? 'selected' : ''} ${recommendedStyleKeys.includes(style.key) ? 'recommended' : ''}`} onClick={() => setStyleOverride({ route: requestedStyle, value: style.key })}><span>{style.name}</span>{recommendedStyleKeys.includes(style.key) && <em>建议</em>}</button>)}</div><div className="upload-actions"><span className="style-current">当前风格：<strong>{activeStyle.name}</strong></span><button className="continue-button" onClick={() => void runRecognition()} disabled={isWorking || !imageData}>{isWorking ? <><span className="spinner" />正在识别…</> : <>识别户型空间 <Icon name="arrow" /></>}</button></div>{message && <p className="flow-message">{message}</p>}</section>}
+      {stage === 1 && <section className="flow-panel"><div className="panel-title"><span><b>01</b>上传资料并选择风格</span><small>{sourceType === 'cad' ? 'CAD 图纸导出图片' : '户型平面图图片'}</small></div><div className="source-tabs" role="tablist" aria-label="识别方案"><button type="button" role="tab" aria-selected={sourceType === 'cad'} className={sourceType === 'cad' ? 'active' : ''} onClick={() => { setSourceOverride({ route: routeSourceType, value: 'cad' }); setFile(null); setImageData(''); setMessage(''); }}><Icon name="file" /><span><strong>CAD 图纸全屋渲染</strong><small>DWG / DXF 导出为图片后上传</small></span></button><button type="button" role="tab" aria-selected={sourceType === 'floorplan'} className={sourceType === 'floorplan' ? 'active' : ''} onClick={() => { setSourceOverride({ route: routeSourceType, value: 'floorplan' }); setFile(null); setImageData(''); setMessage(''); }}><Icon name="upload" /><span><strong>户型图设计</strong><small>上传户型平面图图片</small></span></button></div><div className={`upload-zone ${file ? 'has-file' : ''}`} role="button" tabIndex={0} onClick={() => inputRef.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter') inputRef.current?.click(); }} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>{file ? <><span className="file-preview"><img src={file.preview} alt={sourceType === 'cad' ? 'CAD 平面图预览' : '户型图预览'} /></span><span className="file-info"><strong>{file.name}</strong><small>{file.size} · {sourceType === 'cad' ? 'CAD 平面图' : '户型图'}</small></span><button className="remove-file" onClick={(event) => { event.stopPropagation(); setFile(null); setImageData(''); }} aria-label="移除文件"><Icon name="close" /></button></> : <><span className="upload-zone-icon"><Icon name="upload" /></span><strong>{sourceType === 'cad' ? '拖入 CAD 导出图，或点击选择图片' : '拖入户型图，或点击选择图片'}</strong><small>{sourceType === 'cad' ? 'DWG / DXF / PDF 请先导出为 PNG、JPG 或 WEBP' : '支持 PNG、JPG、WEBP 格式的户型平面图'}</small></>}<input ref={inputRef} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={handleChange} /></div><div className="panel-tip"><span>i</span>{sourceType === 'cad' ? '按 CAD 图纸的墙体、门窗和尺寸标注识别；目前请先导出为图片，暂不直接读取 DWG / DXF / PDF 文件。' : '识别户型图中的房间、门窗和空间动线；请上传清晰、完整的平面图。'}</div><div className="style-picker-heading"><div><strong>选择空间风格</strong><small>先定下全屋的色彩与材质方向，识别后可直接生成</small></div></div><div className="workspace-style-grid">{styleOptions.map((style) => <button type="button" key={style.key} aria-pressed={workflowStyle === style.key} className={`workspace-style-card ${workflowStyle === style.key ? 'selected' : ''}`} onClick={() => { setStyleOverride({ route: requestedStyle, value: style.key }); setSelectedStyle(style.key); }}><span className="workspace-style-image"><img src={style.image} alt={`${style.name}风格参考`} /></span><span className="workspace-style-meta"><strong>{style.name}</strong><small>{style.note}</small></span>{workflowStyle === style.key && <span className="style-check"><Icon name="check" /></span>}</button>)}</div><div className="upload-actions"><span className="style-current">当前风格：<strong>{activeStyle.name}</strong></span><button className="continue-button" onClick={() => void runRecognition()} disabled={isWorking || !imageData}>{isWorking ? <><span className="spinner" />正在识别…</> : <>识别户型空间 <Icon name="arrow" /></>}</button></div>{message && <p className="flow-message">{message}</p>}</section>}
       {stage === 3 && results.length > 0 && <section className="result-board generation-preview"><div className="result-board-head"><div><span className="panel-kicker">生成完成</span><h3>方案已经准备好</h3><p>结果已保存到当前浏览器，查看汇报前仍可回到工作区调整资料。</p></div><button className="continue-button" onClick={() => setStage(4)}>查看汇报方案 <Icon name="arrow" /></button></div><div className="result-cover"><img src={results[0].imageUrl} alt="全屋方案总览预览" /><div><span>全屋效果总览</span><strong>{activeStyle.name} · {selectedRooms.length} 个空间</strong></div></div><div className="result-room-grid">{results.slice(1).map((result) => <article key={result.name}><img src={result.imageUrl} alt={`${result.name}效果图预览`} /><div><strong>{result.name}</strong><small>空间效果已生成</small></div></article>)}</div><div className="flow-actions"><button className="quiet-button" onClick={() => setStage(1)}>重新上传资料</button><button className="continue-button" onClick={() => setStage(4)}>进入完整汇报 <Icon name="arrow" /></button></div>{message && <p className="flow-message">{message}</p>}</section>}
       {stage === 3 && generationJobId && message && <div className="retry-failed-rooms"><button className="quiet-button" type="button" onClick={() => void retryFailedRooms()}>重试未完成空间</button></div>}
     </div>}
