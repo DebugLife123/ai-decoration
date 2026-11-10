@@ -1,6 +1,12 @@
+# 基础镜像的仓库前缀。
+#
+# 这套环境访问不了 docker.io（registry-1.docker.io 直接超时），所以凡是需要
+# 从网络拉取的镜像都走 DaoCloud 代理。若哪天 runner 配了 registry-mirrors
+# 或能直连 Docker Hub，在 .env 里写 REGISTRY= 留空即可回到默认仓库。
+# 注意 compose 的 image 字段不做默认值拼接，所以这里直接写成完整表达式。
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ${REGISTRY:-docker.m.daocloud.io/library/}postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DATABASE_USERNAME:-decoration}
@@ -20,6 +26,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        # 和 Dockerfile 里的 ARG 默认值保持一致；集中在这里是为了让 .env 一口气改全。
+        REGISTRY: ${REGISTRY:-docker.m.daocloud.io/library/}
     image: ${BACKEND_IMAGE:-wyx-decoration-backend:local}
     restart: unless-stopped
     depends_on:
@@ -52,6 +61,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_BUSINESS_API_URL: ${VITE_BUSINESS_API_URL:-}
+        REGISTRY: ${REGISTRY:-docker.m.daocloud.io/library/}
     image: ${FRONTEND_IMAGE:-wyx-decoration:local}
     restart: unless-stopped
     depends_on:
@@ -68,7 +78,7 @@ services:
 
   # 每日 pg_dump；卷 db-backups 需要在宿主机上另行同步走（见 README）。
   db-backup:
-    image: postgres:16-alpine
+    image: ${REGISTRY:-docker.m.daocloud.io/library/}postgres:16-alpine
     restart: unless-stopped
     depends_on:
       postgres:
