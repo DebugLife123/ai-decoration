@@ -265,6 +265,26 @@ class BusinessDataPostgresIntegrationTest {
                         .contentType("application/json").content(body.replace("\"sqm\"", "\"m\"")))
                 .andExpect(status().isCreated());
 
+        // 品牌是身份的一部分（契约决策 9：name+spec+brand+unit），换品牌是另一条报价，允许创建。
+        var otherBrand = body.replace("\"StoneCo\"", "\"OtherBrand\"");
+        org.junit.jupiter.api.Assertions.assertNotEquals(body, otherBrand, "品牌替换没有生效，这条断言就失去意义");
+        mockMvc.perform(post("/api/v1/business/material-quotes")
+                        .with(token(COMPANY_A, "COMPANY_EDITOR"))
+                        .header("Idempotency-Key", "natural-key-0005")
+                        .contentType("application/json").content(otherBrand))
+                .andExpect(status().isCreated());
+
+        // 反过来，地区或有效期不同不构成新报价：它们不是材料的身份。
+        // 这条专门盯住 V2 旧索引把 region/valid_until 算进键的问题——旧索引下这里会误放行。
+        mockMvc.perform(post("/api/v1/business/material-quotes")
+                        .with(token(COMPANY_A, "COMPANY_EDITOR"))
+                        .header("Idempotency-Key", "natural-key-0006")
+                        .contentType("application/json")
+                        .content(body.replace("\"Shanghai\"", "\"Beijing\"")
+                                .replace(futureDate(), java.time.LocalDate.now().plusYears(2).toString())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_QUOTE"));
+
         // 把已有一条改名撞到另一条上，同样 409。
         var otherId = com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
                 .readTree(mockMvc.perform(post("/api/v1/business/material-quotes")

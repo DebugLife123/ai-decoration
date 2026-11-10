@@ -44,9 +44,11 @@ verify_frontend:
 # 「能不能跑测试」不应该被「能不能拉镜像」绑架。现在只剩一个 postgres 镜像，
 # 而它是长期缓存的。
 #
-# 前置条件（runner 主机上）：JDK 21 + Maven 3.9+ 在 PATH 里。
-# 前两行 java -version / mvn -v 是探针：如果 runner 缺工具链，日志会直接指出是哪一项，
-# 而不是抛出一堆「找不到命令」。
+# 前置条件（runner 主机上）：只需要 JDK 21 在 PATH 里。
+# Maven 不需要预装：backend/mvnw.cmd 是 Maven Wrapper，会自己下载并固定使用 3.9.9。
+# 这样 runner 的 Maven 版本不再是变量，本地和 CI 跑的是同一个版本。
+# java -version / mvnw -v 两行是探针：缺 JDK 时日志会直接指出，
+# 不会和「wrapper 下载失败」混成同一团错误。
 #
 # 端口按原样用 5432。若 runner 上已有 PostgreSQL 占着 5432，把
 # backend/docker-compose.test.yml 的映射改成 55432 并同步改这里的 DATABASE_TEST_URL。
@@ -65,9 +67,9 @@ verify_backend:
     DATABASE_TEST_PASSWORD: decoration
   script:
     - java -version
-    - mvn -v
+    - backend\mvnw.cmd -B -v
     - docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml up -d --wait
-    - mvn -B -f backend/pom.xml test
+    - backend\mvnw.cmd -B -f backend/pom.xml test
   after_script:
     - docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml down --volumes --remove-orphans
   artifacts:
