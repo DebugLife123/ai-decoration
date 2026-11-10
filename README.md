@@ -114,12 +114,16 @@ node --experimental-strip-types --test server/aiGateway.test.mjs src/services/ai
 
 # 后端测试（需要本机 PostgreSQL，或设置 DATABASE_TEST_URL 指向测试库）
 cd backend
-mvn -o test
+mvnw.cmd -B test
 ```
 
 CI（`.gitlab-ci.yml`）分两个 verify job：
 
 - `verify_frontend`：`npm ci` → `npm run lint` → `npx tsc -b` → `npm run build` → compose 语法校验；
-- `verify_backend`：用 `backend/docker-compose.test.yml` 起临时 PostgreSQL + Maven 容器跑 `mvn -B test`。
+- `verify_backend`：用 `backend/docker-compose.test.yml` 起临时 PostgreSQL，然后在 runner 主机上直接跑 `backend/mvnw.cmd -B test`。
+
+`verify_backend` 不依赖 runner 预装 Maven，也不需要能拉 Docker Hub：Maven 由 wrapper 固定在 3.9.9，JDK 21 由 `scripts/ensure-jdk21.ps1` 现找现装（找不到就下一个 Adoptium 21 解压到 `%LOCALAPPDATA%\dsh\jdk21`，同一个 runner 上装一次即长期复用）。唯一的镜像依赖是 `postgres:16-alpine`，通常已在 runner 上缓存；若缓存被清且拉不动，可把 `POSTGRES_TEST_IMAGE` 设为 `docker.m.daocloud.io/library/postgres:16-alpine`。
+
+两个 `Dockerfile` 的基础镜像都通过 `ARG REGISTRY` 走 `docker.m.daocloud.io` 代理（本环境访问不了 docker.io），可用 `--build-arg REGISTRY=` 传空值回到默认仓库。
 
 `deploy_production` 需要 `JWT_SECRET` 与 `VITE_BUSINESS_API_URL` 两个 CI/CD 变量，缺失直接失败。

@@ -44,11 +44,12 @@ verify_frontend:
 # 「能不能跑测试」不应该被「能不能拉镜像」绑架。现在只剩一个 postgres 镜像，
 # 而它是长期缓存的。
 #
-# 前置条件（runner 主机上）：只需要 JDK 21 在 PATH 里。
+# JDK 由 scripts/ensure-jdk21.ps1 现找现装：runner 主机历史上没装 Java
+# （日志里 `java -version` 报「术语 'java' 不是 cmdlet」，job 20 秒就挂了）。
+# 与其等运维去装，不如让任务自己准备：脚本先找 PATH / JAVA_HOME / 常见安装目录，
+# 都没有就下一个 Adoptium 21 解压到 %LOCALAPPDATA%\dsh\jdk21，装一次所有流水线共用。
 # Maven 不需要预装：backend/mvnw.cmd 是 Maven Wrapper，会自己下载并固定使用 3.9.9。
-# 这样 runner 的 Maven 版本不再是变量，本地和 CI 跑的是同一个版本。
-# java -version / mvnw -v 两行是探针：缺 JDK 时日志会直接指出，
-# 不会和「wrapper 下载失败」混成同一团错误。
+# 这样 runner 的 JDK/Maven 版本都不再是变量，本地和 CI 跑的是同一套。
 #
 # 端口按原样用 5432。若 runner 上已有 PostgreSQL 占着 5432，把
 # backend/docker-compose.test.yml 的映射改成 55432 并同步改这里的 DATABASE_TEST_URL。
@@ -65,11 +66,37 @@ verify_backend:
     DATABASE_TEST_URL: jdbc:postgresql://localhost:5432/decoration
     DATABASE_TEST_USERNAME: decoration
     DATABASE_TEST_PASSWORD: decoration
+    # 把本地仓库指到工作区里，这样 .m2 才能被下面的 cache 带走；
+    # 默认的 ~/.m2 在项目目录外，GitLab 的 cache 抓不到。
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/backend/.m2"
   script:
-    - java -version
-    - backend\mvnw.cmd -B -v
-    - docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml up -d --wait
-    - backend\mvnw.cmd -B -f backend/pom.xml test
+    # 拿到 JDK 21：脚本只把路径打在标准输出上，进度信息走信息流不会串进来。
+    - |
+      $ErrorActionPreference = 'Stop'
+      $jdk = & "$env:CI_PROJECT_DIR\scripts\ensure-jdk21.ps1"
+      if (-not $jdk -or -not (Test-Path -LiteralPath (Join-Path $jdk 'bin\java.exe'))) {
+        throw "ensure-jdk21.ps1 没有返回可用的 JDK 路径（返回的是：'$jdk'）"
+      }
+      $env:JAVA_HOME = $jdk
+      $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+      Write-Host "JAVA_HOME = $env:JAVA_HOME"
+      & "$env:JAVA_HOME\bin\java.exe" -version
+    - |
+      # 先把测试库拉起来，再跑测试。失败要立刻停，不要带着没有数据库的状态往下跑。
+      docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml up -d --wait
+      if ($LASTEXITCODE -ne 0) { throw "测试用 PostgreSQL 启动失败。" }
+    - |
+      # mvnw.cmd 会从当前目录往上找 .mvn 目录，所以在仓库根目录直接调用
+      # backend\mvnw.cmd 是找不到 backend/.mvn/wrapper/maven-wrapper.properties 的
+      # （实测报：The system cannot find the file ...\.mvn\wrapper\maven-wrapper.properties）。
+      # 进到 backend 目录里跑，比设 MAVEN_BASEDIR 更不容易出错。
+      Push-Location backend
+      try {
+        .\mvnw.cmd -B test
+        if ($LASTEXITCODE -ne 0) { throw "后端测试失败（mvn 退出码 $LASTEXITCODE）" }
+      } finally {
+        Pop-Location
+      }
   after_script:
     - docker compose -p wyx-decoration-test -f backend/docker-compose.test.yml down --volumes --remove-orphans
   artifacts:
@@ -77,6 +104,16 @@ verify_backend:
     expire_in: 1 week
     paths:
       - backend/target/surefire-reports/
+  cache:
+    # 覆盖全局 cache（job 级 cache 不与全局合并）：后端任务不需要 .npm。
+    # 只缓存 Maven 本地仓库；JDK 装在 %LOCALAPPDATA%\dsh\jdk21 下，
+    # 那是 runner 的持久目录，装一次所有流水线共用，不用每次搬 300MB。
+    # key 用 backend/pom.xml 而不是 package-lock.json：前端改依赖时后端缓存不该失效。
+    key:
+      files:
+        - backend/pom.xml
+    paths:
+      - backend/.m2/
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

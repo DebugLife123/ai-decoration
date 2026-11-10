@@ -7,9 +7,14 @@
 #
 # 端口映射：同机若已有 PostgreSQL 占着 5432，把左边的 5432 改成 55432，
 # 并同步改 .gitlab-ci.yml 里的 DATABASE_TEST_URL。默认按原样保留。
+#
+# 镜像名默认用不带前缀的 postgres:16-alpine —— runner 上这个镜像已长期缓存，
+# 不需要联网。如果哪天缓存被清掉、而 runner 又连不上 Docker Hub，把
+# POSTGRES_TEST_IMAGE 设成 docker.m.daocloud.io/library/postgres:16-alpine
+# （该代理已验证可拉）即可，不必改文件。
 services:
   postgres-test:
-    image: postgres:16-alpine
+    image: ${POSTGRES_TEST_IMAGE:-postgres:16-alpine}
     environment:
       POSTGRES_DB: decoration
       POSTGRES_USER: decoration
