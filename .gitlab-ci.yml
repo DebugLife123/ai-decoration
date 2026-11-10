@@ -163,17 +163,54 @@ deploy_production:
     $composeArgs = @('--project-directory', $deploymentPath, '-p', $env:COMPOSE_PROJECT_NAME, '-f', (Join-Path $deploymentPath 'docker-compose.yml'))
     # 生产密钥与来源白名单必须由 CI/CD 变量提供，不再有硬编码默认值
     if (-not $env:JWT_SECRET) { throw "JWT_SECRET CI/CD variable is required." }
-    if (-not $env:VITE_BUSINESS_API_URL) { throw "VITE_BUSINESS_API_URL CI/CD variable is required (frontend bundles it at build time)." }
+    # VITE_BUSINESS_API_URL 故意不强制要求：线上是前后端同源部署，4175 上已有反代把 /api 转给 backend，
+    # 前端留空即走同源的相对路径（见 src/services/apiBase.ts 第 3 条）。之前把它设成必填，
+    # 部署会因为一个"其实可以空"的变量直接中止。需要改成绝对地址时，在 CI/CD 变量里配它即可。
+    if (-not $env:VITE_BUSINESS_API_URL) {
+      Write-Host "VITE_BUSINESS_API_URL 未设置，前端按同源相对路径构建。"
+    }
     docker compose @composeArgs config --quiet
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose configuration validation failed." }
-    docker compose @composeArgs up -d --build
+    # --remove-orphans 是必需的：老版本编排只有一个叫 decoration 的前端服务，它一直占着 4175。
+    # 不清理孤儿容器的话，新的 frontend 服务会因为端口被占而起不来，而健康检查打的是 /，
+    # 老容器照样回 200 —— 部署"成功"了、跑的还是旧代码。
+    docker compose @composeArgs up -d --build --remove-orphans
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose could not start the production stack." }
+    # 健康检查必须同时看前端和后端：
+    #  - 只打 http://127.0.0.1:4175/ 是假的，SPA fallback 对任何路径都回 200 HTML，
+    #    后端没起来、数据库没起来，首页照样 200 —— 老流程就栽在这里。
+    #  - 但又不能只靠"4175 上能取到 /api/v1/health 的 JSON"，那取决于 4175 前面有没有反代；
+    #    新编排里 frontend 就是 vite preview，本身不代理 /api。
+    # 所以两头都要过：frontend 端口返回 200，且 compose 里 backend 容器的健康状态是 healthy
+    #（backend 的 healthcheck 打自己的 /actuator/health，能覆盖 Spring 启动 + 数据库连通性）。
     $healthy = $false
     for ($attempt = 1; $attempt -le 36; $attempt++) {
+      $frontOk = $false
       try {
         $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:4175/" -TimeoutSec 5
-        if ([int]$response.StatusCode -eq 200) { $healthy = $true; break }
+        $frontOk = [int]$response.StatusCode -eq 200
       } catch {}
+      $backHealth = $null
+      try {
+        $psJson = docker compose @composeArgs ps --format json | Out-String
+        # docker compose ps --format json 在不同版本下可能是每行一个对象，也可能是一个数组。
+        $rows = if ($psJson.TrimStart().StartsWith('[')) { $psJson | ConvertFrom-Json } else { $psJson.Trim() -split "`r?`n" | Where-Object { $_.Trim() } | ForEach-Object { $_ | ConvertFrom-Json } }
+        $backendRow = $rows | Where-Object { $_.Service -eq 'backend' } | Select-Object -First 1
+        if ($backendRow) { $backHealth = $backendRow.Health }
+      } catch {}
+      # ps 里的 Health 字段在不同 compose 版本/不同状态下可能是空串（例如容器还在 starting），
+      # 所以再加一条直连容器内部的探测：只要 backend 能自己回 /actuator/health，就认为它是通的。
+      # 探容器内部而不是 docker 的发布端口，是因为宿主机 8080 上已经有一个 nginx 静态站，
+      # 打 127.0.0.1:8080 命中的是那个 nginx，不是我们的 Spring。
+      $backDirect = $false
+      if ($backHealth -ne 'healthy') {
+        try {
+          $probe = docker compose @composeArgs exec -T backend wget -qO- --timeout=3 http://127.0.0.1:8080/actuator/health 2>$null | Out-String
+          $backDirect = $probe -match '"status"\s*:\s*"UP"'
+        } catch {}
+      }
+      Write-Host ("健康检查第 {0} 次：frontend={1} backend={2} 容器内探测={3}" -f $attempt, $frontOk, $backHealth, $backDirect)
+      if ($frontOk -and ($backHealth -eq 'healthy' -or $backDirect)) { $healthy = $true; break }
       Start-Sleep -Seconds 5
     }
     if (-not $healthy) { docker compose @composeArgs ps; docker compose @composeArgs logs --tail 120; throw "Production health check failed." }
