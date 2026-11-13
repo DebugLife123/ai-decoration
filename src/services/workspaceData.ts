@@ -145,6 +145,31 @@ export async function persistWorkspaceProject(project: Project): Promise<Project
   return stored;
 }
 
+export function hasPersistentWorkspaceSession(): boolean {
+  return Boolean(businessApiConfig.enabled && currentAccessToken());
+}
+
+export async function createPersistentGenerationTask(projectId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  if (!hasPersistentWorkspaceSession()) return null;
+  return projectApiRequest<Record<string, unknown>>(`/api/v1/projects/${projectId}/renders`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function startPersistentGenerationTask(taskId: string): Promise<void> {
+  if (hasPersistentWorkspaceSession()) await projectApiRequest(`/api/v1/tasks/${taskId}/start`, { method: 'POST', body: '{}' });
+}
+
+export async function updatePersistentGenerationTask(taskId: string, input: { stage: string; progress: number; message: string; completedRooms: number; totalRooms: number; partialResult?: unknown }): Promise<void> {
+  if (hasPersistentWorkspaceSession()) await projectApiRequest(`/api/v1/tasks/${taskId}/progress`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function finishPersistentGenerationTask(taskId: string, result: unknown, snapshot: unknown): Promise<void> {
+  if (hasPersistentWorkspaceSession()) await projectApiRequest(`/api/v1/tasks/${taskId}/finish`, { method: 'POST', body: JSON.stringify({ result, snapshot }) });
+}
+
+export async function failPersistentGenerationTask(taskId: string, error: string, partialResult?: unknown, snapshot?: unknown): Promise<void> {
+  if (hasPersistentWorkspaceSession()) await projectApiRequest(`/api/v1/tasks/${taskId}/failure`, { method: 'POST', body: JSON.stringify({ error, retryable: false, partialResult, snapshot }) });
+}
+
 export function workspaceAssetUrl(url: string): string {
   if (!url.startsWith('/api/v1/projects/') || !currentAccessToken()) return url;
   return `${authApiBaseUrl}${url}`;

@@ -5,7 +5,7 @@ import { analyzeFloorPlan, editRoomImage, generateDesign, retryGenerationRooms, 
 import { deleteDesignHistory, listDesignHistory, saveDesignHistory, type DesignHistoryRecord } from '../services/designHistory';
 import RoomImageEditor, { type RoomImageVersion } from '../components/RoomImageEditor';
 import { templates } from './HomePage';
-import { persistWorkspaceProject } from '../services/workspaceData';
+import { createPersistentGenerationTask, failPersistentGenerationTask, finishPersistentGenerationTask, persistWorkspaceProject, startPersistentGenerationTask, updatePersistentGenerationTask } from '../services/workspaceData';
 import type { Project, DesignVersion, GenerationTask } from '../services/dataContracts';
 import { createId } from '../utils/id';
 import './WorkspacePage.css';
@@ -210,12 +210,18 @@ export default function WorkspacePage() {
     setWorkElapsed(0); setWorkKind('recognizing'); setGenerationProgress(null); setGenerationJobId(null); setMessage('');
     const now = new Date().toISOString();
     const persistentProjectId = newId();
-    const taskId = newId();
-    const task: GenerationTask = { id: taskId, mode: 'floorplan', style: workflowStyle, prompt: `${sourceType} floor plan recognition and whole-home generation`, status: 'generating', startedAt: now };
-    const project: Project = { id: persistentProjectId, name: `${activeStyle.name}全屋方案`, spaceType: sourceType === 'cad' ? 'CAD 全屋设计' : '户型图全屋设计', style: workflowStyle, createdAt: now, updatedAt: now, status: 'generating', floorPlanUrl: imageData, photoUrls: [], versions: [], tasks: [task], materialIds: [] };
+    let taskId = newId();
+    let task: GenerationTask = { id: taskId, mode: 'floorplan', style: workflowStyle, prompt: `${sourceType} floor plan recognition and whole-home generation`, status: 'generating', startedAt: now };
+    const project: Project = { id: persistentProjectId, name: `${activeStyle.name}全屋方案`, spaceType: sourceType === 'cad' ? 'CAD 全屋设计' : '户型图全屋设计', style: workflowStyle, createdAt: now, updatedAt: now, status: 'generating', floorPlanUrl: imageData, photoUrls: [], versions: [], tasks: [], materialIds: [] };
     let persistedProject: Project;
     try {
       persistedProject = await persistWorkspaceProject(project);
+      const remoteTask = await createPersistentGenerationTask(persistentProjectId, { mode: 'floorplan', source: sourceType, style: workflowStyle, prompt: task.prompt, stage: 'queued' });
+      if (remoteTask?.id && typeof remoteTask.id === 'string') taskId = remoteTask.id;
+      task = { ...task, id: taskId };
+      if (remoteTask) await startPersistentGenerationTask(taskId);
+      persistedProject = { ...persistedProject, tasks: [task] };
+      await persistWorkspaceProject(persistedProject);
       setProjectId(persistentProjectId);
       await loadProjects();
     } catch (error) {
@@ -225,6 +231,7 @@ export default function WorkspacePage() {
     }
     try {
       const result = await analyzeFloorPlan(imageData, sourceType, imageMeta || undefined);
+      await updatePersistentGenerationTask(taskId, { stage: 'generating', progress: 20, message: '户型空间识别完成，正在准备全屋效果图', completedRooms: 0, totalRooms: result.rooms.length });
       const selected = result.rooms.map((room) => room.name);
       setRooms(result.rooms);
       setSelectedRooms(selected);
@@ -236,6 +243,7 @@ export default function WorkspacePage() {
       setStage(1);
       setMessage(error instanceof Error ? `户型识别失败：${error.message}` : '户型识别失败，请检查图片后重试。');
       const failedTask = { ...task, status: 'failed' as const, completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : '户型识别失败' };
+      await failPersistentGenerationTask(taskId, failedTask.error || '户型识别失败').catch(() => undefined);
       await persistWorkspaceProject({ ...project, updatedAt: failedTask.completedAt, status: 'failed', tasks: [failedTask] }).then(loadProjects).catch(() => undefined);
     }
     finally { setWorkKind(null); }
@@ -247,7 +255,19 @@ export default function WorkspacePage() {
     const prompt = [sourcePrompt, searchParams.get('prompt'), ...preferences.map(([label, value]) => `${label}:${value}`), `户型识别结果：${input.analysis}`, `识别空间：${input.rooms.map((room) => `${room.name}${room.suggestedName ? `（候选：${room.suggestedName}）` : ''}（${room.description}；${room.evidence?.map((item) => item.detail).join('、') || '无额外可见证据'}）`).join('；')}`].filter(Boolean).join('。');
     try {
       const roomReferenceImages = await Promise.all(input.rooms.filter((room) => input.selectedRooms.includes(room.name) && room.bounds).map(async (room) => ({ name: room.name, image: await makeRoomReferenceSheet(imageData, room.bounds!) })));
-      const result = await generateDesign({ mode: 'floorplan', style: workflowStyle, prompt, floorPlan: imageData, imageMeta: imageMeta || undefined, source: sourceType, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, roomReferenceImages, taskId }, setGenerationProgress);
+      let progressQueue = Promise.resolve();
+      const reportProgress = (job: GenerationJob) => {
+        setGenerationProgress(job);
+        const progress = 25 + Math.floor(70 * Math.min(1, job.completedRooms / Math.max(job.totalRooms, 1)));
+        progressQueue = progressQueue.then(() => updatePersistentGenerationTask(taskId, {
+          stage: job.stage || 'generating', progress, message: job.message || '正在生成空间效果图',
+          completedRooms: job.completedRooms, totalRooms: job.totalRooms,
+          partialResult: job.cover || job.rooms?.length ? { cover: job.cover, rooms: job.rooms, failedRooms: job.failedRooms } : undefined,
+        })).catch((error: unknown) => console.warn('Could not persist generation progress:', error));
+      };
+      await updatePersistentGenerationTask(taskId, { stage: 'generating', progress: 25, message: '正在生成全屋总览和分空间效果图', completedRooms: 0, totalRooms: input.selectedRooms.length });
+      const result = await generateDesign({ mode: 'floorplan', style: workflowStyle, prompt, floorPlan: imageData, imageMeta: imageMeta || undefined, source: sourceType, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, roomReferenceImages, taskId }, reportProgress);
+      await progressQueue;
       if (result.type !== 'floorplan') throw new Error('返回结果类型不正确。');
       setGenerationJobId(result.jobId || null);
       const generatedResults: ReportResult[] = [{ name: '全屋总览', imageUrl: result.cover }, ...result.rooms.map((room) => {
@@ -261,7 +281,13 @@ export default function WorkspacePage() {
       const versionId = newId();
       const task: GenerationTask = { ...baseProject.tasks[0], status: result.warning ? 'failed' : 'completed', completedAt, error: result.warning, result: { versionId, roomCount: generatedResults.length - 1, coverReady: true } };
       const version: DesignVersion = { id: versionId, mode: 'floorplan', style: workflowStyle, prompt, createdAt: completedAt, analysis: result.analysis, coverImageUrl: result.cover, images: generatedResults.slice(1).map((item) => ({ id: newId(), title: item.name, imageUrl: item.imageUrl, description: input.rooms.find((room) => room.name === item.name)?.description })), taskId, source: sourceType, floorPlanAnalysis: input.analysis, identifiedRooms: input.rooms, selectedRooms: input.selectedRooms, warning: result.warning };
-      await persistWorkspaceProject({ ...baseProject, updatedAt: completedAt, status: result.warning ? 'failed' : 'completed', thumbnail: result.cover, versions: [...baseProject.versions, version], tasks: [task] });
+      const storedProject = await persistWorkspaceProject({ ...baseProject, updatedAt: completedAt, status: 'generating', thumbnail: result.cover, versions: [...baseProject.versions, version], tasks: [{ ...task, status: 'generating', completedAt: undefined, error: undefined }] });
+      const durableVersion = storedProject.versions.at(-1) || version;
+      const taskResult = { cover: durableVersion.coverImageUrl, rooms: durableVersion.images, analysis: result.analysis, warning: result.warning, versionId };
+      const snapshot = { ...durableVersion, id: versionId, taskId, mode: 'floorplan', style: workflowStyle, createdAt: completedAt };
+      if (result.warning) await failPersistentGenerationTask(taskId, result.warning, taskResult, snapshot);
+      else await finishPersistentGenerationTask(taskId, taskResult, snapshot);
+      await persistWorkspaceProject({ ...storedProject, updatedAt: completedAt, status: result.warning ? 'failed' : 'completed', tasks: [task] });
       await loadProjects();
       const record: DesignHistoryRecord = {
         id: version.id, name: `${activeStyle.name} · ${new Date().toLocaleDateString('zh-CN')}`, createdAt: completedAt,
@@ -280,6 +306,7 @@ export default function WorkspacePage() {
       setStage(1); setMessage(error instanceof Error ? '方案生成失败：' + error.message : '方案生成失败，请稍后重试。');
       const completedAt = new Date().toISOString();
       const task: GenerationTask = { ...baseProject.tasks[0], status: 'failed', completedAt, error: error instanceof Error ? error.message : '方案生成失败' };
+      await failPersistentGenerationTask(task.id, task.error || '方案生成失败', generationProgress ? { cover: generationProgress.cover, rooms: generationProgress.rooms, failedRooms: generationProgress.failedRooms } : undefined).catch(() => undefined);
       await persistWorkspaceProject({ ...baseProject, updatedAt: completedAt, status: 'failed', tasks: [task] }).then(loadProjects).catch(() => undefined);
     }
     finally { setWorkKind(null); }
