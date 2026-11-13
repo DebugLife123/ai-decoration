@@ -58,6 +58,35 @@ public class TaskDataController {
         return ApiResponse.success(lifecycleService.get(ownerId(jwt), taskId));
     }
 
+    @PostMapping("/tasks/{taskId}/start")
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR', 'PERSONAL_USER')")
+    public ApiResponse<JsonNode> start(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID taskId) {
+        return ApiResponse.success(lifecycleService.startForOwner(ownerId(jwt), taskId));
+    }
+
+    @PostMapping("/tasks/{taskId}/progress")
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR', 'PERSONAL_USER')")
+    public ApiResponse<JsonNode> progress(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID taskId,
+                                          @RequestBody TaskProgressRequest request) {
+        return ApiResponse.success(lifecycleService.updateProgress(ownerId(jwt), taskId, request.stage(),
+                request.progress(), request.message(), request.completedRooms(), request.totalRooms(), request.partialResult()));
+    }
+
+    @PostMapping("/tasks/{taskId}/finish")
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR', 'PERSONAL_USER')")
+    public ApiResponse<JsonNode> finish(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID taskId,
+                                        @RequestBody TaskCompletionRequest request) {
+        return ApiResponse.success(lifecycleService.completeForOwner(ownerId(jwt), taskId, request.result(), request.snapshot()));
+    }
+
+    @PostMapping("/tasks/{taskId}/failure")
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR', 'PERSONAL_USER')")
+    public ApiResponse<JsonNode> failure(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID taskId,
+                                         @RequestBody TaskOwnerFailureRequest request) {
+        return ApiResponse.success(lifecycleService.failForOwner(ownerId(jwt), taskId, request.error(),
+                request.retryable(), request.partialResult(), request.snapshot()));
+    }
+
     @PostMapping("/tasks/{taskId}/claim")
     @PreAuthorize("hasRole('AI_WORKER')")
     public ApiResponse<JsonNode> claim(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID taskId,
@@ -112,4 +141,7 @@ public class TaskDataController {
     public record ClaimRequest(int leaseSeconds) { }
     public record TaskCompletionRequest(JsonNode result, JsonNode snapshot) { }
     public record TaskFailureRequest(String error, boolean retryable) { }
+    public record TaskOwnerFailureRequest(String error, boolean retryable, JsonNode partialResult, JsonNode snapshot) { }
+    public record TaskProgressRequest(String stage, int progress, String message, int completedRooms,
+                                      int totalRooms, JsonNode partialResult) { }
 }

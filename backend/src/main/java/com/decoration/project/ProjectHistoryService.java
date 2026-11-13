@@ -77,7 +77,8 @@ public class ProjectHistoryService {
         requireProject(ownerId, projectId);
         return jdbc.query("""
                 select input_json, result_json, status, error_message, retry_count, max_attempts,
-                    attempt_count, manual_retry_count, created_at, started_at, completed_at
+                    attempt_count, manual_retry_count, created_at, started_at, completed_at,
+                    stage, progress, progress_message, completed_rooms, total_rooms
                 from generation_tasks where owner_id = ? and project_id = ? order by created_at desc, id
                 """, (rs, row) -> {
                     var task = readJson(rs.getString("input_json"));
@@ -88,6 +89,12 @@ public class ProjectHistoryService {
                     ((ObjectNode) task).put("maxAttempts", rs.getInt("max_attempts"));
                     ((ObjectNode) task).put("attemptCount", rs.getInt("attempt_count"));
                     ((ObjectNode) task).put("manualRetryCount", rs.getInt("manual_retry_count"));
+                    ((ObjectNode) task).put("stage", rs.getString("stage"));
+                    ((ObjectNode) task).put("progress", rs.getInt("progress"));
+                    ((ObjectNode) task).put("completedRooms", rs.getInt("completed_rooms"));
+                    ((ObjectNode) task).put("totalRooms", rs.getInt("total_rooms"));
+                    var progressMessage = rs.getString("progress_message");
+                    if (progressMessage != null) ((ObjectNode) task).put("progressMessage", progressMessage);
                     var result = rs.getString("result_json");
                     if (result != null) ((ObjectNode) task).set("result", readJson(result));
                     var startedAt = rs.getTimestamp("started_at");
