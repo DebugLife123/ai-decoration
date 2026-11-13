@@ -36,7 +36,7 @@ export type GenerationJob = {
 };
 const supportedImageMimeTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
-async function toSupportedImageDataUrl(image: string): Promise<string> {
+export async function toSupportedImageDataUrl(image: string): Promise<string> {
   if (/^data:image\/(png|jpeg|webp);base64,/i.test(image)) return image;
 
   let blob: Blob;
@@ -96,9 +96,14 @@ export async function retryGenerationRooms(jobId: string, previous: FloorPlanGen
   return pollGenerationJob(jobId, previous.analysis, onProgress, previous.rooms, previous.cover);
 }
 
+export async function resumeGenerationJob(jobId: string, previous: Partial<FloorPlanGeneration> = {}, onProgress?: (job: GenerationJob) => void) {
+  return pollGenerationJob(jobId, previous.analysis || '', onProgress, previous.rooms || [], previous.cover || '');
+}
+
 async function pollGenerationJob(jobId: string, initialAnalysis: string, onProgress?: (job: GenerationJob) => void, previousRooms: RoomGeneration[] = [], previousCover = ''): Promise<FloorPlanGeneration & { warning?: string; jobId: string }> {
   const startedAt = Date.now();
   let consecutiveErrors = 0;
+  let notFoundSince: number | null = null;
   let receivedRooms = previousRooms.length;
   let includeCover = !previousCover;
   let cover = previousCover;
@@ -110,7 +115,13 @@ async function pollGenerationJob(jobId: string, initialAnalysis: string, onProgr
     try {
       const query = new URLSearchParams({ summary: '1', afterRooms: String(receivedRooms), includeCover: includeCover ? '1' : '0' });
       const statusResponse = await fetch(`/api/ai/generation-jobs/${encodeURIComponent(jobId)}?${query}`, { cache: 'no-store' });
-      if (!statusResponse.ok) throw new Error(statusResponse.status === 404 ? '生成任务已过期或服务已重启。' : '暂时无法获取生成进度。');
+      if (statusResponse.status === 404) {
+        notFoundSince ??= Date.now();
+        if (Date.now() - notFoundSince < 60_000) continue;
+        throw new Error('生成任务尚未登记或已过期，请稍后重试。');
+      }
+      if (!statusResponse.ok) throw new Error('暂时无法获取生成进度。');
+      notFoundSince = null;
       job = await statusResponse.json() as GenerationJob;
       consecutiveErrors = 0;
     } catch (error) {

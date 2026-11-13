@@ -154,6 +154,10 @@ export async function createPersistentGenerationTask(projectId: string, input: R
   return projectApiRequest<Record<string, unknown>>(`/api/v1/projects/${projectId}/renders`, { method: 'POST', body: JSON.stringify(input) });
 }
 
+export async function getPersistentGenerationTask(taskId: string): Promise<Record<string, unknown>> {
+  return projectApiRequest<Record<string, unknown>>(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
+}
+
 export async function startPersistentGenerationTask(taskId: string): Promise<void> {
   if (hasPersistentWorkspaceSession()) await projectApiRequest(`/api/v1/tasks/${taskId}/start`, { method: 'POST', body: '{}' });
 }

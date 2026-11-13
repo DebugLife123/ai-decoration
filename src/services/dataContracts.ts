@@ -34,6 +34,8 @@ export interface GenerationTask {
   style: DesignStyle;
   prompt: string;
   status: 'generating' | 'completed' | 'failed';
+  /** 用于离开工作台后恢复到正确的流程阶段。 */
+  stage?: 'recognizing' | 'generating' | 'completed' | 'failed';
   startedAt: string;
   completedAt?: string;
   error?: string;

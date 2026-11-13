@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { editRoomImage, generateDesign, retryGenerationRooms } from './aiClient.ts';
+import { editRoomImage, generateDesign, resumeGenerationJob, retryGenerationRooms } from './aiClient.ts';
 import { createId } from '../utils/id.ts';
 
 test('id generation works when crypto.randomUUID is unavailable', () => {
@@ -82,6 +82,30 @@ test('polling receives each image once and merges retry results', async () => {
     assert.equal(completed.warning, undefined);
     assert.deepEqual(polls[2], { after: '1', includeCover: '0' });
     assert.equal(progress.at(-1).completedRooms, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.window = originalWindow;
+  }
+});
+
+test('resuming a task tolerates a temporary not-found while the gateway registers it', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWindow = globalThis.window;
+  globalThis.window = { setTimeout: (callback) => setTimeout(callback, 0) };
+  let polls = 0;
+  globalThis.fetch = async () => {
+    polls += 1;
+    if (polls === 1) return new Response('not registered', { status: 404 });
+    return Response.json({
+      id: 'task-1', requestId: 'request-1', status: 'completed', stage: 'completed', message: '完成',
+      completedRooms: 0, totalRooms: 0, cover: 'cover-image', analysis: '识别结果', rooms: [],
+    });
+  };
+  try {
+    const result = await resumeGenerationJob('task-1');
+    assert.equal(result.cover, 'cover-image');
+    assert.equal(result.jobId, 'task-1');
+    assert.equal(polls, 2);
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.window = originalWindow;

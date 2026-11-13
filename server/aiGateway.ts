@@ -54,6 +54,15 @@ function safeImageMeta(meta?: PlanImageMeta) {
 function logAiEvent(event: Record<string, unknown>) {
   console.info(JSON.stringify({ timestamp: new Date().toISOString(), component: 'ai-gateway', ...event }));
 }
+function networkErrorCode(error: unknown) {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current && typeof current === 'object'; depth += 1) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === 'string' && /^[A-Z0-9_]{2,40}$/.test(code)) return code;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
 function imageBlob(dataUrl: string) {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) throw new Error('上传图片格式无效，请重新选择图片。');
@@ -106,7 +115,7 @@ export async function callApi(config: GatewayConfig, path: string, init: Request
   const startedAt = Date.now();
   const requestId = context.requestId || crypto.randomUUID();
   const inputImageBytes = context.inputImageBytes ?? (typeof init.body === 'string' ? [...init.body.matchAll(/data:image\/[a-z0-9.+-]+;base64,([A-Za-z0-9+/=]+)/gi)].reduce((sum, match) => sum + Math.floor(match[1].length * 0.75), 0) : undefined);
-  const maxAttempts = !isImageRequest ? 2 : 1;
+  const maxAttempts = 2;
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const attemptStartedAt = Date.now();
@@ -114,12 +123,14 @@ export async function callApi(config: GatewayConfig, path: string, init: Request
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     let status: number | undefined;
     let upstreamRequestId: string | undefined;
+    let responseReceived = false;
     try {
       const response = await fetch(`${baseUrl(config.baseUrl)}/v1${path}`, {
         ...init,
         signal: controller.signal,
         headers: { Authorization: `Bearer ${config.apiKey}`, ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...init.headers },
       });
+      responseReceived = true;
       status = response.status;
       upstreamRequestId = response.headers.get('x-request-id') || response.headers.get('request-id') || undefined;
       if (!response.ok) {
@@ -133,14 +144,14 @@ export async function callApi(config: GatewayConfig, path: string, init: Request
       return payload;
     } catch (error) {
       lastError = error;
-      const retryableStatus = error instanceof UpstreamError && [408, 429, 502, 503, 504, 524].includes(error.status);
-      const retryableNetwork = !(error instanceof UpstreamError) && !(error instanceof Error && error.name === 'AbortError');
+      const retryableStatus = !isImageRequest && error instanceof UpstreamError && [408, 429, 502, 503, 504, 524].includes(error.status);
+      const retryableNetwork = !responseReceived && !(error instanceof UpstreamError) && !(error instanceof Error && error.name === 'AbortError');
       if (attempt < maxAttempts && (retryableStatus || retryableNetwork)) {
-        logAiEvent({ event: 'upstream_retry', requestId, operation: context.operation || 'unspecified', stage: context.stage || path, path, model: context.model, inputImageBytes, attempt, status, upstreamRequestId, attemptDurationMs: Date.now() - attemptStartedAt, durationMs: Date.now() - startedAt, reason: retryableStatus ? `http_${error instanceof UpstreamError ? error.status : 'error'}` : 'network_error' });
+        logAiEvent({ event: 'upstream_retry', requestId, operation: context.operation || 'unspecified', stage: context.stage || path, path, model: context.model, inputImageBytes, attempt, status, upstreamRequestId, networkErrorCode: retryableNetwork ? networkErrorCode(error) : undefined, attemptDurationMs: Date.now() - attemptStartedAt, durationMs: Date.now() - startedAt, reason: retryableStatus ? `http_${error instanceof UpstreamError ? error.status : 'error'}` : 'network_error' });
         await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
         continue;
       }
-      logAiEvent({ event: 'upstream_request', requestId, operation: context.operation || 'unspecified', stage: context.stage || path, path, model: context.model, inputImageBytes, attempt, status, upstreamRequestId, attemptDurationMs: Date.now() - attemptStartedAt, durationMs: Date.now() - startedAt, outcome: error instanceof Error && error.name === 'AbortError' ? 'local_timeout' : 'failure' });
+      logAiEvent({ event: 'upstream_request', requestId, operation: context.operation || 'unspecified', stage: context.stage || path, path, model: context.model, inputImageBytes, attempt, status, upstreamRequestId, networkErrorCode: !responseReceived ? networkErrorCode(error) : undefined, attemptDurationMs: Date.now() - attemptStartedAt, durationMs: Date.now() - startedAt, outcome: error instanceof Error && error.name === 'AbortError' ? 'local_timeout' : 'failure' });
       if (error instanceof Error && error.name === 'AbortError') throw new Error(`${context.stage === 'room-review' ? '效果图复核' : isImageRequest ? '图片生成' : 'AI 分析'}请求超过 ${timeoutMs / 1000} 秒，本次步骤未完成。`);
       if (error instanceof UpstreamError) throw error;
       throw new Error(`上游接口连接失败：${error instanceof Error ? error.message : '未知网络错误'}`);

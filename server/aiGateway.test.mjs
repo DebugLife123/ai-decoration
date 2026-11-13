@@ -136,3 +136,43 @@ test('analysis retries a transient 503 but does not retry a local deadline', asy
     console.info = originalLog;
   }
 });
+
+test('image requests retry only a pre-response connection failure and log a sanitized network code', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.info;
+  const logs = [];
+  const config = { baseUrl: 'http://mock.invalid', apiKey: 'secret-key', imageModel: 'mock' };
+  const request = () => callApi(config, '/images/edits', { method: 'POST', body: new FormData() }, { requestId: 'image-network-case', stage: 'room-image' });
+  console.info = (line) => logs.push(JSON.parse(line));
+  try {
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      if (calls === 1) throw new TypeError('fetch failed', { cause: Object.assign(new Error('socket detail'), { code: 'ECONNRESET' }) });
+      return new Response('{"data":[{"b64_json":"iVBORw0KGgo="}]}', { status: 200 });
+    };
+    assert.deepEqual(await request(), { data: [{ b64_json: 'iVBORw0KGgo=' }] });
+    assert.equal(calls, 2);
+    assert.ok(logs.some((entry) => entry.event === 'upstream_retry' && entry.networkErrorCode === 'ECONNRESET' && entry.requestId === 'image-network-case'));
+    assert.ok(logs.every((entry) => !JSON.stringify(entry).includes('secret-key')));
+
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return new Response('', { status: 503 });
+    };
+    await assert.rejects(request(), /503/);
+    assert.equal(calls, 1);
+
+    calls = 0;
+    globalThis.fetch = (_url, init) => new Promise((_resolve, reject) => {
+      calls += 1;
+      init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    });
+    await assert.rejects(callApi({ ...config, imageTimeoutMs: 15 }, '/images/edits', { method: 'POST', body: new FormData() }, { requestId: 'image-timeout-case', stage: 'room-image' }), /0\.015/);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.info = originalLog;
+  }
+});
