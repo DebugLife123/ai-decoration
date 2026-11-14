@@ -19,6 +19,7 @@ import AdminCompanyDetailPage from './pages/AdminCompanyDetailPage';
 import CompanyPage from './pages/CompanyPage';
 import BusinessStylesPage from './pages/BusinessStylesPage';
 import CadWorkflowPage from './pages/CadWorkflowPage';
+import CanvasPage from './pages/CanvasPage';
 import NotificationsPage from './pages/NotificationsPage';
 import { useAppStore } from './stores/appStore';
 import './App.css';
@@ -31,6 +32,18 @@ function RoleRoute({ role, children }: { role: 'consumer' | 'business'; children
 
   if (!isAuthenticated) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
   if (currentRole !== role) return <Navigate to={target} replace />;
+  return <>{children}</>;
+}
+
+function CanvasRoute({ children }: { children: ReactNode }) {
+  const currentRole = useAppStore((state) => state.role);
+  const location = useLocation();
+  const isAuthenticated = useAppStore((state) => Boolean(state.authSession));
+  const isLocalCanvasDevelopment = import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+  if (!isAuthenticated && isLocalCanvasDevelopment) return <>{children}</>;
+  if (!isAuthenticated) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+  if (currentRole !== 'consumer') return <Navigate to={currentRole === 'business' ? '/business' : currentRole === 'admin' ? '/admin' : '/'} replace />;
   return <>{children}</>;
 }
 
@@ -64,6 +77,8 @@ function App() {
           <Route path="/inspiration" element={<RoleRoute role="consumer"><InspirationPage /></RoleRoute>} />
           <Route path="/workspace" element={<RoleRoute role="consumer"><WorkspacePage /></RoleRoute>} />
           <Route path="/cad-workflow" element={<RoleRoute role="consumer"><CadWorkflowPage /></RoleRoute>} />
+          <Route path="/canvas" element={<CanvasRoute><CanvasPage /></CanvasRoute>} />
+          <Route path="/canvas/:id" element={<CanvasRoute><CanvasPage /></CanvasRoute>} />
           <Route path="/projects" element={<RoleRoute role="consumer"><ProjectsPage /></RoleRoute>} />
           <Route path="/materials" element={<RoleRoute role="consumer"><MaterialsPage /></RoleRoute>} />
           <Route path="/cases" element={<RoleRoute role="consumer"><CaseCatalogPage /></RoleRoute>} />

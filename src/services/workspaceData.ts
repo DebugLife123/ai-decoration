@@ -1,7 +1,7 @@
 import { localWorkspaceDataAdapter } from './localDataAdapter';
 import { businessApiConfig, businessDataAdapter } from './businessData';
 import { loadCatalogMaterials } from './materialCatalog';
-import { authApiBaseUrl, currentAccessToken, readAuthSession } from './authSession';
+import { authApiBaseUrl, currentAccessToken, isLocalDemoSession, readAuthSession } from './authSession';
 import type { Project, WorkspaceDataAdapter } from './dataContracts';
 
 type ApiEnvelope<T> = { code: string; message: string; data: T; timestamp: string };
@@ -77,13 +77,15 @@ const projectApiAdapter: WorkspaceDataAdapter = {
 
 function activeWorkspaceAdapter(): WorkspaceDataAdapter {
   const session = readAuthSession();
+  if (isLocalDemoSession(session)) return localWorkspaceDataAdapter;
   return businessApiConfig.enabled && (Boolean(session) || Boolean(currentAccessToken()))
     ? projectApiAdapter
     : localWorkspaceDataAdapter;
 }
 
 function hasPlatformSession(): boolean {
-  return Boolean(businessApiConfig.enabled && (readAuthSession() || currentAccessToken()));
+  const session = readAuthSession();
+  return Boolean(businessApiConfig.enabled && !isLocalDemoSession(session) && (session || currentAccessToken()));
 }
 
 /**

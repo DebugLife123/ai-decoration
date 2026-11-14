@@ -30,6 +30,10 @@
 .auth-error { padding: 10px 12px; color: #a94f52; background: #fff0f0; border: 1px solid #f1d4d4; border-radius: 8px; font-size: 12px; }
 .auth-toggle { align-self: center; margin-top: 22px; color: #6a5ad4; font-size: 12px; }
 .auth-toggle:hover { text-decoration: underline; }
+.auth-demo-entry { display: grid; gap: 4px; margin-top: 22px; padding: 12px 14px; color: #686173; background: #f5f2fb; border: 1px solid #e6e0f0; border-radius: 9px; font-size: 11px; }
+.auth-demo-entry p, .auth-demo-entry small { margin: 0; }
+.auth-demo-entry small { color: #96909e; }
+.auth-demo-entry button { justify-self: start; margin-top: 4px; padding: 0; color: #6a5ad4; font-size: 12px; font-weight: 600; }
 .auth-note { margin-top: 48px; color: #aaa4b1; font-size: 11px; line-height: 1.8; }
 @media (min-width: 821px) {
   .auth-page { height: 100vh; min-height: 620px; overflow: hidden; }
