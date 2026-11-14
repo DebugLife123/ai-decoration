@@ -63,7 +63,22 @@ export function clearAuthSession(): void {
 }
 
 export function currentAccessToken(): string {
-  return readAuthSession()?.accessToken || env?.VITE_BUSINESS_API_TOKEN?.trim() || '';
+  const session = readAuthSession();
+  if (session?.user.role === 'LOCAL_DEMO') return '';
+  return session?.accessToken || env?.VITE_BUSINESS_API_TOKEN?.trim() || '';
+}
+
+export function createLocalDemoSession(): AuthSession | null {
+  if (!env?.DEV || !['localhost', '127.0.0.1'].includes(window.location.hostname)) return null;
+  return {
+    accessToken: 'local-demo-session',
+    expiresInSeconds: 4 * 60 * 60,
+    user: { id: 'local-demo-user', email: 'demo@local.test', displayName: '本地演示设计师', accountType: 'personal', companyId: null, role: 'LOCAL_DEMO' },
+  };
+}
+
+export function isLocalDemoSession(session: AuthSession | null = readAuthSession()): boolean {
+  return session?.user.role === 'LOCAL_DEMO';
 }
 
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {

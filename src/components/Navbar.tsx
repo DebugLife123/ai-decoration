@@ -4,7 +4,7 @@ import { useAppStore } from '../stores/appStore';
 import BrandLoading from './BrandLoading';
 import './Navbar.css';
 
-type IconName = 'home' | 'workspace' | 'projects' | 'templates' | 'materials' | 'budget' | 'business' | 'cad' | 'help' | 'settings' | 'logout';
+type IconName = 'home' | 'workspace' | 'projects' | 'templates' | 'materials' | 'budget' | 'business' | 'cad' | 'canvas' | 'help' | 'settings' | 'logout';
 
 const iconPaths: Record<IconName, string> = {
   home: 'M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5M9.5 21v-6h5v6',
@@ -15,6 +15,7 @@ const iconPaths: Record<IconName, string> = {
   budget: 'M4 19h16M6 16V9m4 7V5m4 11v-4m4 4V7',
   business: 'M4 20V8h16v12M2 20h20M7 8V5h10v3M8 12h2M14 12h2M8 16h2M14 16h2',
   cad: 'M3.5 6.5A2.5 2.5 0 0 1 6 4h4l2 2h6A2.5 2.5 0 0 1 20.5 8.5v9A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5z',
+  canvas: 'M4 4h16v16H4zM8 8h3v3H8zM14 8h2M14 11h2M8 15h8',
   help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM9.6 9a2.5 2.5 0 1 1 4.6 1.3c-.8 1.2-2.2 1.3-2.2 3M12 17h.01',
   settings: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.5 1.5-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-2.1v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1-1.5-1.5.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H7v-2.1h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 1.5-1.5.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V5h2.1v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.5 1.5-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2V13h-.2a1.7 1.7 0 0 0-1.6 1Z',
   logout: 'M10 17l5-5-5-5M15 12H3M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6',
@@ -34,6 +35,7 @@ const consumerNavGroups = [
       { path: '/', label: '灵感首页', icon: 'home' as IconName },
       { path: '/workspace', label: '设计工作台', icon: 'workspace' as IconName },
       { path: '/cad-workflow', label: 'CAD 全屋渲染', icon: 'cad' as IconName },
+      { path: '/canvas', label: '空间设计画布', icon: 'canvas' as IconName },
       { path: '/projects', label: '我的项目', icon: 'projects' as IconName },
       { path: '/#templates', label: '方案模板', icon: 'templates' as IconName },
     ],

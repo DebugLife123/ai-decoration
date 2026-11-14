@@ -29,7 +29,12 @@ verify:
     - npm ci --prefer-offline
     - npm run lint
     - npm run build
-    - docker compose -p $env:COMPOSE_PROJECT_NAME config --quiet
+    - |
+      $env:POSTGRES_PASSWORD = 'ci-compose-config-validation-only'
+      $env:JWT_SECRET = 'ci-compose-config-validation-only'
+      docker compose -p $env:COMPOSE_PROJECT_NAME config --quiet
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      Remove-Item Env:POSTGRES_PASSWORD,Env:JWT_SECRET -ErrorAction SilentlyContinue
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

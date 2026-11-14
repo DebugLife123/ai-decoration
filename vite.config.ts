@@ -3,6 +3,7 @@ import { defineConfig, loadEnv } from 'vite'
 import { createAiGatewayPlugin } from './server/aiGateway.js'
 import { createCadWorkflowMiddleware } from './server/cadWorkflow.js'
 import { createBackendProxyPlugin } from './server/backendProxy.js'
+import { resolve } from 'node:path'
 
 const aiEnvKeys = ['CODEX2API_API_KEY', 'AI_BASE_URL', 'AI_VISION_MODEL', 'AI_IMAGE_MODEL', 'AI_API_KEY', 'AI_MODEL', 'IMAGE_MODEL', 'AI_ANALYSIS_TIMEOUT_MS', 'AI_REVIEW_TIMEOUT_MS', 'AI_IMAGE_TIMEOUT_MS']
 
@@ -30,6 +31,8 @@ export default defineConfig(() => {
     imageTimeoutMs: configuredTimeout('AI_IMAGE_TIMEOUT_MS', 180000),
   }
   return {
+    resolve: { dedupe: ['react', 'react-dom'] },
+    server: { fs: { allow: [process.cwd(), resolve(process.cwd(), 'packages/canvas')] } },
     plugins: [react(), createAiGatewayPlugin(loadedEnv), createBackendProxyPlugin(loadedEnv.BACKEND_URL || 'http://127.0.0.1:8091'), { name: 'cad-workflow', configureServer(server) { server.middlewares.use('/api/cad', createCadWorkflowMiddleware(cadGatewayConfig)) }, configurePreviewServer(server) { server.middlewares.use('/api/cad', createCadWorkflowMiddleware(cadGatewayConfig)) } }],
     preview: {
       allowedHosts: ['openai2api.com', 'www.openai2api.com'],

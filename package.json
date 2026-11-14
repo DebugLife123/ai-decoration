@@ -4,19 +4,31 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "npm run build:canvas-types",
     "dev": "vite",
+    "prebuild": "npm run build:canvas-types",
     "build": "tsc -b && vite build",
+    "build:canvas-types": "npm run build:types --prefix packages/canvas",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@infinite-canvas/core": "file:./packages/canvas",
+    "@tanstack/react-query": "^5.100.9",
+    "antd": "6.4.2",
     "framer-motion": "^14.7.1",
+    "i18next": "^26.3.6",
+    "lucide-react": "^1.16.0",
+    "localforage": "^1.10.0",
+    "nanoid": "^5.1.11",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5",
+    "react-i18next": "^17.0.11",
     "zustand": "^5.0.16"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

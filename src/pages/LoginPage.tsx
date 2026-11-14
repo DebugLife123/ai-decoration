@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { authRequest, type AccountType, type AuthSession } from '../services/authSession';
+import { authRequest, createLocalDemoSession, type AccountType, type AuthSession } from '../services/authSession';
 import { useAppStore } from '../stores/appStore';
 import heroImage from '../assets/generated/hero-home.png';
 import './LoginPage.css';
@@ -39,6 +39,15 @@ export default function LoginPage() {
     }
   }
 
+  function enterLocalDemo() {
+    const session = createLocalDemoSession();
+    if (!session) return;
+    setAuthSession(session);
+    const next = new URLSearchParams(location.search).get('next');
+    const safeNext = next?.startsWith('/') && !next.startsWith('//') && next !== '/login' ? next : '/canvas';
+    navigate(safeNext, { replace: true });
+  }
+
   return (
     <main className="auth-page">
       <section className="auth-visual" aria-label="简艺装空间灵感">
@@ -74,6 +83,7 @@ export default function LoginPage() {
         </form>
 
         <button className="auth-toggle" type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}>{mode === 'login' ? '还没有账号？创建一个' : '已有账号？返回登录'}</button>
+        {mode === 'login' && import.meta.env.DEV && ['localhost', '127.0.0.1'].includes(window.location.hostname) && <div className="auth-demo-entry"><p>本地演示账号：demo@local.test</p><small>仅使用当前浏览器数据，不连接服务端账号。</small><button type="button" onClick={enterLocalDemo}>本地演示进入</button></div>}
         <p className="auth-note">企业账号用于团队资料、案例与报价协作；个人账号用于独立设计与项目保存。</p>
       </section>
     </main>
