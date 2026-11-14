@@ -32,8 +32,15 @@ export default defineConfig(() => {
   return {
     plugins: [react(), createAiGatewayPlugin(loadedEnv), createBackendProxyPlugin(loadedEnv.BACKEND_URL || 'http://127.0.0.1:8091'), { name: 'cad-workflow', configureServer(server) { server.middlewares.use('/api/cad', createCadWorkflowMiddleware(cadGatewayConfig)) }, configurePreviewServer(server) { server.middlewares.use('/api/cad', createCadWorkflowMiddleware(cadGatewayConfig)) } }],
     preview: {
-      allowedHosts: ['www.openai2api.com'],
-      cors: { origin: ['http://www.openai2api.com:4175', 'https://www.openai2api.com:4175'] },
+      allowedHosts: ['openai2api.com', 'www.openai2api.com'],
+      cors: {
+        origin: [
+          'http://openai2api.com:4175',
+          'https://openai2api.com:4175',
+          'http://www.openai2api.com:4175',
+          'https://www.openai2api.com:4175',
+        ],
+      },
     },
   }
 })
