@@ -8,6 +8,7 @@ import ProjectsPage from './pages/ProjectsPage';
 import MaterialsPage from './pages/MaterialsPage';
 import CaseCatalogPage from './pages/CaseCatalogPage';
 import BudgetPage from './pages/BudgetPage';
+import SubscriptionPage from './pages/SubscriptionPage';
 import BusinessPage from './pages/BusinessPage';
 import LoginPage from './pages/LoginPage';
 import AdminLoginPage from './pages/AdminLoginPage';
@@ -86,6 +87,7 @@ function App() {
           <Route path="/notifications" element={<RoleRoute role="consumer"><NotificationsPage /></RoleRoute>} />
           <Route path="/business/notifications" element={<RoleRoute role="business"><NotificationsPage /></RoleRoute>} />
           <Route path="/budget" element={<RoleRoute role="consumer"><BudgetPage /></RoleRoute>} />
+          <Route path="/subscription" element={<RoleRoute role="consumer"><SubscriptionPage /></RoleRoute>} />
           <Route path="/business" element={<RoleRoute role="business"><BusinessPage /></RoleRoute>} />
           <Route path="/business/styles" element={<RoleRoute role="business"><BusinessStylesPage /></RoleRoute>} />
           <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />

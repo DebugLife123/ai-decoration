@@ -4,7 +4,7 @@ import { useAppStore } from '../stores/appStore';
 import BrandLoading from './BrandLoading';
 import './Navbar.css';
 
-type IconName = 'home' | 'workspace' | 'projects' | 'templates' | 'materials' | 'budget' | 'business' | 'cad' | 'canvas' | 'help' | 'settings' | 'logout';
+type IconName = 'home' | 'workspace' | 'projects' | 'templates' | 'materials' | 'budget' | 'subscription' | 'business' | 'cad' | 'canvas' | 'help' | 'settings' | 'logout';
 
 const iconPaths: Record<IconName, string> = {
   home: 'M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5M9.5 21v-6h5v6',
@@ -13,6 +13,7 @@ const iconPaths: Record<IconName, string> = {
   templates: 'M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-13ZM8 3v18M8 8h12M8 13h12',
   materials: 'M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11ZM7 16l3-3 2 2 3-4 3 5',
   budget: 'M4 19h16M6 16V9m4 7V5m4 11v-4m4 4V7',
+  subscription: 'M12 3v18M17 7.5c0-1.7-2.2-3-5-3s-5 1.3-5 3 2.2 3 5 3 5 1.3 5 3-2.2 3-5 3-5-1.3-5-3',
   business: 'M4 20V8h16v12M2 20h20M7 8V5h10v3M8 12h2M14 12h2M8 16h2M14 16h2',
   cad: 'M3.5 6.5A2.5 2.5 0 0 1 6 4h4l2 2h6A2.5 2.5 0 0 1 20.5 8.5v9A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5z',
   canvas: 'M4 4h16v16H4zM8 8h3v3H8zM14 8h2M14 11h2M8 15h8',
@@ -45,6 +46,7 @@ const consumerNavGroups = [
       { path: '/materials', label: '材料库', icon: 'materials' as IconName },
       { path: '/cases', label: '认证企业案例', icon: 'projects' as IconName },
       { path: '/budget', label: '预算试算', icon: 'budget' as IconName },
+      { path: '/subscription', label: '积分订阅', icon: 'subscription' as IconName },
       { path: '/notifications', label: '通知中心', icon: 'help' as IconName },
     ],
   },
