@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { templates } from './HomePage';
+import { existingTemplates as templates } from '../features/styleLibrary/inspirationTemplates';
 import { addCadAsset, analyzeCadPlan, approveBirdseye, createCadProject, generateBirdseye, saveCadSnapshot, submitCadQa, updateStyleBrief } from '../services/cadWorkflowClient';
 import type { CadProject, QaCheck, StyleBrief } from '../types/cadWorkflow';
 import './CadWorkflowPage.css';

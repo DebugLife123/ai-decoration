@@ -248,3 +248,15 @@
   .detail-modal .modal-actions { margin-right: -17px; margin-left: -17px; padding-right: 17px; padding-left: 17px; }
   .detail-modal .like-button, .detail-modal .modal-primary-button { min-height: 40px; padding-right: 10px; padding-left: 10px; font-size: 11px; }
 }
+
+/* Whole-home style catalog: retain the main branch gallery and generation flow. */
+.reference-toolbar { align-items: flex-start; gap: 20px; }
+.reference-filters { flex-wrap: wrap; }
+.reference-search { display: flex; align-items: center; gap: 8px; flex: 0 0 210px; padding: 9px 12px; border: 1px solid #e5e0da; border-radius: 8px; background: #fff; color: #8a8178; font-size: 12px; }
+.reference-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; color: #353238; }
+.reference-search:focus-within { outline: 2px solid #71649d; outline-offset: 2px; }
+.reference-empty { padding: 48px 0; color: #77736f; text-align: center; }
+.template-prompt { margin-top: 20px; color: #77736f; font-size: 12px; }
+.template-prompt summary { cursor: pointer; }
+.template-prompt textarea { box-sizing: border-box; width: 100%; margin-top: 10px; padding: 12px; border: 1px solid #e5e0da; border-radius: 6px; background: #fff; color: #625b60; line-height: 1.8; resize: vertical; font: inherit; }
+@media (max-width: 680px) { .reference-search { margin-top: 16px; } }

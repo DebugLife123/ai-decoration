@@ -4,9 +4,11 @@ import { useAppStore } from '../stores/appStore';
 import { workspaceDataAdapter } from '../services/workspaceData';
 import type { Project } from '../stores/appStore';
 import type { MaterialRecord } from '../services/dataContracts';
+import { wholeHomeStyles, type WholeHomeStyle } from '../features/styleLibrary/wholeHomeStyles';
 import './ProjectsPage.css';
 
 const styleNames: Record<Project['style'], string> = {
+  ...Object.fromEntries(wholeHomeStyles.map(style => [style.key, style.name])) as Record<WholeHomeStyle['key'], string>,
   modern: '现代简约', minimal: '北欧原木', chinese: '新中式', cream: '奶油法式', european: '轻奢欧式', wabi: '自然侘寂', song: '宋式美学', smallAmerican: '小美风格',
 };
 

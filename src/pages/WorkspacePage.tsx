@@ -4,7 +4,7 @@ import { useAppStore, type DesignStyle } from '../stores/appStore';
 import { analyzeFloorPlan, editRoomImage, generateDesign, resumeGenerationJob, retryGenerationRooms, toSupportedImageDataUrl, type GenerationJob, type IdentifiedRoom, type PlanSource } from '../services/aiClient';
 import { deleteDesignHistory, listDesignHistory, saveDesignHistory, type DesignHistoryRecord } from '../services/designHistory';
 import RoomImageEditor, { type RoomImageVersion } from '../components/RoomImageEditor';
-import { templates } from './HomePage';
+import { templates } from '../features/styleLibrary/inspirationTemplates';
 import { createPersistentGenerationTask, failPersistentGenerationTask, finishPersistentGenerationTask, getPersistentGenerationTask, hasPersistentWorkspaceSession, persistWorkspaceProject, startPersistentGenerationTask, updatePersistentGenerationTask } from '../services/workspaceData';
 import type { Project, DesignVersion, GenerationTask } from '../services/dataContracts';
 import { createId } from '../utils/id';
@@ -28,7 +28,7 @@ const reportDetails: Record<string, { subtitle: string; principles: { title: str
   song: { subtitle: '以木、陶与留白表达安静含蓄的东方居住气质', principles: [{ title: '疏朗留白', body: '控制装饰密度，以非对称陈设保留空间呼吸感。' }, { title: '自然材质', body: '结合深木、肌理墙面、石材与手作陶器，呈现温润层次。' }, { title: '当代宋韵', body: '提取宋式审美的克制气质，保持现代住宅的实用尺度。' }], notes: ['木作颜色与墙面肌理会受现场光线和材料批次影响。', '效果图不替代施工图，尺寸与结构需由专业人员复核。'] },
   smallAmerican: { subtitle: '温柔奶油色与复古线条结合的轻松居家方案', principles: [{ title: '经典线条', body: '以简洁线框门板和适度装饰线条建立复古基调。' }, { title: '温暖配色', body: '奶油白搭配橄榄绿、深木色与少量黄铜细节。' }, { title: '小户型友好', body: '优先考虑轻巧家具、整合收纳与清晰活动空间。' }], notes: ['复古线条与五金细节可按预算和现货情况调整。', '家具尺度、收纳容量与过道宽度请结合现场尺寸确认。'] },
 };
-const styleOptions = templates.map((template) => ({ ...template, key: template.styleKey, name: template.style, note: styleNotes[template.styleKey] ?? template.style, details: reportDetails[template.styleKey] ?? reportDetails.modern }));
+const styleOptions = templates.map((template) => ({ ...template, key: template.styleKey, name: template.style, note: styleNotes[template.styleKey] ?? template.style, details: reportDetails[template.styleKey] ?? { subtitle: template.analysis, principles: template.ruleItems.map((item) => ({ title: item.label, body: item.value })), notes: ['效果图用于方案沟通，实际尺寸、材质与结构请结合现场复核。'] } }));
 function formatSize(bytes: number) { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`; }
 function newId() { return createId(); }
 function readImage(file: File) { return new Promise<{ data: string; meta: PlanImageMeta }>((resolve, reject) => {
@@ -160,7 +160,8 @@ export default function WorkspacePage() {
   const [styleOverride, setStyleOverride] = useState<{ route: string | null; value: DesignStyle } | null>(null);
   const workflowStyle = styleOverride?.route === requestedStyle ? styleOverride.value : routeStyle ?? selectedStyle;
   const activeStyle = useMemo(() => styleOptions.find((style) => style.key === workflowStyle) ?? styleOptions[0], [workflowStyle]);
-  const preferences = [['色调', searchParams.get('tone')], ['光线', searchParams.get('light')], ['材质', searchParams.get('material')]].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  const routeMatchesStyle = routeStyle === activeStyle.key;
+  const preferences = [['色调', searchParams.get('tone')], ['光线', searchParams.get('light')], ['材质', searchParams.get('material')]].filter((entry): entry is [string, string] => routeMatchesStyle && Boolean(entry[1]));
 
   useEffect(() => {
     void listDesignHistory().then(setHistory).catch((error: unknown) => {
@@ -424,10 +425,11 @@ export default function WorkspacePage() {
     const planImage = context?.floorPlan || imageData;
     const planSource = context?.source || sourceType;
     const planStyle = context?.style || workflowStyle;
+    const planTemplate = styleOptions.find((style) => style.key === planStyle);
     if (!planImage) { setMessage('请先上传户型图片。'); setStage(1); return; }
     setWorkElapsed(0); setWorkKind('generating'); setGenerationProgress(null); setMessage(''); setResults([]); setStage(2);
     const sourcePrompt = planSource === 'cad' ? '输入来源为 CAD 导出的住宅平面图，严格参考图中墙体、门窗和尺寸标注。' : '输入来源为住宅户型图，严格参考图中可见的房间边界与空间连接。';
-    const prompt = [sourcePrompt, searchParams.get('prompt'), ...preferences.map(([label, value]) => `${label}:${value}`), `户型识别结果：${input.analysis}`, `识别空间：${input.rooms.map((room) => `${room.name}${room.suggestedName ? `（候选：${room.suggestedName}）` : ''}（${room.description}；${room.evidence?.map((item) => item.detail).join('、') || '无额外可见证据'}）`).join('；')}`].filter(Boolean).join('。');
+    const prompt = [sourcePrompt, planTemplate?.prompt, ...(planStyle === routeStyle ? preferences : []).map(([label, value]) => `${label}:${value}`), `户型识别结果：${input.analysis}`, `识别空间：${input.rooms.map((room) => `${room.name}${room.suggestedName ? `（候选：${room.suggestedName}）` : ''}（${room.description}；${room.evidence?.map((item) => item.detail).join('、') || '无额外可见证据'}）`).join('；')}`].filter(Boolean).join('。');
     try {
       const roomReferenceImages = await Promise.all(input.rooms.filter((room) => input.selectedRooms.includes(room.name) && room.bounds).map(async (room) => ({ name: room.name, image: await makeRoomReferenceSheet(planImage, room.bounds!) })));
       let progressQueue = Promise.resolve();
@@ -441,7 +443,7 @@ export default function WorkspacePage() {
         })).catch((error: unknown) => console.warn('Could not persist generation progress:', error));
       };
       await updatePersistentGenerationTask(taskId, { stage: 'generating', progress: 25, message: '正在生成全屋总览和分空间效果图', completedRooms: 0, totalRooms: input.selectedRooms.length });
-      const result = await generateDesign({ mode: 'floorplan', style: planStyle, prompt, floorPlan: planImage, imageMeta: context?.imageMeta || imageMeta || undefined, source: planSource, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, roomReferenceImages, taskId }, reportProgress);
+      const result = await generateDesign({ mode: 'floorplan', style: planStyle, templateId: planTemplate?.id, referenceAssetId: planTemplate?.referenceAssetId, prompt, floorPlan: planImage, imageMeta: context?.imageMeta || imageMeta || undefined, source: planSource, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, roomReferenceImages, taskId }, reportProgress);
       await progressQueue;
       if (result.type !== 'floorplan') throw new Error('返回结果类型不正确。');
       setGenerationJobId(result.jobId || null);

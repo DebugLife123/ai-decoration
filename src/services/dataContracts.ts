@@ -1,5 +1,5 @@
 export type DesignMode = 'photo' | 'floorplan';
-export type DesignStyle = 'modern' | 'minimal' | 'chinese' | 'cream' | 'european' | 'wabi' | 'song' | 'smallAmerican';
+export type DesignStyle = 'modern' | 'minimal' | 'chinese' | 'cream' | 'european' | 'wabi' | 'song' | 'smallAmerican' | 'modernContemporary' | 'bauhaus' | 'frenchCream' | 'frenchNatural' | 'italianMinimal' | 'oldMoney' | 'vintage' | 'woodCream';
 
 /** 图纸来源：CAD 图纸或普通户型图片。 */
 export type PlanSource = 'cad' | 'floorplan';

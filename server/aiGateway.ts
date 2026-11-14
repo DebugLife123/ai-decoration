@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { getWholeHomeStyle, wholeHomePrompt } from '../src/features/styleLibrary/wholeHomeStyles.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 
@@ -6,7 +9,7 @@ type RoomBounds = { x: number; y: number; width: number; height: number };
 type RoomEvidence = { type: string; detail: string };
 type IdentifiedRoom = { id?: string; name: string; description: string; suggestedName?: string; confidence?: number | null; status?: 'confirmed' | 'identified' | 'unknown'; evidence?: RoomEvidence[]; adjacentTo?: string[]; bounds?: RoomBounds | null };
 type PlanImageMeta = { sourceWidth: number; sourceHeight: number; sentWidth: number; sentHeight: number; sourceBytes: number };
-type GenerateRequest = { mode: 'photo' | 'floorplan'; style: string; prompt?: string; photo?: string; floorPlan?: string; imageMeta?: PlanImageMeta; photos?: string[]; source?: 'cad' | 'floorplan'; analysis?: string; rooms?: IdentifiedRoom[]; selectedRooms?: string[]; roomReferenceImages?: { name: string; image: string }[]; taskId?: string };
+type GenerateRequest = { mode: 'photo' | 'floorplan'; style: string; prompt?: string; photo?: string; floorPlan?: string; imageMeta?: PlanImageMeta; photos?: string[]; source?: 'cad' | 'floorplan'; analysis?: string; rooms?: IdentifiedRoom[]; selectedRooms?: string[]; roomReferenceImages?: { name: string; image: string }[]; taskId?: string; templateId?: string; referenceAssetId?: string };
 type AnalyzeRequest = { floorPlan?: string; imageMeta?: PlanImageMeta; source?: 'cad' | 'floorplan' };
 type RoomImageEditRequest = { image?: string; mask?: string; instruction?: string; roomName?: string; style?: string };
 type ImageResult = { imageUrl: string };
@@ -259,11 +262,12 @@ async function mapConcurrent<T, R>(items: T[], limit: number, mapper: (item: T) 
   }));
   return results;
 }
-async function edit(config: GatewayConfig, image: string, prompt: string, context: AiCallContext = {}): Promise<ImageResult> {
+async function edit(config: GatewayConfig, image: string, prompt: string, context: AiCallContext = {}, styleReference?: Blob): Promise<ImageResult> {
   const form = new FormData();
   const source = imageBlob(image);
   const extension = source.type === 'image/jpeg' ? 'jpg' : source.type === 'image/webp' ? 'webp' : 'png';
-  form.append('model', config.imageModel); form.append('prompt', prompt); form.append('n', '1'); form.append('size', '1024x1024'); form.append('response_format', 'b64_json'); form.append('image', source, `floorplan.${extension}`);
+  form.append('model', config.imageModel); form.append('prompt', prompt); form.append('n', '1'); form.append('size', '1024x1024'); form.append('response_format', 'b64_json'); form.append(styleReference ? 'image[]' : 'image', source, `floorplan.${extension}`);
+  if (styleReference) form.append('image[]', styleReference, 'style-reference.jpg');
   const payload = await callApi(config, '/images/edits', { method: 'POST', body: form }, { ...context, model: config.imageModel, inputImageBytes: imageByteLength(image) });
   const imageUrl = imageFrom(payload);
   if (!imageUrl) throw new Error('图片编辑接口没有返回图片。');
@@ -321,6 +325,17 @@ function updateGenerationJob(job: GenerationJob, updates: Partial<GenerationJob>
   Object.assign(job, updates, { updatedAt: new Date().toISOString() });
 }
 
+function validateStyleReference(request: GenerateRequest) {
+  const style = getWholeHomeStyle(request.style);
+  if (style) {
+    if (request.templateId !== undefined && request.templateId !== style.id) throw new Error('模板与当前风格不一致，请重新选择风格模板。');
+    if (request.referenceAssetId !== undefined && request.referenceAssetId !== style.reference.id) throw new Error('参考图不属于当前全屋风格，请重新选择风格模板。');
+  } else if (request.referenceAssetId || request.templateId?.startsWith('whole-home-')) {
+    throw new Error('未找到该全屋风格模板，请重新选择。');
+  }
+  return style;
+}
+
 async function floorPlanFlow(config: GatewayConfig, request: GenerateRequest, job?: GenerationJob) {
   if (!request.floorPlan) throw new Error('请先上传户型图。');
   const context: AiCallContext = { requestId: job?.requestId, operation: 'whole-home-generation' };
@@ -336,10 +351,12 @@ async function floorPlanFlow(config: GatewayConfig, request: GenerateRequest, jo
     song: 'Contemporary Chinese interior inspired by Song dynasty aesthetics: refined restraint, deep walnut lattice screen, warm grey-beige textured walls, handmade ceramic vessels, subtle ink art, asymmetrical sparse styling, generous negative space, natural tactile materials, soft amber light. Livable modern home, not a historical set. No palace decor or clutter.',
     smallAmerican: 'Compact small American classic interior: creamy raised-panel cabinetry, warm ivory walls, olive green upholstery, dark walnut floor, discreet aged brass hardware, built-in storage, balanced classic trim and restrained vintage accessories, warm natural light. Keep furniture practical and scaled to a small home; no excessive ornament.',
   };
-  const stylePrompt = stylePrompts[request.style] || stylePrompts.modern;
-  const common = `以下附带的原始户型图是本次生成的首要几何参考，必须以图像中可见的外轮廓、墙体走向、房间位置与邻接、门窗开口、阳台和固定设施为准。识别结构摘要：${analysis}\n基于同一套住宅户型，保持${request.style}风格并统一材质色彩。${stylePrompt}\n用户补充偏好：${request.prompt || '无'}。不得移动、增删或合并墙体、门窗和房间，不得改变空间比例及房间连接；家具只放在对应房间可用区域内，不遮挡门窗和主要动线。若文字摘要与原图冲突，以原图可见结构为准；不确定结构不要擅自补造。这是室内设计效果图，不是施工图；画面真实、完整、适合方案沟通。不要文字、水印或人物。`;
+  const libraryStyle = validateStyleReference(request);
+  const stylePrompt = libraryStyle ? wholeHomePrompt(libraryStyle) : stylePrompts[request.style] || stylePrompts.modern;
+  const styleReference = libraryStyle ? new Blob([await readFile(resolve(process.cwd(), 'public', `.${libraryStyle.reference.image}`))], { type: 'image/jpeg' }) : undefined;
+  const common = `${styleReference ? '第一张输入图是户型结构依据，第二张是风格参考图，仅提取其材质、配色、家具轮廓与光线；不得用参考图的户型替代用户户型。' : ''}以下附带的原始户型图是本次生成的首要几何参考，必须以图像中可见的外轮廓、墙体走向、房间位置与邻接、门窗开口、阳台和固定设施为准。识别结构摘要：${analysis}\n基于同一套住宅户型，保持${request.style}风格并统一材质色彩。${stylePrompt}\n用户补充偏好：${request.prompt || '无'}。${libraryStyle ? libraryStyle.negativePrompt : ''}不得移动、增删或合并墙体、门窗和房间，不得改变空间比例及房间连接；家具只放在对应房间可用区域内，不遮挡门窗和主要动线。若文字摘要与原图冲突，以原图可见结构为准；不确定结构不要擅自补造。这是室内设计效果图，不是施工图；画面真实、完整、适合方案沟通。不要文字、水印或人物。`;
   if (!job?.cover) updateGenerationJobIfPresent(job, { analysis, totalRooms: selectedRooms.length, stage: 'cover-generation', message: '正在生成全屋总览。' });
-  const cover = job?.cover ? { imageUrl: job.cover } : await edit(config, request.floorPlan, `${common}基于原图生成一张严格对应原户型布局的全屋俯视轴测室内效果图。保持原图上下左右方位和各房间相对位置，完整呈现各房间分隔与连接，不要改成新的户型，不要裁掉边缘空间。`, { ...context, stage: 'cover-generation' });
+  const cover = job?.cover ? { imageUrl: job.cover } : await edit(config, request.floorPlan, `${common}基于原图生成一张严格对应原户型布局的全屋俯视轴测室内效果图。保持原图上下左右方位和各房间相对位置，完整呈现各房间分隔与连接，不要改成新的户型，不要裁掉边缘空间。`, { ...context, stage: 'cover-generation' }, styleReference);
   updateGenerationJobIfPresent(job, { cover: cover.imageUrl, stage: 'room-generation', message: `全屋总览已完成，正在生成空间效果图（${job?.completedRooms || 0}/${job?.totalRooms || selectedRooms.length}）。` });
   const failures: string[] = [];
   const generatedRooms = await mapConcurrent(selectedRooms, 2, async (room) => {
@@ -348,7 +365,7 @@ async function floorPlanFlow(config: GatewayConfig, request: GenerateRequest, jo
     const evidence = [room.description, room.evidence?.map((item) => `${item.type}: ${item.detail}`).join('；'), room.adjacentTo?.length ? `相邻空间：${room.adjacentTo.join('、')}` : '', room.confidence !== null && room.confidence !== undefined ? `识别置信度：${Math.round(room.confidence * 100)}%` : ''].filter(Boolean).join('；');
     const roomPrompt = `${common}本张只生成“${room.name}”这一个明确空间${room.suggestedName ? `（识别候选为${room.suggestedName}，功能尚未确认，按可见布局保守表达）` : ''}，不能生成全屋图、户型图、拼图或其他房间。房间证据包：${evidence}。如输入图为“全图+房间局部放大”的参考板，左侧用于确认户型方位和邻接，右侧用于读取目标空间边界与设施，二者都是参考而不是最终构图模板。镜头为人在房间内部的室内摄影视角，视线高度约 1.5 米，自然广角不过度变形；清楚表现目标房间的墙面、地面、门窗、固定设施及合适家具。不得把相邻客餐厅合并；客厅突出沙发与电视主墙，餐厅突出餐桌椅，卧室突出床及床头背景，厨房突出橱柜与操作台，卫生间突出洁具与淋浴区。不得臆造证据包没有支持的门窗和固定结构。`;
     try {
-      const generated = await edit(config, reference, roomPrompt, { ...context, stage: 'room-image' });
+      const generated = await edit(config, reference, roomPrompt, { ...context, stage: 'room-image' }, styleReference);
       updateGenerationJobIfPresent(job, { stage: 'room-review', message: `正在复核${room.name}效果图。` });
       const review = await reviewRoomImage(config, generated.imageUrl, room, { ...context, stage: 'room-review' });
       const result = { ...room, imageUrl: generated.imageUrl, review };
@@ -405,6 +422,9 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
     if (!config.apiKey) return sendJson(res, 500, { error: '未检测到 CODEX2API_API_KEY 或 AI_API_KEY。' });
     try {
       const request = await readBody(req);
+      try { validateStyleReference(request); } catch (error) {
+        return sendJson(res, 400, { error: error instanceof Error ? error.message : '风格参考无效。' });
+      }
       if (request.mode === 'photo') return sendJson(res, 200, await photoFlow(config, request, { requestId: crypto.randomUUID(), operation: 'photo-generation' }));
       cleanup();
       if ([...jobs.values()].filter((job) => job.status === 'running').length >= 2) return sendJson(res, 429, { error: '当前生成任务较多，请稍后重试。' });
