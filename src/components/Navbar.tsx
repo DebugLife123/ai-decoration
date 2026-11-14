@@ -37,7 +37,7 @@ const consumerNavGroups = [
       { path: '/cad-workflow', label: 'CAD 全屋渲染', icon: 'cad' as IconName },
       { path: '/canvas', label: '空间设计画布', icon: 'canvas' as IconName },
       { path: '/projects', label: '我的项目', icon: 'projects' as IconName },
-      { path: '/#templates', label: '方案模板', icon: 'templates' as IconName },
+      { path: '/inspiration', label: '灵感广场', icon: 'templates' as IconName },
     ],
   },
   {
