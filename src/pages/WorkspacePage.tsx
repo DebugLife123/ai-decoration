@@ -53,20 +53,34 @@ function readImage(file: File) { return new Promise<{ data: string; meta: PlanIm
   reader.readAsDataURL(file);
 }); }
 
-function makeRoomReferenceSheet(source: string, bounds: NonNullable<IdentifiedRoom['bounds']>) {
+function makeRoomReferenceCrop(source: string, bounds: NonNullable<IdentifiedRoom['bounds']>) {
   return new Promise<string>((resolve, reject) => {
     const image = new Image();
     image.onerror = () => reject(new Error('户型图局部裁切失败。'));
     image.onload = () => {
+      const rawLeft = Math.max(0, Math.floor(bounds.x * image.naturalWidth));
+      const rawTop = Math.max(0, Math.floor(bounds.y * image.naturalHeight));
+      const rawWidth = Math.max(1, Math.floor(bounds.width * image.naturalWidth));
+      const rawHeight = Math.max(1, Math.floor(bounds.height * image.naturalHeight));
+      // 保留少量相邻墙体和开口，帮助模型判断边界，但不把整张户型图再次拼进来。
+      const paddingX = Math.max(12, Math.floor(rawWidth * 0.12));
+      const paddingY = Math.max(12, Math.floor(rawHeight * 0.12));
+      const left = Math.max(0, rawLeft - paddingX);
+      const top = Math.max(0, rawTop - paddingY);
+      const right = Math.min(image.naturalWidth, rawLeft + rawWidth + paddingX);
+      const bottom = Math.min(image.naturalHeight, rawTop + rawHeight + paddingY);
+      const cropWidth = Math.max(1, right - left);
+      const cropHeight = Math.max(1, bottom - top);
+      const maxDimension = 1600;
+      const scale = Math.min(1, maxDimension / Math.max(cropWidth, cropHeight));
       const canvas = document.createElement('canvas');
-      const width = 1120; const height = 680; const context = canvas.getContext('2d');
+      const width = Math.max(1, Math.round(cropWidth * scale));
+      const height = Math.max(1, Math.round(cropHeight * scale));
+      const context = canvas.getContext('2d');
       if (!context) return reject(new Error('无法创建空间参考图。'));
-      canvas.width = width; canvas.height = height; context.fillStyle = '#f5f3ee'; context.fillRect(0, 0, width, height);
-      const panelWidth = 520; const panelHeight = 590; const gap = 40;
-      const drawContain = (x: number, y: number, w: number, h: number) => { const scale = Math.min(w / image.naturalWidth, h / image.naturalHeight); const dw = image.naturalWidth * scale; const dh = image.naturalHeight * scale; context.drawImage(image, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh); };
-      context.fillStyle = '#514b43'; context.font = '600 22px sans-serif'; context.fillText('全图定位', 20, 34); context.fillText('目标空间局部', panelWidth + gap + 20, 34); drawContain(20, 50, panelWidth, panelHeight);
-      const left = Math.floor(bounds.x * image.naturalWidth); const top = Math.floor(bounds.y * image.naturalHeight); const cropWidth = Math.max(1, Math.floor(bounds.width * image.naturalWidth)); const cropHeight = Math.max(1, Math.floor(bounds.height * image.naturalHeight));
-      context.fillStyle = '#e7e2d9'; context.fillRect(panelWidth + gap + 20, 50, panelWidth, panelHeight); const scale = Math.min(panelWidth / cropWidth, panelHeight / cropHeight); const dw = cropWidth * scale; const dh = cropHeight * scale; context.drawImage(image, left, top, cropWidth, cropHeight, panelWidth + gap + 20 + (panelWidth - dw) / 2, 50 + (panelHeight - dh) / 2, dw, dh);
+      canvas.width = width;
+      canvas.height = height;
+      context.drawImage(image, left, top, cropWidth, cropHeight, 0, 0, width, height);
       resolve(canvas.toDataURL('image/jpeg', 0.88));
     }; image.src = source;
   });
@@ -431,7 +445,7 @@ export default function WorkspacePage() {
     const sourcePrompt = planSource === 'cad' ? '输入来源为 CAD 导出的住宅平面图，严格参考图中墙体、门窗和尺寸标注。' : '输入来源为住宅户型图，严格参考图中可见的房间边界与空间连接。';
     const prompt = [sourcePrompt, planTemplate?.prompt, ...(planStyle === routeStyle ? preferences : []).map(([label, value]) => `${label}:${value}`), `户型识别结果：${input.analysis}`, `识别空间：${input.rooms.map((room) => `${room.name}${room.suggestedName ? `（候选：${room.suggestedName}）` : ''}（${room.description}；${room.evidence?.map((item) => item.detail).join('、') || '无额外可见证据'}）`).join('；')}`].filter(Boolean).join('。');
     try {
-      const roomReferenceImages = await Promise.all(input.rooms.filter((room) => input.selectedRooms.includes(room.name) && room.bounds).map(async (room) => ({ name: room.name, image: await makeRoomReferenceSheet(planImage, room.bounds!) })));
+      const roomReferenceImages = await Promise.all(input.rooms.filter((room) => input.selectedRooms.includes(room.name) && room.bounds).map(async (room) => ({ name: room.name, image: await makeRoomReferenceCrop(planImage, room.bounds!) })));
       let progressQueue = Promise.resolve();
       const reportProgress = (job: GenerationJob) => {
         setGenerationProgress(job);

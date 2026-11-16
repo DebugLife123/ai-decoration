@@ -52,6 +52,7 @@ test('generation keeps a completed cover and retries only failed rooms', async (
   const originalLog = console.info;
   const logs = [];
   const calls = [];
+  const imageInputs = [];
   let failBedroom = true;
   console.info = (line) => logs.push(JSON.parse(line));
   globalThis.fetch = async (url, init) => {
@@ -60,6 +61,7 @@ test('generation keeps a completed cover and retries only failed rooms', async (
       const name = String(init.body.get('prompt'));
       const stage = name.includes('本张只生成“卧室”') ? 'bedroom' : name.includes('本张只生成“客厅”') ? 'living' : 'cover';
       calls.push(stage);
+      imageInputs.push({ stage, arrayCount: init.body.getAll('image[]').length, single: Boolean(init.body.get('image')), prompt: name });
       if (stage === 'bedroom' && failBedroom) return new Response('', { status: 503 });
       return new Response(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgo=' }] }), { status: 200, headers: { 'x-request-id': 'mock-image-id' } });
     }
@@ -78,7 +80,7 @@ test('generation keeps a completed cover and retries only failed rooms', async (
     const base = `http://127.0.0.1:${server.address().port}`;
     const started = await jsonRequest(`${base}/api/ai/generate`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'floorplan', style: 'modern', floorPlan: 'data:image/png;base64,aGVsbG8=', analysis: 'test', rooms: [{ name: '客厅', description: 'living' }, { name: '卧室', description: 'bedroom' }], selectedRooms: ['客厅', '卧室'] }),
+      body: JSON.stringify({ mode: 'floorplan', style: 'modern', floorPlan: 'data:image/png;base64,aGVsbG8=', analysis: 'test', rooms: [{ name: '客厅', description: 'living' }, { name: '卧室', description: 'bedroom' }], selectedRooms: ['客厅', '卧室'], roomReferenceImages: [{ name: '卧室', image: 'data:image/jpeg;base64,aGVsbG8=' }] }),
     });
     assert.equal(started.status, 202);
     const partial = await waitForJob(base, started.body.jobId);
@@ -99,6 +101,10 @@ test('generation keeps a completed cover and retries only failed rooms', async (
     assert.equal(calls.filter((call) => call === 'cover').length, 1);
     assert.equal(calls.filter((call) => call === 'living').length, 1);
     assert.equal(calls.filter((call) => call === 'bedroom').length, 2);
+    assert.ok(imageInputs.some((input) => input.stage === 'cover' && input.arrayCount === 0 && input.single));
+    assert.ok(imageInputs.some((input) => input.stage === 'living' && input.arrayCount === 0 && input.single));
+    assert.ok(imageInputs.filter((input) => input.stage === 'bedroom').every((input) => input.arrayCount === 2 && !input.single));
+    assert.ok(imageInputs.filter((input) => input.stage === 'bedroom').every((input) => !input.prompt.includes('全图+房间局部放大')));
   } finally {
     await new Promise((resolve) => server.close(resolve));
     globalThis.fetch = originalFetch;
