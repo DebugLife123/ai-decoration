@@ -53,8 +53,10 @@ deploy_production:
     $sourceDeploymentPath = 'D:/wyx/decoration-main-deploy'
     $releaseRoot = 'D:/wyx/decoration-releases'
     $releasePath = Join-Path $releaseRoot $env:CI_COMMIT_SHA
+    $sourceBaseComposeFile = Join-Path $sourceDeploymentPath 'docker-compose.yml'
     $sourceComposeFile = Join-Path $sourceDeploymentPath '.docker-compose.integration.yml'
     $sourceEnvFile = Join-Path $sourceDeploymentPath '.env'
+    if (-not (Test-Path -LiteralPath $sourceBaseComposeFile -PathType Leaf)) { throw "Production base compose file not found: $sourceBaseComposeFile" }
     if (-not (Test-Path -LiteralPath $sourceComposeFile -PathType Leaf)) { throw "Production compose file not found: $sourceComposeFile" }
     if (-not (Test-Path -LiteralPath $sourceEnvFile -PathType Leaf)) { throw "Production environment file not found: $sourceEnvFile" }
     New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
@@ -64,10 +66,12 @@ deploy_production:
       Remove-Item -LiteralPath $releasePath -Recurse -Force
     }
     New-Item -ItemType Directory -Path $releasePath -Force | Out-Null
+    Copy-Item -LiteralPath $sourceBaseComposeFile -Destination (Join-Path $releasePath 'docker-compose.yml') -Force
     Copy-Item -LiteralPath $sourceComposeFile -Destination (Join-Path $releasePath '.docker-compose.integration.yml') -Force
     Copy-Item -LiteralPath $sourceEnvFile -Destination (Join-Path $releasePath '.env') -Force
+    $baseComposeFile = Join-Path $releasePath 'docker-compose.yml'
     $composeFile = Join-Path $releasePath '.docker-compose.integration.yml'
-    $composeArgs = @('--project-directory', $releasePath, '-p', 'wyx-decoration-integration', '-f', $composeFile)
+    $composeArgs = @('--env-file', (Join-Path $releasePath '.env'), '--project-directory', $releasePath, '-p', 'wyx-decoration-integration', '-f', $baseComposeFile, '-f', $composeFile)
     $env:IMAGE_TAG = "wyx-decoration:$env:CI_COMMIT_SHA"
     $previousImage = docker inspect wyx-decoration-integration-decoration-1 --format '{{.Config.Image}}' 2>$null
     if ($LASTEXITCODE -eq 0 -and $previousImage) { $env:ROLLBACK_IMAGE = "wyx-decoration:rollback"; docker tag $previousImage $env:ROLLBACK_IMAGE; if ($LASTEXITCODE -ne 0) { throw "Could not preserve the current production image." } }
@@ -80,7 +84,7 @@ deploy_production:
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose could not start the production service." }
     $healthy = $false
     for ($attempt = 1; $attempt -le 18; $attempt++) { try { $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:4175/" -TimeoutSec 5; if ([int]$response.StatusCode -eq 200) { $healthy = $true; break } } catch {}; Start-Sleep -Seconds 5 }
-    if (-not $healthy) { docker compose @composeArgs ps; docker compose @composeArgs logs --tail 80; if ($env:ROLLBACK_IMAGE) { $env:DECORATION_IMAGE = $env:ROLLBACK_IMAGE; docker compose @composeArgs up -d --no-build; Start-Sleep -Seconds 10 }; throw "Production health check failed; previous image rollback was attempted." }
+    if (-not $healthy) { docker compose @composeArgs ps; docker compose @composeArgs logs --tail 80 decoration; if ($env:ROLLBACK_IMAGE) { $env:DECORATION_IMAGE = $env:ROLLBACK_IMAGE; docker compose @composeArgs up -d --no-build --no-deps decoration; Start-Sleep -Seconds 10 }; throw "Production health check failed; previous image rollback was attempted." }
     $runningImage = docker inspect wyx-decoration-integration-decoration-1 --format '{{.Config.Image}}'
     if ($runningImage -ne $env:IMAGE_TAG) { throw "Unexpected running image: $runningImage" }
     $policy = docker inspect wyx-decoration-integration-decoration-1 --format '{{.HostConfig.RestartPolicy.Name}}'
