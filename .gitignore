@@ -26,6 +26,9 @@ dist-ssr
 .env
 test-output/
 
+# Dev gateway credit ledger (local runtime data)
+.credits.json
+
 # Java / Spring Boot build output
 backend/target/
 
@@ -34,3 +37,6 @@ backend/var/uploads/
 
 # Local runtime uploads
 var/uploads/
+
+# WorkBuddy workspace memory (local only)
+.workbuddy/

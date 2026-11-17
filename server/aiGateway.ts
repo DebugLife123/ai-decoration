@@ -3,6 +3,16 @@ import { resolve } from 'node:path';
 import { getWholeHomeStyle, wholeHomePrompt } from '../src/features/styleLibrary/wholeHomeStyles.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
+import { CREDIT_COSTS, creditLedger, creditSummary, grantCredits, holdCredits, refundHold, resolveIdentity, settleHold } from './creditStore.ts';
+
+// 与 src/subscription/catalog.ts 保持一致（含赠送积分）。
+const PLANS_CREDITS: Record<string, number> = { free: 3, pro_month: 70, pro_year: 840 };
+const PACKS_CREDITS: Record<string, number> = { pack_5: 5, pack_20: 22, pack_50: 60 };
+const PACK_LABELS: Record<string, string> = { pack_5: '体验包', pack_20: '标准包', pack_50: '大户型包' };
+
+function insufficient(res: ServerResponse, result: { required: number; balance: number }) {
+  return sendJson(res, 402, { error: `积分不足：本次需要 ${result.required} 积分，当前余额 ${result.balance}。请前往「积分订阅」购买套餐或积分包。`, code: 'INSUFFICIENT_CREDITS', required: result.required, balance: result.balance });
+}
 
 export type GatewayConfig = { baseUrl: string; apiKey: string; visionModel: string; imageModel: string; analysisTimeoutMs?: number; reviewTimeoutMs?: number; imageTimeoutMs?: number };
 type RoomBounds = { x: number; y: number; width: number; height: number };
@@ -175,6 +185,20 @@ export async function analyze(config: GatewayConfig, image: string, mode: 'photo
   const stage = mode === 'photo' ? 'photo-analysis' : mode === 'cad' ? 'cad-plan-analysis' : 'floorplan-analysis';
   const payload = await callApi(config, '/chat/completions', { method: 'POST', body: JSON.stringify({ model: config.visionModel, temperature: 0.2, messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: image, detail: 'high' } }] }] }) }, { ...context, operation: context.operation || 'analysis', stage, model: config.visionModel, inputImageBytes: imageByteLength(image) });
   return textFrom(payload);
+}
+
+// 灵感广场发布门禁：判断图片是否为家居实景或户型图，拦截无关内容。
+export type ShowcaseReview = { category: 'interior' | 'floorplan' | 'other'; reason: string };
+
+const SHOWCASE_REVIEW_PROMPT = '你是家装平台的内容审核员。判断这张图片是否适合作为「装修方案分享」发布。只输出严格 JSON，不要 Markdown：{"category":"interior|floorplan|other","reason":"一句话中文理由"}。category 定义：interior=家居室内实景照片或装修效果图（能看到房间、家具、软装、门窗等室内环境）；floorplan=住宅户型图、CAD 平面图、手绘户型草图；other=人物、动漫、游戏、风景、动物、物品特写、软件截图、海报等与住宅装修无关的内容。以人物为主体或人物占画面显著位置的图片一律判 other。';
+
+export async function classifyShowcaseImage(config: GatewayConfig, image: string, context: AiCallContext = {}): Promise<ShowcaseReview> {
+  const payload = await callApi(config, '/chat/completions', { method: 'POST', body: JSON.stringify({ model: config.visionModel, temperature: 0, messages: [{ role: 'user', content: [{ type: 'text', text: SHOWCASE_REVIEW_PROMPT }, { type: 'image_url', image_url: { url: image, detail: 'low' } }] }] }) }, { ...context, operation: 'showcase-review', stage: 'showcase-review', model: config.visionModel, inputImageBytes: imageByteLength(image) });
+  let parsed: any;
+  try { parsed = JSON.parse(textFrom(payload).replace(/^```json\s*/i, '').replace(/```$/i, '').trim()); } catch { throw new Error('审查结果解析失败，请重试。'); }
+  const category = String(parsed?.category || '');
+  if (category !== 'interior' && category !== 'floorplan' && category !== 'other') throw new Error('审查结果异常，请重试。');
+  return { category, reason: String(parsed?.reason || '').slice(0, 120) || '未提供理由' };
 }
 
 type RoomCategory = '卧室' | '卫生间' | '厨房' | '餐厅' | '客厅' | '阳台' | '玄关' | '过道' | '功能区';
@@ -433,12 +457,25 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
   const gatewayMiddleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     if (req.method !== 'POST') return next();
     if (!config.apiKey) return sendJson(res, 500, { error: '未检测到 CODEX2API_API_KEY 或 AI_API_KEY。' });
+    const identity = resolveIdentity(req);
+    if (!identity) return sendJson(res, 401, { error: '请先登录后再使用 AI 生成功能。' });
     try {
       const request = await readBody(req);
       try { validateStyleReference(request); } catch (error) {
         return sendJson(res, 400, { error: error instanceof Error ? error.message : '风格参考无效。' });
       }
-      if (request.mode === 'photo') return sendJson(res, 200, await photoFlow(config, request, { requestId: crypto.randomUUID(), operation: 'photo-generation' }));
+      if (request.mode === 'photo') {
+        const hold = holdCredits(identity, CREDIT_COSTS.coverImage, '单张效果图生成');
+        if (!hold.ok) return insufficient(res, hold);
+        try {
+          const result = await photoFlow(config, request, { requestId: crypto.randomUUID(), operation: 'photo-generation' });
+          settleHold(hold.holdId, CREDIT_COSTS.coverImage, '单张效果图生成');
+          return sendJson(res, 200, result);
+        } catch (error) {
+          refundHold(hold.holdId);
+          throw error;
+        }
+      }
       cleanup();
       if ([...jobs.values()].filter((job) => job.status === 'running').length >= 2) return sendJson(res, 429, { error: '当前生成任务较多，请稍后重试。' });
       if (jobs.size >= 8) {
@@ -448,6 +485,9 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
       const requestId = crypto.randomUUID();
       const id = typeof request.taskId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(request.taskId) ? request.taskId : crypto.randomUUID();
       const job: GenerationJob = { id, requestId, status: 'queued', stage: 'queued', message: '请求已进入生成队列。', completedRooms: 0, totalRooms: request.selectedRooms?.length || request.rooms?.length || 0, rooms: [], updatedAt: new Date().toISOString() };
+      const roomCost = job.totalRooms * CREDIT_COSTS.roomImage;
+      const hold = holdCredits(identity, CREDIT_COSTS.coverImage + roomCost, `全屋方案生成（封面+${job.totalRooms}个空间）`, id);
+      if (!hold.ok) return insufficient(res, hold);
       jobs.set(id, job);
       logAiEvent({ event: 'workflow_started', requestId, jobId: id, operation: 'whole-home-generation', stage: 'queued', model: config.imageModel, inputImageBytes: request.floorPlan ? imageByteLength(request.floorPlan) : 0, imageMeta: safeImageMeta(request.imageMeta), roomCount: job.totalRooms });
       sendJson(res, 202, { jobId: id, requestId });
@@ -455,10 +495,13 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
       void floorPlanFlow(config, request, job).then(() => {
         if (job.status !== 'partial') retryInputs.delete(id);
         else retryInputs.set(id, request);
+        const consumed = (job.cover ? CREDIT_COSTS.coverImage : 0) + job.completedRooms * CREDIT_COSTS.roomImage;
+        settleHold(hold.holdId, consumed, '全屋方案生成结算');
         logAiEvent({ event: 'workflow_finished', requestId, jobId: id, operation: 'whole-home-generation', status: job.status, completedRooms: job.completedRooms, totalRooms: job.totalRooms });
       }).catch((error: unknown) => {
         const message = error instanceof Error ? error.message : 'AI 生成失败，请稍后重试。';
         const failedStage = job.stage;
+        refundHold(hold.holdId);
         updateGenerationJob(job, { status: 'failed', stage: 'failed', message: job.cover ? '生成中断，已保留全屋总览和已完成空间。' : '生成失败。', error: message });
         logAiEvent({ event: 'workflow_finished', requestId, jobId: id, operation: 'whole-home-generation', status: 'failed', failedStage, completedRooms: job.completedRooms, totalRooms: job.totalRooms });
       });
@@ -474,17 +517,24 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
     const job = jobs.get(id);
     if (!job) return sendJson(res, 404, { error: '生成任务不存在或已过期。' });
     if (isRetry && req.method === 'POST') {
+      const identity = resolveIdentity(req);
+      if (!identity) return sendJson(res, 401, { error: '请先登录后再使用 AI 生成功能。' });
       const original = retryInputs.get(id);
       if (job.status !== 'partial' || !original || !job.failedRooms?.length) return sendJson(res, 409, { error: '该任务没有可重试的失败空间。' });
       const failedRooms = job.failedRooms;
+      const hold = holdCredits(identity, failedRooms.length * CREDIT_COSTS.roomImage, `重试 ${failedRooms.length} 个失败空间`, id);
+      if (!hold.ok) return insufficient(res, hold);
       retryInputs.delete(id);
       updateGenerationJob(job, { status: 'running', stage: 'room-generation', message: `正在重试 ${failedRooms.length} 个失败空间。`, failedRooms: [], error: undefined });
       sendJson(res, 202, { jobId: id, requestId: job.requestId });
       void floorPlanFlow(config, { ...original, analysis: job.analysis, selectedRooms: failedRooms }, job).then(() => {
         if (job.status === 'partial') retryInputs.set(id, original);
+        const succeeded = failedRooms.length - (job.failedRooms?.length ?? 0);
+        settleHold(hold.holdId, succeeded * CREDIT_COSTS.roomImage, '空间重试结算');
         logAiEvent({ event: 'workflow_retry_finished', requestId: job.requestId, jobId: id, status: job.status, completedRooms: job.completedRooms, totalRooms: job.totalRooms });
       }).catch((error: unknown) => {
         retryInputs.set(id, original);
+        refundHold(hold.holdId);
         updateGenerationJob(job, { status: 'partial', stage: 'partial', message: '重试失败，已完成结果仍可查看。', failedRooms, error: error instanceof Error ? error.message : '重试失败' });
       });
       return;
@@ -506,9 +556,14 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
   const roomEditMiddleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     if (req.method !== 'POST') return next();
     if (!config.apiKey) return sendJson(res, 500, { error: '未检测到 CODEX2API_API_KEY 或 AI_API_KEY。' });
+    const identity = resolveIdentity(req);
+    if (!identity) return sendJson(res, 401, { error: '请先登录后再使用 AI 生成功能。' });
     const requestId = crypto.randomUUID();
-    try { sendJson(res, 200, await editRoomImageRequest(config, await readBody(req) as RoomImageEditRequest, { requestId })); }
+    const hold = holdCredits(identity, CREDIT_COSTS.roomEdit, '局部方案编辑');
+    if (!hold.ok) return insufficient(res, hold);
+    try { sendJson(res, 200, await editRoomImageRequest(config, await readBody(req) as RoomImageEditRequest, { requestId })); settleHold(hold.holdId, CREDIT_COSTS.roomEdit, '局部方案编辑'); }
     catch (error) {
+      refundHold(hold.holdId);
       console.error('Room image edit request failed:', error instanceof Error ? error.message : error);
       sendJson(res, 502, { error: error instanceof Error ? error.message : '局部编辑失败，请稍后重试。' });
     }
@@ -516,24 +571,76 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
   const analyzeMiddleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     if (req.method !== 'POST') return next();
     if (!config.apiKey) return sendJson(res, 500, { error: '未检测到 CODEX2API_API_KEY 或 AI_API_KEY。' });
+    const identity = resolveIdentity(req);
+    if (!identity) return sendJson(res, 401, { error: '请先登录后再使用 AI 生成功能。' });
     const requestId = crypto.randomUUID();
     const startedAt = Date.now();
+    const hold = holdCredits(identity, CREDIT_COSTS.floorplanAnalysis, '户型图识别分析');
+    if (!hold.ok) return insufficient(res, hold);
     try {
       const request = await readBody(req) as AnalyzeRequest;
       logAiEvent({ event: 'workflow_started', requestId, operation: 'floorplan-analysis', stage: 'plan-analysis', model: config.visionModel, inputImageBytes: request.floorPlan ? imageByteLength(request.floorPlan) : 0, imageMeta: safeImageMeta(request.imageMeta), source: request.source || 'floorplan' });
       const result = await analyzeFloorPlanRequest(config, request, requestId);
+      settleHold(hold.holdId, CREDIT_COSTS.floorplanAnalysis, '户型图识别分析');
       logAiEvent({ event: 'workflow_finished', requestId, operation: 'floorplan-analysis', status: 'completed', durationMs: Date.now() - startedAt, roomCount: result.rooms.length });
       sendJson(res, 200, result);
     } catch (error) {
+      refundHold(hold.holdId);
       logAiEvent({ event: 'workflow_finished', requestId, operation: 'floorplan-analysis', status: 'failed', durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : 'unknown' });
       sendJson(res, 502, { error: error instanceof Error ? error.message : '户型识别失败，请稍后重试。', requestId });
     }
+  };
+  // 发布门禁：免费审查，不消耗积分。未配置密钥时拒绝（宁缺勿滥）。
+  const validateShowcaseMiddleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    if (req.method !== 'POST') return next();
+    if (!config.apiKey) return sendJson(res, 503, { error: '内容审查服务未配置（缺少 CODEX2API_API_KEY），暂时无法发布方案。' });
+    const identity = resolveIdentity(req);
+    if (!identity) return sendJson(res, 401, { error: '请先登录后再发布方案。' });
+    const requestId = crypto.randomUUID();
+    try {
+      const body = await readBody<{ image?: string }>(req);
+      if (!body.image || !body.image.startsWith('data:image/')) return sendJson(res, 400, { error: '缺少有效的方案图片。' });
+      const review = await classifyShowcaseImage(config, body.image, { requestId });
+      if (review.category === 'other') return sendJson(res, 422, { category: review.category, reason: review.reason, error: `图片未通过初审：${review.reason}。请上传家居实景图、装修效果图或户型图。` });
+      sendJson(res, 200, review);
+    } catch (error) {
+      console.error('Showcase review failed:', error instanceof Error ? error.message : error);
+      sendJson(res, 502, { error: error instanceof Error ? error.message : '图片审查失败，请稍后重试。', requestId });
+    }
+  };
+  const creditsMiddleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    const path = (req.url || '').split('?')[0].replace(/^\/+/, '');
+    const identity = resolveIdentity(req);
+    if (!identity) return sendJson(res, 401, { error: '请先登录后查看积分信息。' });
+    if (req.method === 'GET' && path === 'summary') return sendJson(res, 200, creditSummary(identity));
+    if (req.method === 'GET' && path === 'ledger') return sendJson(res, 200, creditLedger(identity));
+    if (req.method === 'POST' && path === 'purchase') {
+      try {
+        const body = await readBody<{ planId?: string; packId?: string }>(req);
+        if (body.packId && PACKS_CREDITS[body.packId]) {
+          const credits = PACKS_CREDITS[body.packId];
+          const account = grantCredits(identity, credits, 'free', `购买积分包 · ${PACK_LABELS[body.packId]}（演示，未接支付）`);
+          return sendJson(res, 200, { summary: creditSummary(identity), granted: credits, balance: account.balance });
+        }
+        if (body.planId && PLANS_CREDITS[body.planId]) {
+          const credits = PLANS_CREDITS[body.planId];
+          const account = grantCredits(identity, credits, body.planId, `订阅套餐到账（演示，未接支付）`);
+          return sendJson(res, 200, { summary: creditSummary(identity), granted: credits, balance: account.balance });
+        }
+        return sendJson(res, 400, { error: '未知的套餐或积分包。' });
+      } catch {
+        return sendJson(res, 400, { error: '购买请求无效。' });
+      }
+    }
+    next();
   };
   const install = (server: { middlewares: { use: (path: string, handler: (...args: any[]) => void) => void } }) => {
     server.middlewares.use('/api/ai/generate', gatewayMiddleware);
     server.middlewares.use('/api/ai/generation-jobs', jobMiddleware);
     server.middlewares.use('/api/ai/edit-room-image', roomEditMiddleware);
     server.middlewares.use('/api/ai/analyze-floorplan', analyzeMiddleware);
+    server.middlewares.use('/api/ai/validate-showcase', validateShowcaseMiddleware);
+    server.middlewares.use('/api/credits', creditsMiddleware);
   };
   return {
     name: 'ai-decoration-gateway',

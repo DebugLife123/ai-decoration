@@ -4,6 +4,7 @@ export type CanvasHttpImageGenerationOptions = {
     fetch?: typeof globalThis.fetch;
     generateUrl?: string;
     editUrl?: string;
+    headers?: Record<string, string>;
     buildBody?: (request: CanvasImageRequest) => Record<string, unknown>;
     pollJob?: (jobId: string, request: CanvasImageRequest, signal: AbortSignal) => Promise<string>;
 };
@@ -19,7 +20,7 @@ export function createCanvasHttpImageGeneration(options: CanvasHttpImageGenerati
             signal.throwIfAborted();
             const response = await requestFetch(request.operation === "edit" ? editUrl : generateUrl, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...options.headers },
                 body: JSON.stringify(options.buildBody ? options.buildBody(request) : defaultBody(request)),
                 signal,
             });

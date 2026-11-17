@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Check, CircleHelp, Coins, Sparkles, X } from 'lucide-react';
 import { CREDIT_PACKS, PLANS, findPlan, formatCredits, formatPrice } from '../subscription/catalog';
 import type { Plan } from '../subscription/types';
+import { fetchCreditSummary, purchaseCredits, type CreditSummary } from '../services/credits';
 import './SubscriptionPage.css';
 
 type Cycle = 'month' | 'year';
@@ -17,17 +18,17 @@ const COMPARE_ROWS: { label: string; value: (plan: Plan) => string }[] = [
 ];
 
 const FAQS = [
-  ['积分怎么用？', '户型图分析和单张效果图各消耗 1 积分，房间局部编辑消耗 0.5 积分，CAD 鸟瞰渲染消耗 3 积分。具体消耗以实际功能提示为准。'],
+  ['积分怎么用？', '户型图分析和单张效果图各消耗 1 积分，房间局部编辑消耗 0.5 积分，全屋方案按空间数量扣减。生成成功才结算，失败自动返还。'],
   ['会员到期后，我的方案还在吗？', '已生成的效果图和历史方案不会删除。订阅权益和生成额度会按套餐周期变化，页面展示不影响已有项目。'],
-  ['积分包和会员可以一起使用吗？', '可以。会员额度与积分包是独立的展示项，后续接入业务时可按实际扣减规则统一管理。'],
-  ['现在可以直接购买吗？', '当前页面仅用于展示套餐结构和价格，暂未接入真实支付、订单、积分扣减或自动续费。'],
+  ['积分包和会员可以一起使用吗？', '可以。会员额度与积分包统一进入积分余额，按实际生成任务扣减。'],
+  ['现在可以直接购买吗？', '当前为演示购买：点击后积分立即到账并计入流水，不接入真实支付、不产生扣款。'],
 ];
 
-function ActionNotice({ onClose }: { onClose: () => void }) {
+function ActionNotice({ notice, onClose }: { notice: { tone: 'info' | 'success'; text: string }; onClose: () => void }) {
   return (
     <div className="subscription-notice" role="status">
       <div className="subscription-notice-icon"><CircleHelp size={18} /></div>
-      <div><strong>展示页面</strong><span>支付与积分业务尚未接入，本次操作不会产生扣款。</span></div>
+      <div><strong>{notice.tone === 'success' ? '积分已到账' : '提示'}</strong><span>{notice.text}</span></div>
       <button type="button" onClick={onClose} aria-label="关闭提示"><X size={16} /></button>
     </div>
   );
@@ -35,16 +36,35 @@ function ActionNotice({ onClose }: { onClose: () => void }) {
 
 export default function SubscriptionPage() {
   const [cycle, setCycle] = useState<Cycle>('year');
-  const [noticeVisible, setNoticeVisible] = useState(false);
+  const [notice, setNotice] = useState<{ tone: 'info' | 'success'; text: string } | null>(null);
+  const [summary, setSummary] = useState<CreditSummary | null>(null);
+  const [purchasing, setPurchasing] = useState('');
   const featuredId = cycle === 'year' ? 'pro_year' : 'pro_month';
-  const currentPlan = findPlan('free');
+  const currentPlan = findPlan((summary?.planId as 'free' | 'pro_month' | 'pro_year') || 'free');
   const monthlyPrice = useMemo(() => Math.round(findPlan('pro_year').priceCents / 12), []);
 
-  const showNotice = () => setNoticeVisible(true);
+  useEffect(() => {
+    let active = true;
+    void fetchCreditSummary().then((data) => { if (active) setSummary(data); }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  const purchase = async (payload: { planId?: string; packId?: string; label: string }) => {
+    setPurchasing(payload.label);
+    try {
+      const result = await purchaseCredits(payload);
+      setSummary(result.summary);
+      setNotice({ tone: 'success', text: `${payload.label}已到账 ${formatCredits(result.granted)} 积分，当前余额 ${formatCredits(result.balance)} 积分（演示购买，未接真实支付）。` });
+    } catch (error) {
+      setNotice({ tone: 'info', text: error instanceof Error ? error.message : '积分到账失败，请稍后重试。' });
+    } finally {
+      setPurchasing('');
+    }
+  };
 
   return (
     <main className="subscription-page">
-      {noticeVisible && <ActionNotice onClose={() => setNoticeVisible(false)} />}
+      {notice && <ActionNotice notice={notice} onClose={() => setNotice(null)} />}
 
       <header className="subscription-hero">
         <div className="subscription-hero-copy">
@@ -54,8 +74,8 @@ export default function SubscriptionPage() {
         </div>
         <div className="subscription-balance" aria-label="当前积分概览">
           <div className="subscription-balance-icon"><Coins size={20} /></div>
-          <div><span>当前积分余额</span><strong>3 <small>积分</small></strong></div>
-          <em>免费体验</em>
+          <div><span>当前积分余额</span><strong>{summary ? formatCredits(summary.balance) : '—'} <small>积分</small></strong></div>
+          <em>{currentPlan.name}</em>
         </div>
       </header>
 
@@ -84,7 +104,7 @@ export default function SubscriptionPage() {
                 <ul className="subscription-highlights">
                   {plan.highlights.map((item) => <li key={item}><Check size={15} aria-hidden="true" />{item}</li>)}
                 </ul>
-                <button className={`subscription-action ${featured ? 'primary' : ''}`} type="button" onClick={showNotice}>{plan.id === 'free' ? '当前体验方案' : '选择此方案'}</button>
+                <button className={`subscription-action ${featured ? 'primary' : ''}`} type="button" disabled={purchasing === plan.name} onClick={() => plan.id === 'free' ? setNotice({ tone: 'info', text: '免费体验方案无需购买，注册即赠 3 积分。' }) : void purchase({ planId: plan.id, label: plan.name })}>{plan.id === 'free' ? '当前体验方案' : purchasing === plan.name ? '到账中…' : '选择此方案'}</button>
               </article>
             );
           })}
@@ -101,7 +121,7 @@ export default function SubscriptionPage() {
               <span className="subscription-pack-name">{pack.name}</span>
               <div className="subscription-pack-total"><strong>{total}</strong><span>积分</span></div>
               <p>{pack.note}</p>
-              <div className="subscription-pack-footer"><div><strong>{formatPrice(pack.priceCents)}</strong><small>{formatPrice(Math.round(pack.priceCents / total))} / 积分</small></div><button type="button" onClick={showNotice}>查看</button></div>
+              <div className="subscription-pack-footer"><div><strong>{formatPrice(pack.priceCents)}</strong><small>{formatPrice(Math.round(pack.priceCents / total))} / 积分</small></div><button type="button" disabled={purchasing === pack.name} onClick={() => void purchase({ packId: pack.id, label: pack.name })}>{purchasing === pack.name ? '到账中…' : '购买'}</button></div>
             </article>;
           })}
         </div>
@@ -117,7 +137,7 @@ export default function SubscriptionPage() {
         <div className="subscription-faq-list">{FAQS.map(([question, answer]) => <details key={question}><summary>{question}<span>+</span></summary><p>{answer}</p></details>)}</div>
       </section>
 
-      <footer className="subscription-footnote"><Sparkles size={15} /><span>当前为积分订阅展示页面，所有套餐、价格和余额均为静态演示数据，不会调用支付或积分接口。</span><span className="subscription-current-plan">当前方案：{currentPlan.name}</span></footer>
+      <footer className="subscription-footnote"><Sparkles size={15} /><span>积分消耗已接入实际生成任务：预扣 → 成功结算 → 失败返还。购买为演示模式，不接入真实支付。</span><span className="subscription-current-plan">当前方案：{currentPlan.name}</span></footer>
     </main>
   );
 }

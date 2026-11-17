@@ -1,0 +1,268 @@
+.profile-page {
+  flex: 1;
+  min-width: 0;
+  padding: 40px clamp(24px, 5vw, 72px);
+  background: #FBFAFD;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.profile-error {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #FDF1EC;
+  color: #B4552E;
+  font-size: 13px;
+}
+
+/* 积分概括卡 */
+.profile-balance {
+  padding: 26px 30px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid #E9E4F0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.profile-balance-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.profile-balance-total strong {
+  display: block;
+  font-size: 44px;
+  line-height: 1.1;
+  color: #322E3D;
+  letter-spacing: -0.01em;
+}
+.profile-balance-total span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: #A29DAD;
+}
+
+.profile-buy-link {
+  padding: 10px 20px;
+  border-radius: 12px;
+  background: #6A5AD4;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.profile-buy-link:hover { background: #8870D4; }
+
+.profile-balance-breakdown {
+  display: flex;
+  gap: 48px;
+  padding-top: 16px;
+  border-top: 1px solid #F1EDF7;
+}
+.profile-balance-breakdown span {
+  display: block;
+  font-size: 12px;
+  color: #A29DAD;
+  margin-bottom: 6px;
+}
+.profile-balance-breakdown strong {
+  font-size: 22px;
+  color: #322E3D;
+}
+
+.profile-balance-note {
+  margin: 0;
+  font-size: 12px;
+  color: #A29DAD;
+}
+
+/* 明细卡与 Tab */
+.profile-ledger {
+  padding: 22px 30px 26px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid #E9E4F0;
+}
+
+.profile-ledger-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.profile-ledger-heading h2 { margin: 0; font-size: 17px; color: #322E3D; }
+
+.profile-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #F5F2FA;
+}
+.profile-tabs button {
+  padding: 7px 18px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: #6F6A7C;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.profile-tabs button.active {
+  background: #6A5AD4;
+  color: #fff;
+}
+
+.profile-ledger-empty { margin: 16px 0 0; font-size: 13px; color: #A29DAD; }
+
+/* 积分概览 */
+.profile-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  margin-top: 18px;
+}
+
+.profile-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.profile-stat {
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: #F9F7FC;
+  border: 1px solid #EFEAF6;
+}
+.profile-stat span {
+  display: block;
+  font-size: 12px;
+  color: #A29DAD;
+  margin-bottom: 8px;
+}
+.profile-stat strong { font-size: 22px; color: #322E3D; }
+
+.profile-task-breakdown h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #322E3D;
+}
+.profile-task-breakdown ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.profile-task-breakdown li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.profile-task-label {
+  width: 200px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: #322E3D;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-task-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: #F1EDF7;
+  overflow: hidden;
+}
+.profile-task-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #6A5AD4;
+}
+.profile-task-breakdown strong {
+  width: 64px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 13px;
+  color: #322E3D;
+}
+
+/* 消耗明细表 */
+.profile-table {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-table-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px 90px;
+  gap: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #E9E4F0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6F6A7C;
+}
+.profile-table-head span:nth-child(2),
+.profile-table-head span:nth-child(3) { text-align: right; }
+
+.profile-table-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px 90px;
+  gap: 14px;
+  align-items: center;
+  padding: 13px 0;
+  border-bottom: 1px solid #F5F2FA;
+}
+.profile-table-row:last-child { border-bottom: none; }
+
+.profile-table-request strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #322E3D;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-table-request small { font-size: 11px; color: #A29DAD; }
+
+.profile-table-delta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.profile-table-delta.in { color: #3E7C43; }
+.profile-table-delta.out { color: #322E3D; }
+
+.profile-table-balance {
+  text-align: right;
+  font-size: 13px;
+  color: #6F6A7C;
+}
+
+@media (max-width: 720px) {
+  .profile-balance-breakdown { gap: 28px; }
+  .profile-stat-grid { grid-template-columns: 1fr; }
+  .profile-task-label { width: 120px; }
+  .profile-table-head, .profile-table-row { grid-template-columns: minmax(0, 1fr) 84px 70px; }
+}

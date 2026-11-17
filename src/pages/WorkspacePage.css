@@ -461,3 +461,57 @@
 
 @media (max-width: 760px) { .budget-fields { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 560px) { .budget-fields { grid-template-columns: 1fr; } }
+/* 预算快照横幅：与内容列同宽居中，带图标块与分隔线字段 */
+.budget-banner {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  max-width: 1030px;
+  margin: 26px auto 0;
+  padding: 16px 24px 16px 18px;
+  background: linear-gradient(135deg, #f8f6fd 0%, #ffffff 55%);
+  border: 1px solid #ded7f0;
+  border-radius: 14px;
+  box-shadow: 0 6px 22px rgba(80, 66, 130, 0.07);
+}
+.budget-banner-icon {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #6a5ad4, #8f7ae6);
+  color: #fff;
+  font-size: 19px;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(106, 90, 212, 0.35);
+}
+.budget-banner-copy { display: flex; flex-direction: column; gap: 9px; min-width: 0; flex: 1; }
+.budget-banner-copy > strong { color: #322e3d; font-size: 15px; font-weight: 700; letter-spacing: .01em; }
+.budget-banner-copy > p { margin: 0; color: #7c7470; font-size: 13px; line-height: 1.6; max-width: 560px; }
+.budget-banner-facts { display: flex; align-items: center; flex-wrap: wrap; }
+.budget-banner-facts span { display: flex; flex-direction: column; gap: 3px; padding: 0 20px; border-left: 1px solid #e6e0f2; }
+.budget-banner-facts span:first-child { padding-left: 0; border-left: none; }
+.budget-banner-facts i { color: #8f8883; font-size: 11px; font-style: normal; }
+.budget-banner-facts b { color: #322e3d; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.budget-banner-action {
+  flex-shrink: 0;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 999px;
+  background: #6a5ad4;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background .15s ease, transform .15s ease;
+}
+.budget-banner-action:hover { background: #5749b8; transform: translateY(-1px); }
+.budget-banner-empty .budget-banner-icon { background: linear-gradient(135deg, #b7a45e, #d4c078); box-shadow: 0 4px 12px rgba(180, 154, 90, 0.3); }
+@media (max-width: 760px) {
+  .budget-banner { align-items: flex-start; flex-wrap: wrap; gap: 14px; padding: 16px; }
+  .budget-banner-copy { flex-basis: calc(100% - 60px); }
+  .budget-banner-action { margin-left: 58px; }
+  .budget-banner-facts span { padding: 0 14px; }
+}

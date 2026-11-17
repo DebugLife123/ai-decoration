@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAppStore, type DesignStyle } from '../stores/appStore';
 import { analyzeFloorPlan, editRoomImage, generateDesign, resumeGenerationJob, retryGenerationRooms, toSupportedImageDataUrl, type GenerationJob, type IdentifiedRoom, type PlanSource } from '../services/aiClient';
 import { deleteDesignHistory, listDesignHistory, saveDesignHistory, type DesignHistoryRecord } from '../services/designHistory';
+import { loadBudgetSnapshot } from '../services/budgetSnapshot';
 import RoomImageEditor, { type RoomImageVersion } from '../components/RoomImageEditor';
 import { templates } from '../features/styleLibrary/inspirationTemplates';
 import { createPersistentGenerationTask, failPersistentGenerationTask, finishPersistentGenerationTask, getPersistentGenerationTask, hasPersistentWorkspaceSession, persistWorkspaceProject, startPersistentGenerationTask, updatePersistentGenerationTask } from '../services/workspaceData';
@@ -176,6 +177,9 @@ export default function WorkspacePage() {
   const activeStyle = useMemo(() => styleOptions.find((style) => style.key === workflowStyle) ?? styleOptions[0], [workflowStyle]);
   const routeMatchesStyle = routeStyle === activeStyle.key;
   const preferences = [['色调', searchParams.get('tone')], ['光线', searchParams.get('light')], ['材质', searchParams.get('material')]].filter((entry): entry is [string, string] => routeMatchesStyle && Boolean(entry[1]));
+  const authUserId = useAppStore((state) => state.authSession?.user.id || 'anonymous');
+  const budgetSnapshot = useMemo(() => loadBudgetSnapshot(authUserId), [authUserId]);
+  const hasRouteTemplate = searchParams.has('template') || searchParams.has('style');
 
   useEffect(() => {
     void listDesignHistory().then(setHistory).catch((error: unknown) => {
@@ -590,6 +594,29 @@ export default function WorkspacePage() {
   return <div className="workspace-page"><main className="workspace-main">
     <header className={`workspace-header ${stage === 4 ? 'report-workspace-header' : ''}`}><div><span className="workspace-eyebrow">{stage === 4 ? 'JIAN YI ZHUANG / WHOLE-HOME STUDY' : 'JIAN YI ZHUANG / DESIGN FLOW'}</span><h2>{stage === 1 ? sourceType === 'cad' ? 'CAD 图纸全屋渲染' : '户型图全屋设计' : stage === 2 ? taskRecoveryError ? '生成任务记录' : '正在识别并生成方案' : stage === 3 ? '方案已生成，等待查看' : `${activeStyle.name} · 整屋设计方案`}</h2>{stage < 4 && <p>{taskRecoveryError ? '任务状态与已完成结果已恢复。' : stage === 3 ? '方案已经生成并保存到当前浏览器，点击下方按钮进入完整汇报。' : sourceType === 'cad' ? '上传图纸、选择风格后，系统会自动识别空间并生成方案。' : '上传户型图、选择风格后，系统会自动识别空间并生成方案。'}</p>}</div><button className="reset-button" onClick={stage === 4 ? () => setStage(3) : reset}><Icon name="refresh" />{stage === 4 ? '返回预览' : '重新开始'}</button></header>
     {stage < 4 && searchParams.has('template') && <aside className="design-preferences"><span><strong>灵感参考已带入</strong><small>{styleOptions.find((style) => style.key === searchParams.get('style'))?.name}</small></span></aside>}
+    {stage < 4 && !hasRouteTemplate && (budgetSnapshot
+      ? <aside className="budget-banner" aria-label="预算快照">
+          <span className="budget-banner-icon" aria-hidden>¥</span>
+          <div className="budget-banner-copy">
+            <strong>预算快照已带入</strong>
+            <div className="budget-banner-facts">
+              <span><i>装修面积</i><b>{budgetSnapshot.area}㎡</b></span>
+              <span><i>装修档位</i><b>{budgetSnapshot.finishLabel}档</b></span>
+              <span><i>参考区间</i><b>¥{budgetSnapshot.lowWan.toFixed(1)}–{budgetSnapshot.highWan.toFixed(1)} 万</b></span>
+              {budgetSnapshot.budgetWan ? <span><i>计划预算</i><b>{budgetSnapshot.budgetWan} 万</b></span> : null}
+              {budgetSnapshot.region ? <span><i>所在地区</i><b>{budgetSnapshot.region}</b></span> : null}
+            </div>
+          </div>
+          <Link className="budget-banner-action" to="/budget">重新试算 →</Link>
+        </aside>
+      : <aside className="budget-banner budget-banner-empty" aria-label="预算提示">
+          <span className="budget-banner-icon" aria-hidden>¥</span>
+          <div className="budget-banner-copy">
+            <strong>还没有预算参考</strong>
+            <p>完成预算试算后，生成方案会自动带入面积与档位，并对照计划预算给出风格建议。</p>
+          </div>
+          <Link className="budget-banner-action" to="/budget">去试算预算 →</Link>
+        </aside>)}
     {stage < 4 && <div className="workspace-stepper"><span className="workspace-stepper-label">全屋方案流程</span>{[['上传资料与风格', '图片 · 风格'], ['识别空间并生成', '户型 · 效果图'], ['查看生成结果', '预览 · 汇报']].map(([label, note], index) => <div className={`workspace-step ${stage === index + 1 ? 'active' : ''} ${stage > index + 1 ? 'done' : ''}`} key={label}><span className="step-index">{stage > index + 1 ? <Icon name="check" /> : `0${index + 1}`}</span><span><strong>{label}</strong><small>{note}</small></span></div>)}</div>}
     {stage < 4 && !isWorking && <div className="flow-content">
       {stage === 2 && taskRecoveryError && <section className="working-state recovery-state" role="status"><div className="working-state-topline"><span className="live-indicator" />任务状态</div><h3>本次生成未能继续</h3><p>{taskRecoveryError}</p>{results.length > 0 && <div className="working-results">{results.map((result) => <figure key={result.name}><img src={result.imageUrl} alt={result.name} /><figcaption>{result.name}</figcaption></figure>)}</div>}<div className="flow-actions"><button className="quiet-button" type="button" onClick={reset}>返回上传</button><button className="continue-button" type="button" onClick={reset}>重新上传并生成</button></div></section>}

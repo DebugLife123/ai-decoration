@@ -151,8 +151,10 @@ export default function Navbar() {
             <span>帮助与反馈</span>
           </Link>
           <div className="nav-user">
-            <span className="user-avatar">{authSession?.user.displayName.slice(0, 1) || '简'}</span>
-            <span><strong>{authSession?.user.displayName || '已登录用户'}</strong><small>{isBusiness ? '企业账号' : '个人账号'}</small></span>
+            <Link to={isBusiness ? '/business' : '/profile'} className="nav-user-link" title={isBusiness ? '企业信息' : '个人中心 / 积分用量'} onClick={() => setMobileOpen(false)}>
+              <span className="user-avatar">{authSession?.user.displayName.slice(0, 1) || '简'}</span>
+              <span><strong>{authSession?.user.displayName || '已登录用户'}</strong><small>{isBusiness ? '企业账号' : '个人账号'}</small></span>
+            </Link>
             <button className="nav-signout" type="button" onClick={handleSignOut} title="退出登录" aria-label="退出登录">
               <NavIcon name="logout" />
             </button>

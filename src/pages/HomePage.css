@@ -260,3 +260,23 @@
 .template-prompt summary { cursor: pointer; }
 .template-prompt textarea { box-sizing: border-box; width: 100%; margin-top: 10px; padding: 12px; border: 1px solid #e5e0da; border-radius: 6px; background: #fff; color: #625b60; line-height: 1.8; resize: vertical; font: inherit; }
 @media (max-width: 680px) { .reference-search { margin-top: 16px; } }
+
+/* 用户方案发布（灵感广场） */
+.publish-showcase-button { padding: 9px 16px; border: none; border-radius: 999px; background: #71649d; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
+.publish-showcase-button:hover { background: #5d5188; }
+.reference-user-badge { position: absolute; top: 10px; left: 10px; z-index: 1; padding: 4px 10px; border-radius: 999px; background: rgba(113, 100, 157, 0.92); color: #fff; font-size: 10px; letter-spacing: 0.04em; }
+.reference-image { position: relative; }
+.publish-error { margin: 0 0 14px; padding: 10px 14px; border-radius: 8px; background: #fdf1ec; color: #b4552e; font-size: 12px; }
+.publish-form { display: flex; flex-direction: column; gap: 14px; }
+.publish-field { display: flex; flex-direction: column; gap: 6px; color: #625b60; font-size: 12px; }
+.publish-field input, .publish-field select, .publish-field textarea { box-sizing: border-box; padding: 10px 12px; border: 1px solid #e5e0da; border-radius: 8px; background: #fff; color: #3a3438; font: inherit; font-size: 13px; }
+.publish-field textarea { resize: vertical; }
+.publish-image-area { display: grid; place-items: center; min-height: 180px; border: 1px dashed #d8d2cb; border-radius: 10px; overflow: hidden; background: #faf8f5; }
+.publish-image-area img { width: 100%; height: 100%; max-height: 320px; object-fit: cover; }
+.publish-upload-button { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border: none; border-radius: 999px; background: #fff; color: #71649d; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 10px rgba(58, 47, 82, 0.1); }
+.publish-upload-button:disabled { opacity: 0.6; cursor: default; }
+.publish-upload-button svg { width: 16px; height: 16px; }
+.modal-danger-button { padding: 12px 24px; border: 1px solid #e2b4a4; border-radius: 999px; background: #fff; color: #b4552e; font-size: 13px; font-weight: 600; cursor: pointer; }
+.modal-danger-button:hover { background: #fdf1ec; }
+.publish-reviewing { margin-top: 10px; font-size: 12px; color: #6A5AD4; }
+.publish-image-area { display: flex; flex-direction: column; align-items: center; }

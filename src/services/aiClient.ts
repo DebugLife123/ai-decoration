@@ -1,4 +1,5 @@
 import type { DesignStyle } from '../stores/appStore';
+import { gatewayIdentityHeaders } from './credits';
 export type DesignMode = 'photo' | 'floorplan';
 export type PhotoGeneration = { type: 'photo'; imageUrl: string; analysis: string };
 export type RoomGeneration = { name: string; description: string; imageUrl: string; review?: { status: 'pass' | 'check' | 'unverified'; note: string } };
@@ -70,19 +71,19 @@ export async function toSupportedImageDataUrl(image: string): Promise<string> {
 
 export async function editRoomImage(input: { image: string; mask: string; instruction: string; roomName: string; style: string }): Promise<{ imageUrl: string; model: string }> {
   const image = await toSupportedImageDataUrl(input.image);
-  const response = await fetch('/api/ai/edit-room-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...input, image }) });
+  const response = await fetch('/api/ai/edit-room-image', { method: 'POST', headers: { 'Content-Type': 'application/json', ...gatewayIdentityHeaders() }, body: JSON.stringify({ ...input, image }) });
   const payload = await response.json() as { imageUrl?: string; model?: string; error?: string };
   if (!response.ok || !payload.imageUrl) throw new Error(payload.error || '局部编辑失败，请稍后重试。');
   return { imageUrl: payload.imageUrl, model: payload.model || 'configured-image-model' };
 }
 export async function analyzeFloorPlan(floorPlan: string, source: PlanSource = 'floorplan', imageMeta?: PlanImageMeta): Promise<FloorPlanAnalysis> {
-  const response = await fetch('/api/ai/analyze-floorplan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ floorPlan, source, imageMeta }) });
+  const response = await fetch('/api/ai/analyze-floorplan', { method: 'POST', headers: { 'Content-Type': 'application/json', ...gatewayIdentityHeaders() }, body: JSON.stringify({ floorPlan, source, imageMeta }) });
   const payload = await response.json() as FloorPlanAnalysis & { error?: string; requestId?: string };
   if (!response.ok) throw new Error([payload.error || '户型识别失败，请检查接口配置。', payload.requestId ? `请求编号：${payload.requestId}` : ''].filter(Boolean).join(' '));
   return payload;
 }
 export async function generateDesign(input: { mode: DesignMode; style: DesignStyle; prompt: string; templateId?: string; referenceAssetId?: string; photo?: string; photos?: string[]; floorPlan?: string; imageMeta?: PlanImageMeta; source?: PlanSource; analysis?: string; rooms?: IdentifiedRoom[]; selectedRooms?: string[]; roomReferenceImages?: { name: string; image: string }[]; taskId?: string }, onProgress?: (job: GenerationJob) => void): Promise<GenerationResult & { warning?: string; jobId?: string }> {
-  const response = await fetch('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+  const response = await fetch('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json', ...gatewayIdentityHeaders() }, body: JSON.stringify(input) });
   const payload = await response.json() as GenerationResult & { error?: string; jobId?: string };
   if (!response.ok) throw new Error(payload.error || 'AI 生成失败，请检查接口配置。');
   if (!payload.jobId) return payload;
@@ -90,7 +91,7 @@ export async function generateDesign(input: { mode: DesignMode; style: DesignSty
 }
 
 export async function retryGenerationRooms(jobId: string, previous: FloorPlanGeneration, onProgress?: (job: GenerationJob) => void) {
-  const response = await fetch(`/api/ai/generation-jobs/${encodeURIComponent(jobId)}/retry`, { method: 'POST' });
+  const response = await fetch(`/api/ai/generation-jobs/${encodeURIComponent(jobId)}/retry`, { method: 'POST', headers: gatewayIdentityHeaders() });
   const payload = await response.json() as { error?: string };
   if (!response.ok) throw new Error(payload.error || '空间重试暂不可用。');
   return pollGenerationJob(jobId, previous.analysis, onProgress, previous.rooms, previous.cover);

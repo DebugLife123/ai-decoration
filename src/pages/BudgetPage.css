@@ -59,3 +59,61 @@
 .style-recommendation-empty { margin-top: 12px; padding: 15px; color: var(--color-text-muted); background: #faf9fb; font-size: 11px; text-align: center; }
 @media (max-width: 780px) { .budget-layout { grid-template-columns: 1fr; gap: 24px; } .budget-result { min-height: 0; } .budget-prompt { min-height: 180px; } }
 @media (max-width: 560px) { .budget-page { width: calc(100% - 28px); padding-top: 30px; } .budget-header { align-items: flex-start; } .budget-header h1 { font-size: 28px; } .budget-header > a { flex: 0 0 auto; padding: 8px 10px; font-size: 11px; } .budget-fields-row { grid-template-columns: 1fr; } .budget-result { padding: 17px; } .estimate-heading { align-items: flex-start; flex-direction: column; } .estimate-heading strong { font-size: 22px; } .estimate-area { text-align: left; } .estimate-row { align-items: flex-start; flex-direction: column; gap: 4px; } .style-recommendation { align-items: flex-start; flex-direction: column; } .style-recommendation > a { width: 100%; text-align: center; } }
+
+/* 预算快照：保存后在工作台生成时自动带入 */
+.budget-snapshot-bar { display: flex; align-items: center; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
+.budget-snapshot-save { padding: 10px 18px; border: none; border-radius: 999px; background: #6a5ad4; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+.budget-snapshot-save:hover { background: #8870d4; }
+.budget-snapshot-saved { color: #3e7c43; font-size: 12px; }
+
+/* 预算单（文档式呈现） */
+.budget-generate { margin-top: 4px; min-height: 44px; border: none; border-radius: 8px; background: #6a5ad4; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
+.budget-generate:hover:not(:disabled) { background: #8870d4; }
+.budget-generate:disabled { opacity: 0.45; cursor: not-allowed; }
+.budget-prompt .budget-generate { margin-top: 14px; padding: 0 26px; }
+
+.budget-sheet { display: flex; flex-direction: column; gap: 18px; }
+.sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 16px; border-bottom: 2px solid #6a5ad4; }
+.sheet-title { display: grid; gap: 6px; min-width: 0; }
+.sheet-tag { color: #6a5ad4; font-size: 10px; font-weight: 750; letter-spacing: .14em; }
+.sheet-title h2 { margin: 0; color: var(--color-text); font-family: var(--font-display); font-size: 19px; line-height: 1.3; }
+.sheet-title small { color: var(--color-text-muted); font-size: 10px; }
+.sheet-total { flex-shrink: 0; display: grid; gap: 6px; justify-items: end; text-align: right; }
+.sheet-total > span { color: var(--color-text-secondary); font-size: 11px; }
+.sheet-total strong { color: var(--color-text); font-size: 24px; line-height: 1.2; white-space: nowrap; }
+.sheet-total strong small { font-size: 12px; font-weight: 600; }
+.sheet-total strong i { margin: 0 4px; color: var(--color-text-muted); font-size: 15px; font-style: normal; font-weight: 400; }
+
+.sheet-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sheet-workspace { display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; border-radius: 999px; background: #322e3d; color: #fff; font-size: 13px; font-weight: 700; text-decoration: none; }
+.sheet-workspace:hover { background: #4a4458; }
+.sheet-actions .budget-snapshot-save { margin-top: 0; }
+
+.sheet-section h3 { margin: 0 0 8px; color: var(--color-text); font-size: 13px; }
+.sheet-section.style-recommendations { border-top: none; margin-top: 0; padding-top: 0; }
+.sheet-breakdown { display: grid; grid-template-columns: 1fr 1fr; gap: 0 26px; }
+.sheet-breakdown .estimate-row { border-bottom: 1px solid var(--color-border-light); }
+
+@media (max-width: 780px) {
+  .sheet-head { flex-direction: column; }
+  .sheet-total { justify-items: start; text-align: left; }
+  .sheet-breakdown { grid-template-columns: 1fr; }
+}
+
+/* 预算单全屏覆盖：生成后替换整个表单区，横屏居中 */
+.budget-sheet-page {
+  width: min(1080px, 100%);
+  margin: 30px auto 0;
+  padding: 34px 42px;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+  border-radius: 10px;
+  box-shadow: 0 18px 50px rgba(50, 46, 61, 0.08);
+}
+.sheet-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 36px; align-items: start; }
+.sheet-columns .style-recommendations { border-top: none; margin-top: 0; padding-top: 0; }
+.sheet-back { padding: 10px 18px; border: 1px solid var(--color-border); border-radius: 999px; background: transparent; color: var(--color-text-secondary); font-size: 13px; font-weight: 600; cursor: pointer; }
+.sheet-back:hover { color: var(--color-text); border-color: var(--color-text-muted); }
+@media (max-width: 860px) { .budget-sheet-page { padding: 22px 20px; } .sheet-columns { grid-template-columns: 1fr; gap: 20px; } }
+/* 分项参考在半宽栏内改为单列，避免拥挤 */
+.budget-sheet-page .sheet-breakdown { grid-template-columns: 1fr; }

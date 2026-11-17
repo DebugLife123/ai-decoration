@@ -22,6 +22,7 @@ import BusinessStylesPage from './pages/BusinessStylesPage';
 import CadWorkflowPage from './pages/CadWorkflowPage';
 import CanvasPage from './pages/CanvasPage';
 import NotificationsPage from './pages/NotificationsPage';
+import ProfilePage from './pages/ProfilePage';
 import { useAppStore } from './stores/appStore';
 import './App.css';
 
@@ -88,6 +89,7 @@ function App() {
           <Route path="/business/notifications" element={<RoleRoute role="business"><NotificationsPage /></RoleRoute>} />
           <Route path="/budget" element={<RoleRoute role="consumer"><BudgetPage /></RoleRoute>} />
           <Route path="/subscription" element={<RoleRoute role="consumer"><SubscriptionPage /></RoleRoute>} />
+          <Route path="/profile" element={<RoleRoute role="consumer"><ProfilePage /></RoleRoute>} />
           <Route path="/business" element={<RoleRoute role="business"><BusinessPage /></RoleRoute>} />
           <Route path="/business/styles" element={<RoleRoute role="business"><BusinessStylesPage /></RoleRoute>} />
           <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />

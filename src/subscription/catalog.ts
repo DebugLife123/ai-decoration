@@ -20,11 +20,11 @@ export const PLANS: Plan[] = [
     tagline: '适合连续出方案的设计师与家装顾问。',
     priceCents: 39900,
     period: 'month',
-    creditsPerPeriod: 30,
+    creditsPerPeriod: 70,
     badge: '最超值',
     entitlements: { cad: true, nowatermark: true, hires: true, priority: true, history: true },
     limits: { concurrency: 3, historyDays: 3650 },
-    highlights: ['每月自动到账 30 积分', '去水印 + 2K 高清导出', '解锁 CAD 全屋渲染', '支持 3 个并发生成任务'],
+    highlights: ['每月自动到账 70 积分', '去水印 + 2K 高清导出', '解锁 CAD 全屋渲染', '支持 3 个并发生成任务'],
   },
   {
     id: 'pro_year',
@@ -33,18 +33,21 @@ export const PLANS: Plan[] = [
     tagline: '一次付一年，覆盖长期装修创作需求。',
     priceCents: 399900,
     period: 'year',
-    creditsPerPeriod: 480,
+    creditsPerPeriod: 840,
     badge: '省 2 个月',
     entitlements: { cad: true, nowatermark: true, hires: true, priority: true, history: true },
     limits: { concurrency: 4, historyDays: 3650 },
-    highlights: ['一次性到账 480 积分', '包含专业版全部权益', '支持 4 个并发生成任务', '优先队列，出图更快'],
+    highlights: ['一次性到账 840 积分', '包含专业版全部权益', '支持 4 个并发生成任务', '优先队列，出图更快'],
   },
 ];
 
+// 定价阶梯（每积分实际单价）：积分包按需零售偏贵，订阅锁定周期更划算。
+// 体验包 ¥9.98/积分 < 标准包 ¥8.14 < 大户型包 ¥6.48 < 月付 ¥5.70 < 年卡 ¥4.76。
+// 消耗参照：一套 3 室全屋方案约 8~9 积分（户型分析 1 + 封面 1 + 每空间 1）。
 export const CREDIT_PACKS: CreditPack[] = [
-  { id: 'pack_5', name: '体验包', credits: 5, bonus: 0, priceCents: 1990, validMonths: 12, note: '适合试做单间与一次全屋总览。' },
-  { id: 'pack_20', name: '标准包', credits: 20, bonus: 2, priceCents: 5900, validMonths: 12, note: '适合一到两套房的常规出图量。' },
-  { id: 'pack_50', name: '大户型包', credits: 50, bonus: 10, priceCents: 12900, validMonths: 12, note: '适合多套房或反复改稿的创作量。' },
+  { id: 'pack_5', name: '体验包', credits: 5, bonus: 0, priceCents: 4990, validMonths: 12, note: '适合试做单间与一次全屋总览。' },
+  { id: 'pack_20', name: '标准包', credits: 20, bonus: 2, priceCents: 17900, validMonths: 12, note: '适合一到两套房的常规出图量。' },
+  { id: 'pack_50', name: '大户型包', credits: 50, bonus: 10, priceCents: 38900, validMonths: 12, note: '适合多套房或反复改稿的创作量。' },
 ];
 
 export function findPlan(id: PlanId): Plan {

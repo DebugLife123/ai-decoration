@@ -9,6 +9,7 @@ export type InspirationTemplate = {
   image: string; analysis: string; ruleItems: { label: string; value: string }[];
   palette: string[]; materials: string[]; prompt: string;
   paletteColors?: string[]; referenceAssetId?: string; negativePrompt?: string; thumbnail?: string;
+  isUserShowcase?: boolean;
 };
 
 export const existingTemplates: InspirationTemplate[] = [

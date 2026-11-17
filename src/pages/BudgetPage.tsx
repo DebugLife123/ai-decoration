@@ -4,6 +4,7 @@ import { useAppStore } from '../stores/appStore';
 import { fallbackStyleProfiles, recommendStyles, type StyleRecommendationProfile } from '../services/styleRecommendation';
 import { loadPlatformStyleProfiles } from '../services/styleProfileSource';
 import { styleCatalogByKey } from '../services/styleCatalog';
+import { loadBudgetSnapshot, saveBudgetSnapshot } from '../services/budgetSnapshot';
 import './BudgetPage.css';
 
 type FinishLevel = 'basic' | 'standard' | 'premium';
@@ -29,12 +30,17 @@ function formatMoney(value: number) {
 
 export default function BudgetPage() {
   const projects = useAppStore((state) => state.projects);
+  const authSession = useAppStore((state) => state.authSession);
+  const userId = authSession?.user.id || 'anonymous';
   const [projectId, setProjectId] = useState('');
   const [areaInput, setAreaInput] = useState('');
   const [region, setRegion] = useState('');
   const [budgetInput, setBudgetInput] = useState('');
   const [finishLevel, setFinishLevel] = useState<FinishLevel>('standard');
   const [platformProfiles, setPlatformProfiles] = useState<StyleRecommendationProfile[] | null>(null);
+  const [savedAt, setSavedAt] = useState<string>(() => loadBudgetSnapshot(userId)?.savedAt || '');
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [generatedAt, setGeneratedAt] = useState<Date | null>(null);
   useEffect(() => {
     let cancelled = false;
     loadPlatformStyleProfiles()
@@ -74,6 +80,21 @@ export default function BudgetPage() {
     : null;
   const recommendationBudget = Number.isFinite(Number(budgetInput)) && Number(budgetInput) > 0 ? Number(budgetInput) : null;
 
+  const saveSnapshot = () => {
+    if (!estimate) return;
+    saveBudgetSnapshot(userId, {
+      area, region: region.trim(), finishLevel, finishLabel: currentLevel.label,
+      budgetWan: recommendationBudget, lowWan: estimate.low / 10000, highWan: estimate.high / 10000,
+      savedAt: new Date().toISOString(),
+    });
+    setSavedAt(new Date().toISOString());
+  };
+
+  const generateSheet = () => {
+    setSheetOpen(true);
+    setGeneratedAt(new Date());
+  };
+
   // 企业资料优先，但不足 3 条时用内置风格补齐：
   // 消费者不该因为某家企业只录了 1 条资料，就只看到 1 个可选方向。
   const displayStyleProfiles = useMemo(() => {
@@ -92,7 +113,46 @@ export default function BudgetPage() {
       <Link to="/projects">我的项目</Link>
     </header>
 
-    <div className="budget-layout">
+    {sheetOpen && estimate ? <article className="budget-sheet budget-sheet-page">
+      <header className="sheet-head">
+        <div className="sheet-title">
+          <span className="sheet-tag">预算单 · EARLY BUDGET SHEET</span>
+          <h2>{area.toLocaleString('zh-CN')} ㎡{region.trim() ? ` · ${region.trim()}` : ''} · {currentLevel.label}装修</h2>
+          <small>生成于 {generatedAt ? `${generatedAt.getMonth() + 1}月${generatedAt.getDate()}日 ${String(generatedAt.getHours()).padStart(2, '0')}:${String(generatedAt.getMinutes()).padStart(2, '0')}` : ''} · 前期估算，仅供参考</small>
+        </div>
+        <div className="sheet-total">
+          <span>参考总价区间</span>
+          <strong>¥{formatMoney(estimate.low)}<small>万</small><i> - </i>¥{formatMoney(estimate.high)}<small>万</small></strong>
+        </div>
+      </header>
+      <div className="sheet-actions">
+        <button type="button" className="budget-snapshot-save" onClick={saveSnapshot}>保存快照</button>
+        <Link className="sheet-workspace" to="/workspace">前往工作台 →</Link>
+        <button type="button" className="sheet-back" onClick={() => setSheetOpen(false)}>修改试算条件</button>
+        {savedAt && <span className="budget-snapshot-saved">已保存 · 工作台将显示这份预算参考</span>}
+      </div>
+      {budgetStatus && <p className={`budget-comparison ${budgetStatus}`}>
+        {budgetStatus === 'within' ? `计划预算 ${recommendationBudget} 万元落在参考区间内。` : budgetStatus === 'low' ? `计划预算 ${recommendationBudget} 万元低于参考区间，可调整面积或装修档位。` : `计划预算 ${recommendationBudget} 万元高于参考区间，可预留部分用于家具、家电或软装。`}
+      </p>}
+      <div className="sheet-columns">
+        <div className="sheet-section"><h3>分项参考</h3><div className="sheet-breakdown">{estimate.breakdown.map((item) => <div className="estimate-row" key={item.label}><span>{item.label}</span><strong>¥{formatMoney(item.low)} - ¥{formatMoney(item.high)} 万</strong></div>)}</div></div>
+        <div className="sheet-section style-recommendations">
+          <div className="style-recommendations-heading"><div><h3>按预算推荐风格</h3><p>{recommendationBudget ? `根据 ${recommendationBudget} 万元计划预算，优先考虑这些方向。` : '填写计划总预算后，可查看更匹配的风格方向。'}</p></div>{recommendationBudget && <span>{recommendationBudget < 10 ? '预算较紧' : recommendationBudget < 25 ? '舒适区间' : '品质空间'}</span>}</div>
+          {recommendationBudget ? <div className="style-recommendation-list">{displayStyleProfiles.map((style, index) => {
+            // 工作台通过 query 参数接收风格与提示词（它只读 useSearchParams），
+            // 所以这里必须落到 URL 上，不能用 state —— 否则点击后风格不会切换。
+            const styleName = styleCatalogByKey.get(style.style)?.name ?? style.name;
+            const workspaceParams = new URLSearchParams({ style: style.style, prompt: `预算约 ${recommendationBudget} 万元，倾向${styleName}风格。` });
+            if (area > 0) workspaceParams.set('area', String(area));
+            if (region.trim()) workspaceParams.set('region', region.trim());
+            workspaceParams.set('budget', String(recommendationBudget));
+            return <article className={`style-recommendation ${index === 0 ? 'primary' : ''}`} key={`${style.style}-${style.companyName ?? 'platform'}`}><div className="style-recommendation-copy"><div><strong>{styleName}</strong>{index === 0 && <em>{style.companyName ? '企业优先' : '优先推荐'}</em>}{style.companyName && <i className="style-recommendation-source">合作企业 · {style.companyName}</i>}</div><span>{style.note}</span><p>{style.reason}</p></div><Link to={`/workspace?${workspaceParams.toString()}`}>采用此风格</Link></article>;
+          })}</div> : <div className="style-recommendation-empty">先填写预算金额，再查看风格建议。</div>}
+        </div>
+      </div>
+      <p className="estimate-disclaimer">以上为演示用样例估算，不是企业报价或市场实时报价。地区、房屋状况、施工范围和选材会造成较大差异；不含家具家电、软装及可能产生的结构加固费用。</p>
+    </article>
+    : <div className="budget-layout">
       <section className="budget-inputs" aria-label="试算条件">
         <label className="budget-field">
           <span>关联项目</span>
@@ -110,32 +170,14 @@ export default function BudgetPage() {
           <div>{finishLevels.map((level) => <button type="button" key={level.id} className={finishLevel === level.id ? 'selected' : ''} aria-pressed={finishLevel === level.id} onClick={() => setFinishLevel(level.id)}>{level.label}</button>)}</div>
         </fieldset>
         <label className="budget-field"><span>计划总预算 <small>可选</small></span><div className="budget-input"><input type="number" min="0" step="0.1" value={budgetInput} onChange={(event) => setBudgetInput(event.target.value)} placeholder="填写后可对照估算范围" /><b>万元</b></div></label>
+        <button type="button" className="budget-generate" disabled={!estimate} onClick={generateSheet}>生成预算单</button>
         {selectedProject && <p className="project-budget-note">数据来自项目“{selectedProject.name}”，可在此临时调整，不会覆盖项目资料。</p>}
       </section>
 
       <section className="budget-result" aria-live="polite">
-        {!estimate ? <div className="budget-prompt"><strong>填写面积开始试算</strong><span>请输入 0 至 2000 ㎡之间的装修面积。</span></div> : <>
-          <div className="estimate-heading"><div><span>参考总价区间</span><strong>¥{formatMoney(estimate.low)}<small>万</small><i> - </i>¥{formatMoney(estimate.high)}<small>万</small></strong></div><span className="estimate-area">{area.toLocaleString('zh-CN')} ㎡{region.trim() ? ` · ${region.trim()}` : ''}</span></div>
-          {budgetStatus && <p className={`budget-comparison ${budgetStatus}`}>
-            {budgetStatus === 'within' ? '计划预算落在当前参考区间内。' : budgetStatus === 'low' ? '计划预算低于当前参考区间，可调整面积或装修档位。' : '计划预算高于当前参考区间，可预留部分用于家具、家电或软装。'}
-          </p>}
-          <div className="style-recommendations">
-            <div className="style-recommendations-heading"><div><h2>按预算推荐风格</h2><p>{recommendationBudget ? `根据 ${recommendationBudget} 万元计划预算，优先考虑这些方向。` : '填写计划总预算后，可查看更匹配的风格方向。'}</p></div>{recommendationBudget && <span>{recommendationBudget < 10 ? '预算较紧' : recommendationBudget < 25 ? '舒适区间' : '品质空间'}</span>}</div>
-            {recommendationBudget ? <div className="style-recommendation-list">{displayStyleProfiles.map((style, index) => {
-              // 工作台通过 query 参数接收风格与提示词（它只读 useSearchParams），
-              // 所以这里必须落到 URL 上，不能用 state —— 否则点击后风格不会切换。
-              const styleName = styleCatalogByKey.get(style.style)?.name ?? style.name;
-              const workspaceParams = new URLSearchParams({ style: style.style, prompt: `预算约 ${recommendationBudget} 万元，倾向${styleName}风格。` });
-              if (area > 0) workspaceParams.set('area', String(area));
-              if (region.trim()) workspaceParams.set('region', region.trim());
-              workspaceParams.set('budget', String(recommendationBudget));
-              return <article className={`style-recommendation ${index === 0 ? 'primary' : ''}`} key={`${style.style}-${style.companyName ?? 'platform'}`}><div className="style-recommendation-copy"><div><strong>{styleName}</strong>{index === 0 && <em>{style.companyName ? '企业优先' : '优先推荐'}</em>}{style.companyName && <i className="style-recommendation-source">合作企业 · {style.companyName}</i>}</div><span>{style.note}</span><p>{style.reason}</p></div><Link to={`/workspace?${workspaceParams.toString()}`}>采用此风格</Link></article>;
-            })}</div> : <div className="style-recommendation-empty">先填写预算金额，再查看风格建议。</div>}
-          </div>
-          <div className="estimate-breakdown"><h2>分项参考</h2>{estimate.breakdown.map((item) => <div className="estimate-row" key={item.label}><span>{item.label}</span><strong>¥{formatMoney(item.low)} - ¥{formatMoney(item.high)} 万</strong></div>)}</div>
-          <p className="estimate-disclaimer">以上为演示用样例估算，不是企业报价或市场实时报价。地区、房屋状况、施工范围和选材会造成较大差异；不含家具家电、软装及可能产生的结构加固费用。</p>
-        </>}
+        {!estimate ? <div className="budget-prompt"><strong>填写面积开始试算</strong><span>请输入 0 至 2000 ㎡之间的装修面积。</span></div>
+        : <div className="budget-prompt"><strong>条件已填写完成</strong><span>点击「生成预算单」生成这份前期预算参考。</span><button type="button" className="budget-generate" onClick={generateSheet}>生成预算单</button></div>}
       </section>
-    </div>
+    </div>}
   </main>;
 }
