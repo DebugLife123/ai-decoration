@@ -1,6 +1,7 @@
 import { useState, type MouseEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../stores/appStore';
+import { loadUserProfile } from '../services/userProfile';
 import BrandLoading from './BrandLoading';
 import './Navbar.css';
 
@@ -75,6 +76,7 @@ export default function Navbar() {
   const [isEntering, setIsEntering] = useState(false);
   const isBusiness = role === 'business';
   const navGroups = isBusiness ? businessNavGroups : consumerNavGroups;
+  const navProfile = authSession?.user ? loadUserProfile(authSession.user.id) : null;
 
   const handleSignOut = () => {
     signOut();
@@ -152,8 +154,8 @@ export default function Navbar() {
           </Link>
           <div className="nav-user">
             <Link to={isBusiness ? '/business' : '/profile'} className="nav-user-link" title={isBusiness ? '企业信息' : '个人中心 / 积分用量'} onClick={() => setMobileOpen(false)}>
-              <span className="user-avatar">{authSession?.user.displayName.slice(0, 1) || '简'}</span>
-              <span><strong>{authSession?.user.displayName || '已登录用户'}</strong><small>{isBusiness ? '企业账号' : '个人账号'}</small></span>
+              <span className="user-avatar">{navProfile?.avatar ? <img src={navProfile.avatar} alt="" /> : navProfile?.displayName.trim().slice(0, 1) || authSession?.user.displayName.slice(0, 1) || '简'}</span>
+              <span><strong>{navProfile?.displayName.trim() || authSession?.user.displayName || '已登录用户'}</strong><small>{isBusiness ? '企业账号' : '个人账号'}</small></span>
             </Link>
             <button className="nav-signout" type="button" onClick={handleSignOut} title="退出登录" aria-label="退出登录">
               <NavIcon name="logout" />

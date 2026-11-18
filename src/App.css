@@ -14,6 +14,11 @@
 .app:has(.whole-home-report) .navbar,
 .app:has(.whole-home-report) .mobile-nav-toggle { display: none; }
 
+/* 个人中心为二级全屏界面：隐藏主导航，页面自带侧栏 */
+.app:has(.profile-page) .app-main { margin-left: 0; }
+.app:has(.profile-page) .navbar,
+.app:has(.profile-page) .mobile-nav-toggle { display: none; }
+
 @media (max-width: 760px) {
   .app-main { margin-left: 0; }
 }

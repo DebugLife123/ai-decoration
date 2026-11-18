@@ -5,6 +5,7 @@ import { fallbackStyleProfiles, recommendStyles, type StyleRecommendationProfile
 import { loadPlatformStyleProfiles } from '../services/styleProfileSource';
 import { styleCatalogByKey } from '../services/styleCatalog';
 import { loadBudgetSnapshot, saveBudgetSnapshot } from '../services/budgetSnapshot';
+import { loadUserProfile } from '../services/userProfile';
 import './BudgetPage.css';
 
 type FinishLevel = 'basic' | 'standard' | 'premium';
@@ -33,8 +34,10 @@ export default function BudgetPage() {
   const authSession = useAppStore((state) => state.authSession);
   const userId = authSession?.user.id || 'anonymous';
   const [projectId, setProjectId] = useState('');
-  const [areaInput, setAreaInput] = useState('');
-  const [region, setRegion] = useState('');
+  // 面积与地区默认来自个人中心的「装修偏好」，免得每次重复填写。
+  const savedProfile = loadUserProfile(userId);
+  const [areaInput, setAreaInput] = useState(savedProfile?.defaultArea || '');
+  const [region, setRegion] = useState(savedProfile?.region || '');
   const [budgetInput, setBudgetInput] = useState('');
   const [finishLevel, setFinishLevel] = useState<FinishLevel>('standard');
   const [platformProfiles, setPlatformProfiles] = useState<StyleRecommendationProfile[] | null>(null);

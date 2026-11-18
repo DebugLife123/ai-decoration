@@ -127,6 +127,7 @@
 .nav-signout:focus-visible { outline: 2px solid #8c7ae1; outline-offset: 2px; }
 .nav-signout svg { width: 16px; height: 16px; }
 .user-avatar { color: #fff; background: linear-gradient(135deg, #d9a35f, #c07f8d); border-radius: 50%; font-size: 13px; }
+.user-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 
 .mobile-nav-toggle { display: none; }
 
