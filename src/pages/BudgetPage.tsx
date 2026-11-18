@@ -1,3 +1,4 @@
+import { estimateBudget, type EstimateResult } from '../services/budgetApi';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppStore } from '../stores/appStore';
@@ -55,7 +56,9 @@ export default function BudgetPage() {
   const area = Number(areaInput);
   const targetBudget = Number(budgetInput) * 10000;
   const currentLevel = finishLevels.find((item) => item.id === finishLevel)!;
-  const estimate = useMemo(() => {
+  const [result, setResult] = useState<EstimateResult | null>(null);
+  const [estimating, setEstimating] = useState(false);
+  const fallback = useMemo(() => {
     if (!Number.isFinite(area) || area <= 0 || area > 2000) return null;
     const breakdown = referenceCosts.map((item) => ({
       ...item,
@@ -69,6 +72,15 @@ export default function BudgetPage() {
     };
   }, [area, currentLevel.factor]);
 
+  const estimate = result ? {
+    low: result.payableTotalLow, high: result.payableTotalHigh,
+    breakdown: [
+      ...result.items.filter(item => !item.disabled).map(item => ({ label: item.label, low: item.costLow, high: item.costHigh })),
+      { label: '管理费', low: result.managementFeeLow, high: result.managementFeeHigh },
+      { label: '税费', low: result.taxLow, high: result.taxHigh },
+      { label: '远程、楼层及层高附加费', low: result.remoteFeeLow + result.floorSurchargeLow + result.highCeilingFeeLow, high: result.remoteFeeHigh + result.floorSurchargeHigh + result.highCeilingFeeHigh },
+    ],
+  } : fallback;
   const selectProject = (id: string) => {
     setProjectId(id);
     const project = projects.find((item) => item.id === id);
@@ -93,7 +105,11 @@ export default function BudgetPage() {
     setSavedAt(new Date().toISOString());
   };
 
-  const generateSheet = () => {
+  const generateSheet = async () => {
+    setEstimating(true);
+    const current = await estimateBudget({ area, region: region.trim(), finishLevel: ({ basic: 'BASIC', standard: 'STANDARD', premium: 'PREMIUM' } as const)[finishLevel], pricingMode: 'LIST', targetBudget: targetBudget > 0 ? targetBudget : null });
+    setResult(current);
+    setEstimating(false);
     setSheetOpen(true);
     setGeneratedAt(new Date());
   };
@@ -121,7 +137,7 @@ export default function BudgetPage() {
         <div className="sheet-title">
           <span className="sheet-tag">预算单 · EARLY BUDGET SHEET</span>
           <h2>{area.toLocaleString('zh-CN')} ㎡{region.trim() ? ` · ${region.trim()}` : ''} · {currentLevel.label}装修</h2>
-          <small>生成于 {generatedAt ? `${generatedAt.getMonth() + 1}月${generatedAt.getDate()}日 ${String(generatedAt.getHours()).padStart(2, '0')}:${String(generatedAt.getMinutes()).padStart(2, '0')}` : ''} · 前期估算，仅供参考</small>
+          <small>生成于 {generatedAt ? `${generatedAt.getMonth() + 1}月${generatedAt.getDate()}日 ${String(generatedAt.getHours()).padStart(2, '0')}:${String(generatedAt.getMinutes()).padStart(2, '0')}` : ''} · {result ? `预算模型 ${result.modelVersion}` : '本地参考估算（预算服务未返回结果）'}</small>
         </div>
         <div className="sheet-total">
           <span>参考总价区间</span>
@@ -131,7 +147,7 @@ export default function BudgetPage() {
       <div className="sheet-actions">
         <button type="button" className="budget-snapshot-save" onClick={saveSnapshot}>保存快照</button>
         <Link className="sheet-workspace" to="/workspace">前往工作台 →</Link>
-        <button type="button" className="sheet-back" onClick={() => setSheetOpen(false)}>修改试算条件</button>
+        <button type="button" className="sheet-back" onClick={() => { setSheetOpen(false); setResult(null); }}>修改试算条件</button>
         {savedAt && <span className="budget-snapshot-saved">已保存 · 工作台将显示这份预算参考</span>}
       </div>
       {budgetStatus && <p className={`budget-comparison ${budgetStatus}`}>
@@ -156,7 +172,7 @@ export default function BudgetPage() {
       <p className="estimate-disclaimer">以上为演示用样例估算，不是企业报价或市场实时报价。地区、房屋状况、施工范围和选材会造成较大差异；不含家具家电、软装及可能产生的结构加固费用。</p>
     </article>
     : <div className="budget-layout">
-      <section className="budget-inputs" aria-label="试算条件">
+      <section inert={estimating} className="budget-inputs" aria-label="试算条件">
         <label className="budget-field">
           <span>关联项目</span>
           <select value={projectId} onChange={(event) => selectProject(event.target.value)} disabled={!projects.length}>
@@ -173,13 +189,13 @@ export default function BudgetPage() {
           <div>{finishLevels.map((level) => <button type="button" key={level.id} className={finishLevel === level.id ? 'selected' : ''} aria-pressed={finishLevel === level.id} onClick={() => setFinishLevel(level.id)}>{level.label}</button>)}</div>
         </fieldset>
         <label className="budget-field"><span>计划总预算 <small>可选</small></span><div className="budget-input"><input type="number" min="0" step="0.1" value={budgetInput} onChange={(event) => setBudgetInput(event.target.value)} placeholder="填写后可对照估算范围" /><b>万元</b></div></label>
-        <button type="button" className="budget-generate" disabled={!estimate} onClick={generateSheet}>生成预算单</button>
+        <button type="button" className="budget-generate" disabled={!estimate || estimating} onClick={generateSheet}>{estimating ? '正在计算…' : '生成预算单'}</button>
         {selectedProject && <p className="project-budget-note">数据来自项目“{selectedProject.name}”，可在此临时调整，不会覆盖项目资料。</p>}
       </section>
 
       <section className="budget-result" aria-live="polite">
         {!estimate ? <div className="budget-prompt"><strong>填写面积开始试算</strong><span>请输入 0 至 2000 ㎡之间的装修面积。</span></div>
-        : <div className="budget-prompt"><strong>条件已填写完成</strong><span>点击「生成预算单」生成这份前期预算参考。</span><button type="button" className="budget-generate" onClick={generateSheet}>生成预算单</button></div>}
+        : <div className="budget-prompt"><strong>条件已填写完成</strong><span>点击「生成预算单」生成这份前期预算参考。</span><button type="button" className="budget-generate" disabled={estimating} onClick={generateSheet}>{estimating ? '正在计算…' : '生成预算单'}</button></div>}
       </section>
     </div>}
   </main>;
