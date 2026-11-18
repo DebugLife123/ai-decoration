@@ -115,7 +115,7 @@ async function pollGenerationJob(jobId: string, initialAnalysis: string, onProgr
     let job: GenerationJob;
     try {
       const query = new URLSearchParams({ summary: '1', afterRooms: String(receivedRooms), includeCover: includeCover ? '1' : '0' });
-      const statusResponse = await fetch(`/api/ai/generation-jobs/${encodeURIComponent(jobId)}?${query}`, { cache: 'no-store' });
+      const statusResponse = await fetch(`/api/ai/generation-jobs/${encodeURIComponent(jobId)}?${query}`, { cache: 'no-store', headers: gatewayIdentityHeaders() });
       if (statusResponse.status === 404) {
         notFoundSince ??= Date.now();
         if (Date.now() - notFoundSince < 60_000) continue;

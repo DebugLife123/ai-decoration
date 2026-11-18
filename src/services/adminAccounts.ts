@@ -14,10 +14,14 @@ export interface AccountDetail {
   submissions: Array<{ id: string; title: string; style: string; status: string; updatedAt: string }>;
 }
 export interface AccountInput { email: string; displayName: string; companyName: string }
-export function listAccounts(filters: { type: ManagedAccountType; status: string; query: string; page: number }) {
-  return apiRequest<AccountPage>(`/api/v1/admin/accounts?${new URLSearchParams({ ...filters, page: String(filters.page), size: '20' })}`);
+export async function listAccounts(filters: { type: ManagedAccountType; status: string; query: string; page: number }) {
+  const data = await apiRequest<AccountPage>(`/api/v1/admin/accounts?${new URLSearchParams({ ...filters, page: String(filters.page), size: '20' })}`);
+  return { ...data, items: data.items.map(row => ({ ...row, balance: row.balance / 100 })) };
 }
-export function getAccount(id: string) { return apiRequest<AccountDetail>(`/api/v1/admin/accounts/${id}`); }
+export async function getAccount(id: string) {
+  const data = await apiRequest<AccountDetail>(`/api/v1/admin/accounts/${id}`);
+  return { ...data, account: { ...data.account, balance: data.account.balance / 100 }, creditEntries: data.creditEntries.map(row => ({ ...row, delta: row.delta / 100, balanceAfter: row.balanceAfter / 100 })) };
+}
 export function createAccount(input: AccountInput & { accountType: ManagedAccountType; password: string }) {
   return apiRequest<ManagedAccount>('/api/v1/admin/accounts', { method: 'POST', body: JSON.stringify(input) });
 }

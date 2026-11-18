@@ -80,7 +80,11 @@ public class PersonalCreditService {
 
     @Transactional
     public CreditOperation finalizeOperation(UUID userId, UUID operationId, boolean success) {
-        requirePersonalUser(userId);
+        return settle(userId, operationId, success ? null : 0L);
+    }
+
+    @Transactional
+    public CreditOperation settle(UUID userId, UUID operationId, Long consumed) {
         var operation = jdbc.query("""
                 select id, units, status, reference_id from personal_credit_operations
                 where id = ? and user_id = ? for update
@@ -88,21 +92,25 @@ public class PersonalCreditService {
                 rs.getString("status"), rs.getObject("reference_id", UUID.class)), operationId, userId)
                 .stream().findFirst().orElseThrow(() -> new BusinessApiException(HttpStatus.NOT_FOUND, "CREDIT_OPERATION_NOT_FOUND", "积分扣费操作不存在"));
         if (!"RESERVED".equals(operation.status())) return operation;
-        if (success) {
+        long used = consumed == null ? operation.units() : consumed;
+        if (used < 0 || used > operation.units()) throw invalid("Invalid settlement amount");
+        if (used == operation.units()) {
             jdbc.update("update personal_credit_operations set status = 'COMMITTED', finalized_at = now() where id = ?", operationId);
             return new CreditOperation(operation.id(), operation.units(), "COMMITTED", operation.referenceId());
         }
         var account = lockAccount(userId);
         var now = Timestamp.from(Instant.now());
-        var balanceAfter = account.balance() + operation.units();
+        long refund = operation.units() - used;
+        var balanceAfter = account.balance() + refund;
         jdbc.update("update personal_credit_accounts set balance = ?, version = version + 1, updated_at = ? where user_id = ?",
                 balanceAfter, now, userId);
-        jdbc.update("update personal_credit_operations set status = 'REFUNDED', finalized_at = ? where id = ?", now, operationId);
+        var status = used == 0 ? "REFUNDED" : "COMMITTED";
+        jdbc.update("update personal_credit_operations set status = ?, finalized_at = ? where id = ?", status, now, operationId);
         jdbc.update("""
                 insert into personal_credit_ledger(user_id, operation_id, delta, balance_after, event_type, note, created_at)
                 values (?, ?, ?, ?, 'GENERATION_REFUND', ?, ?)
-                """, userId, operationId, operation.units(), balanceAfter, "效果图生成失败，积分已退回", now);
-        return new CreditOperation(operation.id(), operation.units(), "REFUNDED", operation.referenceId());
+                """, userId, operationId, refund, balanceAfter, "未完成部分积分退回", now);
+        return new CreditOperation(operation.id(), operation.units(), status, operation.referenceId());
     }
 
     @Transactional

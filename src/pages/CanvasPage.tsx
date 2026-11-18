@@ -44,7 +44,7 @@ async function readImageAsDataUrl(source: string, signal: AbortSignal) {
   return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('图片转换失败')); reader.onerror = () => reject(new Error('图片转换失败')); reader.readAsDataURL(blob); });
 }
 
-const imageGeneration = createCanvasHttpImageGeneration({ headers: gatewayIdentityHeaders() });
+const imageGeneration = createCanvasHttpImageGeneration({ headers: gatewayIdentityHeaders });
 
 function CanvasWorkspace({ projectId, adapter, workflow }: { projectId: string; adapter: ReturnType<typeof createMockCanvasAdapter>; workflow: ReturnType<typeof createMockCanvasWorkflow> }) {
   const { message } = App.useApp();

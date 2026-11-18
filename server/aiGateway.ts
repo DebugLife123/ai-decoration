@@ -3,15 +3,10 @@ import { resolve } from 'node:path';
 import { getWholeHomeStyle, wholeHomePrompt } from '../src/features/styleLibrary/wholeHomeStyles.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
-import { CREDIT_COSTS, creditLedger, creditSummary, grantCredits, holdCredits, refundHold, resolveIdentity, settleHold } from './creditStore.ts';
-
-// 与 src/subscription/catalog.ts 保持一致（含赠送积分）。
-const PLANS_CREDITS: Record<string, number> = { free: 3, pro_month: 70, pro_year: 840 };
-const PACKS_CREDITS: Record<string, number> = { pack_5: 5, pack_20: 22, pack_50: 60 };
-const PACK_LABELS: Record<string, string> = { pack_5: '体验包', pack_20: '标准包', pack_50: '大户型包' };
+import { CREDIT_COSTS, databaseCredits } from './databaseCredits.ts';
 
 function insufficient(res: ServerResponse, result: { required: number; balance: number }) {
-  return sendJson(res, 402, { error: `积分不足：本次需要 ${result.required} 积分，当前余额 ${result.balance}。请前往「积分订阅」购买套餐或积分包。`, code: 'INSUFFICIENT_CREDITS', required: result.required, balance: result.balance });
+  return sendJson(res, 402, { error: `积分不足：本次需要 ${result.required} 积分，当前余额 ${result.balance}。请联系管理员核对余额。`, code: 'INSUFFICIENT_CREDITS', required: result.required, balance: result.balance });
 }
 
 export type GatewayConfig = { baseUrl: string; apiKey: string; visionModel: string; imageModel: string; analysisTimeoutMs?: number; reviewTimeoutMs?: number; imageTimeoutMs?: number };
@@ -433,6 +428,8 @@ async function analyzeFloorPlanRequest(config: GatewayConfig, request: AnalyzeRe
 }
 
 export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
+  const { creditLedger, holdCredits, refundHold, resolveIdentity, settleHold } = databaseCredits(env);
+  const owners = new WeakMap<GenerationJob, string>();
   const timeoutValue = (name: string, fallback: number) => {
     const parsed = Number(env[name]);
     return Number.isFinite(parsed) && parsed >= 10_000 && parsed <= 600_000 ? parsed : fallback;
@@ -457,7 +454,7 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
   const gatewayMiddleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     if (req.method !== 'POST') return next();
     if (!config.apiKey) return sendJson(res, 500, { error: '未检测到 CODEX2API_API_KEY 或 AI_API_KEY。' });
-    const identity = resolveIdentity(req);
+    const identity = await resolveIdentity(req);
     if (!identity) return sendJson(res, 401, { error: '请先登录后再使用 AI 生成功能。' });
     try {
       const request = await readBody(req);
@@ -465,14 +462,14 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
         return sendJson(res, 400, { error: error instanceof Error ? error.message : '风格参考无效。' });
       }
       if (request.mode === 'photo') {
-        const hold = holdCredits(identity, CREDIT_COSTS.coverImage, '单张效果图生成');
+        const hold = await holdCredits(identity, CREDIT_COSTS.coverImage, '单张效果图生成');
         if (!hold.ok) return insufficient(res, hold);
         try {
           const result = await photoFlow(config, request, { requestId: crypto.randomUUID(), operation: 'photo-generation' });
-          settleHold(hold.holdId, CREDIT_COSTS.coverImage, '单张效果图生成');
+          await settleHold(hold.holdId, CREDIT_COSTS.coverImage, '单张效果图生成');
           return sendJson(res, 200, result);
         } catch (error) {
-          refundHold(hold.holdId);
+          await refundHold(hold.holdId);
           throw error;
         }
       }
@@ -486,22 +483,23 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
       const id = typeof request.taskId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(request.taskId) ? request.taskId : crypto.randomUUID();
       const job: GenerationJob = { id, requestId, status: 'queued', stage: 'queued', message: '请求已进入生成队列。', completedRooms: 0, totalRooms: request.selectedRooms?.length || request.rooms?.length || 0, rooms: [], updatedAt: new Date().toISOString() };
       const roomCost = job.totalRooms * CREDIT_COSTS.roomImage;
-      const hold = holdCredits(identity, CREDIT_COSTS.coverImage + roomCost, `全屋方案生成（封面+${job.totalRooms}个空间）`, id);
+      const hold = await holdCredits(identity, CREDIT_COSTS.coverImage + roomCost, `全屋方案生成（封面+${job.totalRooms}个空间）`, id);
       if (!hold.ok) return insufficient(res, hold);
+      owners.set(job, identity.userId);
       jobs.set(id, job);
       logAiEvent({ event: 'workflow_started', requestId, jobId: id, operation: 'whole-home-generation', stage: 'queued', model: config.imageModel, inputImageBytes: request.floorPlan ? imageByteLength(request.floorPlan) : 0, imageMeta: safeImageMeta(request.imageMeta), roomCount: job.totalRooms });
       sendJson(res, 202, { jobId: id, requestId });
       job.status = 'running';
-      void floorPlanFlow(config, request, job).then(() => {
+      void floorPlanFlow(config, request, job).then(async () => {
         if (job.status !== 'partial') retryInputs.delete(id);
         else retryInputs.set(id, request);
         const consumed = (job.cover ? CREDIT_COSTS.coverImage : 0) + job.completedRooms * CREDIT_COSTS.roomImage;
-        settleHold(hold.holdId, consumed, '全屋方案生成结算');
+        await settleHold(hold.holdId, consumed, '全屋方案生成结算');
         logAiEvent({ event: 'workflow_finished', requestId, jobId: id, operation: 'whole-home-generation', status: job.status, completedRooms: job.completedRooms, totalRooms: job.totalRooms });
-      }).catch((error: unknown) => {
+      }).catch(async (error: unknown) => {
         const message = error instanceof Error ? error.message : 'AI 生成失败，请稍后重试。';
         const failedStage = job.stage;
-        refundHold(hold.holdId);
+        await refundHold(hold.holdId);
         updateGenerationJob(job, { status: 'failed', stage: 'failed', message: job.cover ? '生成中断，已保留全屋总览和已完成空间。' : '生成失败。', error: message });
         logAiEvent({ event: 'workflow_finished', requestId, jobId: id, operation: 'whole-home-generation', status: 'failed', failedStage, completedRooms: job.completedRooms, totalRooms: job.totalRooms });
       });
@@ -509,32 +507,34 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
       sendJson(res, 502, { error: error instanceof Error ? error.message : 'AI 生成失败，请稍后重试。' });
     }
   };
-  const jobMiddleware = (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+  const jobMiddleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     if (req.method !== 'GET' && req.method !== 'POST') return next();
     const path = (req.url || '').split('?')[0].replace(/^\/+/, '');
     const isRetry = path.endsWith('/retry');
     const id = isRetry ? path.slice(0, -'/retry'.length) : path;
     const job = jobs.get(id);
     if (!job) return sendJson(res, 404, { error: '生成任务不存在或已过期。' });
+    const viewer = await resolveIdentity(req);
+    if (!viewer || owners.get(job) !== viewer.userId) return sendJson(res, 404, { error: '任务不存在' });
     if (isRetry && req.method === 'POST') {
-      const identity = resolveIdentity(req);
+      const identity = viewer;
       if (!identity) return sendJson(res, 401, { error: '请先登录后再使用 AI 生成功能。' });
       const original = retryInputs.get(id);
       if (job.status !== 'partial' || !original || !job.failedRooms?.length) return sendJson(res, 409, { error: '该任务没有可重试的失败空间。' });
       const failedRooms = job.failedRooms;
-      const hold = holdCredits(identity, failedRooms.length * CREDIT_COSTS.roomImage, `重试 ${failedRooms.length} 个失败空间`, id);
+      const hold = await holdCredits(identity, failedRooms.length * CREDIT_COSTS.roomImage, `重试 ${failedRooms.length} 个失败空间`, `${id}:retry:${crypto.randomUUID()}`);
       if (!hold.ok) return insufficient(res, hold);
       retryInputs.delete(id);
       updateGenerationJob(job, { status: 'running', stage: 'room-generation', message: `正在重试 ${failedRooms.length} 个失败空间。`, failedRooms: [], error: undefined });
       sendJson(res, 202, { jobId: id, requestId: job.requestId });
-      void floorPlanFlow(config, { ...original, analysis: job.analysis, selectedRooms: failedRooms }, job).then(() => {
+      void floorPlanFlow(config, { ...original, analysis: job.analysis, selectedRooms: failedRooms }, job).then(async () => {
         if (job.status === 'partial') retryInputs.set(id, original);
         const succeeded = failedRooms.length - (job.failedRooms?.length ?? 0);
-        settleHold(hold.holdId, succeeded * CREDIT_COSTS.roomImage, '空间重试结算');
+        await settleHold(hold.holdId, succeeded * CREDIT_COSTS.roomImage, '空间重试结算');
         logAiEvent({ event: 'workflow_retry_finished', requestId: job.requestId, jobId: id, status: job.status, completedRooms: job.completedRooms, totalRooms: job.totalRooms });
-      }).catch((error: unknown) => {
+      }).catch(async (error: unknown) => {
         retryInputs.set(id, original);
-        refundHold(hold.holdId);
+        await refundHold(hold.holdId);
         updateGenerationJob(job, { status: 'partial', stage: 'partial', message: '重试失败，已完成结果仍可查看。', failedRooms, error: error instanceof Error ? error.message : '重试失败' });
       });
       return;
@@ -556,14 +556,14 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
   const roomEditMiddleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     if (req.method !== 'POST') return next();
     if (!config.apiKey) return sendJson(res, 500, { error: '未检测到 CODEX2API_API_KEY 或 AI_API_KEY。' });
-    const identity = resolveIdentity(req);
+    const identity = await resolveIdentity(req);
     if (!identity) return sendJson(res, 401, { error: '请先登录后再使用 AI 生成功能。' });
     const requestId = crypto.randomUUID();
-    const hold = holdCredits(identity, CREDIT_COSTS.roomEdit, '局部方案编辑');
+    const hold = await holdCredits(identity, CREDIT_COSTS.roomEdit, '局部方案编辑');
     if (!hold.ok) return insufficient(res, hold);
-    try { sendJson(res, 200, await editRoomImageRequest(config, await readBody(req) as RoomImageEditRequest, { requestId })); settleHold(hold.holdId, CREDIT_COSTS.roomEdit, '局部方案编辑'); }
+    try { sendJson(res, 200, await editRoomImageRequest(config, await readBody(req) as RoomImageEditRequest, { requestId })); await settleHold(hold.holdId, CREDIT_COSTS.roomEdit, '局部方案编辑'); }
     catch (error) {
-      refundHold(hold.holdId);
+      await refundHold(hold.holdId);
       console.error('Room image edit request failed:', error instanceof Error ? error.message : error);
       sendJson(res, 502, { error: error instanceof Error ? error.message : '局部编辑失败，请稍后重试。' });
     }
@@ -571,21 +571,21 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
   const analyzeMiddleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     if (req.method !== 'POST') return next();
     if (!config.apiKey) return sendJson(res, 500, { error: '未检测到 CODEX2API_API_KEY 或 AI_API_KEY。' });
-    const identity = resolveIdentity(req);
+    const identity = await resolveIdentity(req);
     if (!identity) return sendJson(res, 401, { error: '请先登录后再使用 AI 生成功能。' });
     const requestId = crypto.randomUUID();
     const startedAt = Date.now();
-    const hold = holdCredits(identity, CREDIT_COSTS.floorplanAnalysis, '户型图识别分析');
+    const hold = await holdCredits(identity, CREDIT_COSTS.floorplanAnalysis, '户型图识别分析');
     if (!hold.ok) return insufficient(res, hold);
     try {
       const request = await readBody(req) as AnalyzeRequest;
       logAiEvent({ event: 'workflow_started', requestId, operation: 'floorplan-analysis', stage: 'plan-analysis', model: config.visionModel, inputImageBytes: request.floorPlan ? imageByteLength(request.floorPlan) : 0, imageMeta: safeImageMeta(request.imageMeta), source: request.source || 'floorplan' });
       const result = await analyzeFloorPlanRequest(config, request, requestId);
-      settleHold(hold.holdId, CREDIT_COSTS.floorplanAnalysis, '户型图识别分析');
+      await settleHold(hold.holdId, CREDIT_COSTS.floorplanAnalysis, '户型图识别分析');
       logAiEvent({ event: 'workflow_finished', requestId, operation: 'floorplan-analysis', status: 'completed', durationMs: Date.now() - startedAt, roomCount: result.rooms.length });
       sendJson(res, 200, result);
     } catch (error) {
-      refundHold(hold.holdId);
+      await refundHold(hold.holdId);
       logAiEvent({ event: 'workflow_finished', requestId, operation: 'floorplan-analysis', status: 'failed', durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : 'unknown' });
       sendJson(res, 502, { error: error instanceof Error ? error.message : '户型识别失败，请稍后重试。', requestId });
     }
@@ -594,7 +594,7 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
   const validateShowcaseMiddleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     if (req.method !== 'POST') return next();
     if (!config.apiKey) return sendJson(res, 503, { error: '内容审查服务未配置（缺少 CODEX2API_API_KEY），暂时无法发布方案。' });
-    const identity = resolveIdentity(req);
+    const identity = await resolveIdentity(req);
     if (!identity) return sendJson(res, 401, { error: '请先登录后再发布方案。' });
     const requestId = crypto.randomUUID();
     try {
@@ -610,37 +610,23 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
   };
   const creditsMiddleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const path = (req.url || '').split('?')[0].replace(/^\/+/, '');
-    const identity = resolveIdentity(req);
+    const identity = await resolveIdentity(req);
     if (!identity) return sendJson(res, 401, { error: '请先登录后查看积分信息。' });
-    if (req.method === 'GET' && path === 'summary') return sendJson(res, 200, creditSummary(identity));
-    if (req.method === 'GET' && path === 'ledger') return sendJson(res, 200, creditLedger(identity));
-    if (req.method === 'POST' && path === 'purchase') {
-      try {
-        const body = await readBody<{ planId?: string; packId?: string }>(req);
-        if (body.packId && PACKS_CREDITS[body.packId]) {
-          const credits = PACKS_CREDITS[body.packId];
-          const account = grantCredits(identity, credits, 'free', `购买积分包 · ${PACK_LABELS[body.packId]}（演示，未接支付）`);
-          return sendJson(res, 200, { summary: creditSummary(identity), granted: credits, balance: account.balance });
-        }
-        if (body.planId && PLANS_CREDITS[body.planId]) {
-          const credits = PLANS_CREDITS[body.planId];
-          const account = grantCredits(identity, credits, body.planId, `订阅套餐到账（演示，未接支付）`);
-          return sendJson(res, 200, { summary: creditSummary(identity), granted: credits, balance: account.balance });
-        }
-        return sendJson(res, 400, { error: '未知的套餐或积分包。' });
-      } catch {
-        return sendJson(res, 400, { error: '购买请求无效。' });
-      }
+    if (req.method === 'GET' && (path === 'summary' || path === 'ledger')) {
+      const ledger = await creditLedger(identity);
+      return sendJson(res, 200, path === 'summary' ? ledger.summary : ledger);
     }
+    if (req.method === 'POST' && path === 'purchase') return sendJson(res, 409, { error: '尚未开通真实支付，不会扣款或发放积分。' });
     next();
   };
   const install = (server: { middlewares: { use: (path: string, handler: (...args: any[]) => void) => void } }) => {
-    server.middlewares.use('/api/ai/generate', gatewayMiddleware);
-    server.middlewares.use('/api/ai/generation-jobs', jobMiddleware);
-    server.middlewares.use('/api/ai/edit-room-image', roomEditMiddleware);
-    server.middlewares.use('/api/ai/analyze-floorplan', analyzeMiddleware);
-    server.middlewares.use('/api/ai/validate-showcase', validateShowcaseMiddleware);
-    server.middlewares.use('/api/credits', creditsMiddleware);
+    const safe = (fn: typeof gatewayMiddleware) => (req: IncomingMessage, res: ServerResponse, next: () => void) => { void fn(req, res, next).catch(() => { if (!res.headersSent) sendJson(res, 503, { error: '服务暂不可用，请稍后重试。' }); }); };
+    server.middlewares.use('/api/ai/generate', safe(gatewayMiddleware));
+    server.middlewares.use('/api/ai/generation-jobs', safe(jobMiddleware));
+    server.middlewares.use('/api/ai/edit-room-image', safe(roomEditMiddleware));
+    server.middlewares.use('/api/ai/analyze-floorplan', safe(analyzeMiddleware));
+    server.middlewares.use('/api/ai/validate-showcase', safe(validateShowcaseMiddleware));
+    server.middlewares.use('/api/credits', safe(creditsMiddleware));
   };
   return {
     name: 'ai-decoration-gateway',

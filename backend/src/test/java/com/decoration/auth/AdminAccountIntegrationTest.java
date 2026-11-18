@@ -156,14 +156,14 @@ class AdminAccountIntegrationTest {
         credits.grant(personal.id(), 500, "测试积分");
         var submissionId = UUID.randomUUID();
         jdbc.update("insert into inspiration_submissions(id,owner_id,title,style,status,created_at,updated_at) values (?,?,'用户投稿','现代简约','APPROVED',now(),now())", submissionId, personal.id());
-        assertEquals(500, service.detail(personal.id()).account().balance());
-        assertEquals(1, service.detail(personal.id()).creditEntries().size());
+        assertEquals(800, service.detail(personal.id()).account().balance());
+        assertEquals(2, service.detail(personal.id()).creditEntries().size());
         assertEquals(submissionId, service.detail(personal.id()).submissions().getFirst().id());
         assertTrue(submissions.listPublic().stream().anyMatch(item -> item.id().equals(submissionId)));
         service.delete(actor, personal.id());
         assertEquals("DELETED", jdbc.queryForObject("select account_status from auth_users where id = ?", String.class, personal.id()));
-        assertEquals(500, jdbc.queryForObject("select balance from personal_credit_accounts where user_id = ?", Long.class, personal.id()));
-        assertEquals(1, jdbc.queryForObject("select count(*) from personal_credit_ledger where user_id = ?", Integer.class, personal.id()));
+        assertEquals(800, jdbc.queryForObject("select balance from personal_credit_accounts where user_id = ?", Long.class, personal.id()));
+        assertEquals(2, jdbc.queryForObject("select count(*) from personal_credit_ledger where user_id = ?", Integer.class, personal.id()));
         assertTrue(submissions.listPublic().stream().noneMatch(item -> item.id().equals(submissionId)));
         assertEquals(0, service.list("PERSONAL", "ALL", personal.email(), 1, 20).total());
         assertThrows(BusinessApiException.class, () -> service.detail(personal.id()));

@@ -1,13 +1,22 @@
-import { readAuthSession } from './authSession';
+import { apiRequest, readAuthSession } from './authSession';
 
-// The dev gateway credits module identifies users by headers. The Spring Boot
-// backend will enforce JWT-based identity later; the response shape stays the same.
+export interface AdminCreditUser { userId: string; email: string; displayName: string; balance: number; updatedAt: string }
+export async function loadAdminCreditUsers(query = '') {
+  const users = await apiRequest<AdminCreditUser[]>(`/api/v1/admin/credits/users?query=${encodeURIComponent(query)}`);
+  return users.map(row => ({ ...row, balance: row.balance / 100 }));
+}
+export async function grantTestCredits(userId: string, points: number, note: string) {
+  const data = await apiRequest<{ account: {balance: number; updatedAt: string} }>(`/api/v1/admin/credits/users/${encodeURIComponent(userId)}/grant`, {
+    method: 'POST', body: JSON.stringify({ units: Math.round(points * 100), note }),
+  });
+  return { account: { ...data.account, balance: data.account.balance / 100 } };
+}
+
 export function gatewayIdentityHeaders(): Record<string, string> {
   const session = readAuthSession();
   if (!session) return {};
   return {
-    'X-User-Id': session.user.id,
-    'X-User-Name': encodeURIComponent(session.user.displayName || session.user.email || '用户'),
+    Authorization: `Bearer ${session.accessToken}`,
   };
 }
 
