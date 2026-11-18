@@ -1,0 +1,50 @@
+.admin-inspiration-refresh { min-height: 36px; padding: 0 15px; border: 1px solid #ded8eb; border-radius: 7px; color: #6254b6; background: #fff; cursor: pointer; }.admin-inspiration-toolbar { display: flex; align-items: end; gap: 12px; margin: 28px 0 18px; padding: 15px; border: 1px solid #ebe7f1; background: #fff; }.admin-inspiration-toolbar label { display: grid; gap: 6px; color: #766d82; font-size: 12px; }.admin-inspiration-toolbar select,.admin-inspiration-toolbar input { min-height: 36px; padding: 0 10px; border: 1px solid #ded8e8; border-radius: 6px; background: #fbfaff; color: #302b3c; }.admin-inspiration-search { flex: 1; }.admin-inspiration-toolbar > button { min-height: 36px; padding: 0 16px; border: 0; border-radius: 6px; color: #fff; background: #6b5cc6; cursor: pointer; }.admin-inspiration-panel { border: 1px solid #ebe7f1; background: #fff; }.admin-inspiration-panel > header { display: flex; justify-content: space-between; align-items: end; gap: 20px; padding: 21px 24px; border-bottom: 1px solid #eeeaf4; }.admin-inspiration-panel h2 { margin: 7px 0 0; font-family: var(--font-display); font-size: 23px; }.admin-inspiration-panel h2 small { color: #6b5cc6; font-size: 13px; }.admin-inspiration-panel header p { margin: 0; color: #938a9e; font-size: 12px; }.admin-inspiration-table-wrap { overflow-x: auto; }.admin-inspiration-table { width: 100%; border-collapse: collapse; text-align: left; }.admin-inspiration-table th,.admin-inspiration-table td { padding: 15px 18px; border-bottom: 1px solid #f0edf5; font-size: 12px; white-space: nowrap; }.admin-inspiration-table th { color: #92899c; font-weight: 600; }.admin-inspiration-table td strong,.admin-inspiration-table td small { display: block; }.admin-inspiration-table td small { margin-top: 5px; color: #9b92a5; }.admin-inspiration-image-button,.admin-inspiration-review-button { padding: 7px 10px; border: 1px solid #dcd5e9; border-radius: 5px; color: #6254b6; background: #fff; cursor: pointer; }.admin-inspiration-review-button { border-color: #6b5cc6; }.admin-inspiration-dialog { width: min(700px, calc(100vw - 30px)); }.admin-inspiration-dialog header,.admin-inspiration-preview header { display: flex; justify-content: space-between; align-items: start; }.admin-inspiration-dialog header button,.admin-inspiration-preview header button { border: 0; color: #948b9f; background: transparent; font-size: 24px; cursor: pointer; }.admin-inspiration-detail { color: #6e6578; font-size: 13px; line-height: 1.6; }.admin-inspiration-thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }.admin-inspiration-thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 5px; cursor: zoom-in; }.admin-inspiration-note { display: grid; gap: 7px; margin-top: 17px; color: #766d82; font-size: 12px; }.admin-inspiration-note textarea { min-height: 80px; padding: 10px; border: 1px solid #ded8e8; border-radius: 6px; resize: vertical; }.admin-inspiration-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }.admin-inspiration-actions button { min-height: 36px; padding: 0 14px; border: 1px solid #ded8e8; border-radius: 6px; color: #645c6e; background: #fff; cursor: pointer; }.admin-inspiration-actions button.primary { border-color: #6b5cc6; color: #fff; background: #6b5cc6; }.admin-inspiration-preview { width: min(900px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 15px; background: #fff; }.admin-inspiration-preview img { display: block; width: 100%; max-height: calc(100vh - 100px); object-fit: contain; margin-top: 12px; background: #f4f2f7; }
+@media (max-width: 700px) { .admin-inspiration-toolbar,.admin-inspiration-panel > header { align-items: stretch; flex-direction: column; }.admin-inspiration-thumbs { grid-template-columns: repeat(3, 1fr); } }
+
+/* Keep the review queue in the same ink-and-brass language as the admin rail. */
+.admin-inspiration-refresh { color: #eabf78; background: #1a1c22; border-color: #4a4030; }
+.admin-inspiration-refresh:hover { color: #15161a; background: #eabf78; border-color: #eabf78; }
+.admin-inspiration-toolbar,.admin-inspiration-panel { color: #e8e4dc; background: #191b21; border-color: #2d3038; border-radius: 6px; }
+.admin-inspiration-toolbar { margin-top: 32px; padding: 18px 20px; }
+.admin-inspiration-toolbar label { color: #aaa7a0; }
+.admin-inspiration-toolbar select,.admin-inspiration-toolbar input { color: #e8e4dc; background: #14161b; border-color: #3d4048; border-radius: 5px; }
+.admin-inspiration-toolbar select:focus,.admin-inspiration-toolbar input:focus { border-color: #eabf78; outline: none; box-shadow: 0 0 0 3px #eabf781c; }
+.admin-inspiration-toolbar > button { color: #17181c; background: #eabf78; border-radius: 4px; font-weight: 700; }
+.admin-inspiration-toolbar > button:hover { background: #f2cb8d; }
+.admin-inspiration-panel > header { padding: 24px 26px; border-bottom-color: #2c2f36; }
+.admin-inspiration-panel h2 { color: #f1eee7; font-weight: 500; }
+.admin-inspiration-panel h2 small { color: #eabf78; }
+.admin-inspiration-panel header p { color: #92939a; }
+.admin-inspiration-table th,.admin-inspiration-table td { border-bottom-color: #2c2f36; }
+.admin-inspiration-table th { color: #85868d; }
+.admin-inspiration-table td { color: #c7c3ba; }
+.admin-inspiration-table td strong { color: #e8e4dc; font-weight: 600; }
+.admin-inspiration-table td small { color: #898a91; }
+.admin-inspiration-image-button,.admin-inspiration-review-button { color: #eabf78; background: transparent; border-color: #51432c; border-radius: 4px; }
+.admin-inspiration-image-button:hover,.admin-inspiration-review-button:hover { background: #332d22; border-color: #eabf78; }
+.admin-inspiration-review-button { border-color: #eabf78; }
+.admin-inspiration-detail { color: #aaa7a0; }
+.admin-inspiration-detail strong { color: #e8e4dc; }
+.admin-inspiration-thumbs button { min-height: 66px; padding: 8px 10px; color: #eabf78; background: #332d22; border: 1px solid #51432c; border-radius: 5px; cursor: pointer; }
+.admin-inspiration-thumbs button:hover { background: #423722; }
+.admin-inspiration-note { color: #aaa7a0; }
+.admin-inspiration-note textarea { color: #e8e4dc; background: #14161b; border-color: #3d4048; border-radius: 5px; }
+.admin-inspiration-note textarea:focus { border-color: #eabf78; outline: none; box-shadow: 0 0 0 3px #eabf781c; }
+.admin-inspiration-actions button { color: #aaa7a0; background: transparent; border-color: #41434b; border-radius: 4px; }
+.admin-inspiration-actions button.primary { color: #17181c; background: #eabf78; border-color: #eabf78; }
+.admin-inspiration-preview { padding: 18px; color: #e8e4dc; background: #1d2027; border: 1px solid #424752; border-radius: 8px; }
+.admin-inspiration-dialog { width: min(760px, calc(100vw - 32px)); padding: 30px; }
+.admin-inspiration-dialog > header { align-items: center; padding-bottom: 18px; border-bottom: 1px solid #2c2f36; }
+.admin-inspiration-dialog > header h2 { margin-top: 7px; color: #f5f1e8; font-size: 25px; font-weight: 500; }
+.admin-inspiration-dialog > header button { width: 34px; height: 34px; color: #aaa7a0; border: 1px solid #3d4048; border-radius: 6px; }
+.admin-inspiration-dialog > header button:hover { color: #eabf78; border-color: #eabf78; }
+.admin-inspiration-dialog > .admin-inspiration-detail { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 18px; margin-top: 20px; }
+.admin-inspiration-dialog > .admin-inspiration-detail p { min-width: 0; margin: 0; }
+.admin-inspiration-dialog > .admin-inspiration-detail p:nth-child(3) { grid-column: 1 / -1; padding: 14px; color: #c7c3ba; background: #17191e; border: 1px solid #2d3038; border-radius: 5px; }
+.admin-inspiration-dialog > .admin-inspiration-detail .admin-inspiration-thumbs { grid-column: 1 / -1; width: 100%; margin-top: 2px; }
+.admin-inspiration-dialog > .admin-inspiration-note { margin-top: 22px; }
+.admin-inspiration-dialog > .admin-inspiration-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
+.admin-inspiration-materials { margin-top: 22px; border: 1px solid #34373e; border-radius: 5px; overflow: hidden; }
+.admin-inspiration-materials h3 { margin: 0; padding: 13px 18px; color: #eabf78; font-size: 15px; border-bottom: 1px solid #34373e; }
+.admin-inspiration-dialog { max-height: calc(100vh - 40px); overflow-y: auto; }
+.admin-inspiration-preview { position: relative; }

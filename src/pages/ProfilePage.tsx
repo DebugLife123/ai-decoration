@@ -535,7 +535,7 @@ export default function ProfilePage() {
         {section === 'showcases' && (
           <div className="profile-panel">
             <header className="profile-panel-head">
-              <h2>管理作品</h2>
+              <h2>管理作品</h2><nav><a href="/inspiration/submissions">我的投稿与审核进度</a> · <a href="/inquiries">我的询价</a></nav>
               <p>集中查看已发布到灵感广场的作品，管理你的作品展示。</p>
             </header>
             <div className="profile-showcase-toolbar">

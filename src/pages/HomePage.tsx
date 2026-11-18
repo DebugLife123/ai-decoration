@@ -1,10 +1,10 @@
+import { listPublicSubmissions, submissionImageUrl, uploadSubmission } from '../services/inspirationSubmissions';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BrandLoading from '../components/BrandLoading';
 import heroImage from '../assets/generated/hero-home.png';
 import { existingTemplates, templates, type InspirationTemplate } from '../features/styleLibrary/inspirationTemplates';
-import { compressImageFile, deleteUserShowcase, loadUserShowcases, reviewShowcaseImage, saveUserShowcase, type UserShowcase } from '../services/showcases';
-import { useAppStore } from '../stores/appStore';
+import { compressImageFile, reviewShowcaseImage, type UserShowcase } from '../services/showcases';
 import './HomePage.css';
 
 const toneOptions = ['暖白', '灰米', '木色', '低饱和'];
@@ -29,7 +29,7 @@ function showcaseToTemplate(showcase: UserShowcase): InspirationTemplate {
 
 export default function HomePage({ isInspirationPage = false }: { isInspirationPage?: boolean }) {
   const navigate = useNavigate();
-  const authSession = useAppStore((state) => state.authSession);
+
   const [isEntering, setIsEntering] = useState(false);
   const [activeCategory, setActiveCategory] = useState('全部');
   const [query, setQuery] = useState('');
@@ -39,7 +39,15 @@ export default function HomePage({ isInspirationPage = false }: { isInspirationP
   const [tone, setTone] = useState('暖白');
   const [light, setLight] = useState('自然光');
   const [material, setMaterial] = useState('木饰面');
-  const [userShowcases, setUserShowcases] = useState<UserShowcase[]>(() => (isInspirationPage ? loadUserShowcases() : []));
+  const [userShowcases, setUserShowcases] = useState<UserShowcase[]>([]);
+  useEffect(() => {
+    if (!isInspirationPage) return;
+    let active = true;
+    listPublicSubmissions().then(items => {
+      if (active) setUserShowcases(items.filter(item => item.images.length).map(item => ({ id: item.id, title: item.title, style: item.style, description: item.description || '', imageDataUrl: submissionImageUrl(item.id, item.images[0].id), authorId: '', authorName: item.companyName || '用户', createdAt: item.createdAt })));
+    }).catch(() => { if (active) setPublishError('暂时无法加载审核通过的投稿'); });
+    return () => { active = false; };
+  }, [isInspirationPage]);
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishTitle, setPublishTitle] = useState('');
   const [publishStyle, setPublishStyle] = useState('现代简约');
@@ -85,27 +93,24 @@ export default function HomePage({ isInspirationPage = false }: { isInspirationP
       setPublishError(error instanceof Error ? error.message : '图片审查失败，请稍后重试。');
     } finally { setReviewing(false); }
   };
-  const submitPublish = () => {
+  const submitPublish = async () => {
     if (reviewing || publishing) { setPublishError('图片审查中，请稍候。'); return; }
     if (!publishTitle.trim()) { setPublishError('请填写方案标题。'); return; }
     if (!publishImage) { setPublishError('请上传一张方案效果图。'); return; }
-    const user = authSession?.user;
-    const showcase: UserShowcase = { id: crypto.randomUUID(), title: publishTitle.trim(), style: publishStyle, description: publishDescription.trim(), imageDataUrl: publishImage, authorId: user?.id || 'anonymous', authorName: user?.displayName || '匿名用户', createdAt: new Date().toISOString() };
+    setPublishing(true);
     try {
-      setUserShowcases(saveUserShowcase(showcase));
+      const blob = await (await fetch(publishImage)).blob();
+      const image = new File([blob], 'design.jpg', { type: blob.type });
+      await uploadSubmission({ title: publishTitle.trim(), style: publishStyle, description: publishDescription, area: '', images: [image] });
+      navigate('/inspiration/submissions');
       resetPublish();
     } catch (error) {
-      setPublishError(error instanceof Error ? error.message : '发布失败，请稍后重试。');
+      setPublishing(false); setPublishError(error instanceof Error ? error.message : '投稿失败，请稍后重试。');
     }
   };
   const removeShowcase = (template: InspirationTemplate) => {
     if (!template.isUserShowcase) return;
-    try {
-      setUserShowcases(deleteUserShowcase(template.id.replace(/^user-/, '')));
-      setDetailTemplate(null);
-    } catch (error) {
-      setPublishError(error instanceof Error ? error.message : '删除失败，请稍后重试。');
-    }
+    navigate('/inspiration/submissions');
   };
   return <div className={`home-page ${isInspirationPage ? 'inspiration-page' : 'landing-page'}`}>
     {isEntering && <BrandLoading />}
