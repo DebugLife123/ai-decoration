@@ -1,0 +1,15 @@
+.admin-order-confirm-backdrop { position: fixed; z-index: 1100; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(7 8 11 / 68%); }
+.admin-order-confirm-dialog { width: min(440px, 100%); padding: 24px; color: #e8e4dc; background: #191b21; border: 1px solid #3b3e46; border-radius: 7px; box-shadow: 0 24px 80px rgb(0 0 0 / 42%); }
+.admin-order-confirm-dialog h2 { margin-top: 8px; color: #f1eee7; font-size: 21px; line-height: 1.35; }
+.admin-order-confirm-dialog > p { margin-top: 9px; color: #a8a6a0; font-size: 13px; line-height: 1.65; }
+.admin-order-confirm-dialog dl { display: grid; gap: 12px; margin: 21px 0 0; padding: 16px 0; border-top: 1px solid #30333a; border-bottom: 1px solid #30333a; }
+.admin-order-confirm-dialog dl > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; }
+.admin-order-confirm-dialog dt { color: #96969a; font-size: 12px; }
+.admin-order-confirm-dialog dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #eeeae2; font-size: 13px; font-weight: 650; }
+.admin-order-confirm-dialog dl > div:nth-child(3) dd { color: #f0c275; font-size: 16px; }
+.admin-order-confirm-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 20px; }
+.admin-order-confirm-actions button { min-height: 38px; padding: 0 15px; color: #d2cec6; background: #202228; border: 1px solid #42454d; border-radius: 4px; font-size: 12px; font-weight: 700; }
+.admin-order-confirm-actions button.primary { color: #17191f; background: #edc477; border-color: #edc477; }
+.admin-order-confirm-actions button:disabled { opacity: .55; cursor: wait; }
+.admin-order-confirm-actions button:focus-visible { outline: 2px solid #edc477; outline-offset: 3px; }
+@media (max-width: 480px) { .admin-order-confirm-dialog { padding: 20px; } .admin-order-confirm-actions button { flex: 1; } }

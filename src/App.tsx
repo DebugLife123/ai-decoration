@@ -33,14 +33,20 @@ import NotificationsPage from './pages/NotificationsPage';
 import ProfilePage from './pages/ProfilePage';
 import { useAppStore } from './stores/appStore';
 import './App.css';
+import AdminCreditsPage from './pages/AdminCreditsPage';
+import AdminSubscriptionOrdersPage from './pages/AdminSubscriptionOrdersPage';
+import { CertificationPaymentsPanel as AdminCertificationPaymentsPage } from './pages/AdminCertificationPaymentsPage';
+import AdminResellersPage from './pages/AdminResellersPage';
+import ResellerPage from './pages/ResellerPage';
+import ResellerLoginPage from './pages/ResellerLoginPage';
 
-function RoleRoute({ role, children }: { role: 'consumer' | 'business'; children: ReactNode }) {
+function RoleRoute({ role, children }: { role: 'consumer' | 'business' | 'reseller'; children: ReactNode }) {
   const currentRole = useAppStore((state) => state.role);
   const location = useLocation();
   const isAuthenticated = useAppStore((state) => Boolean(state.authSession));
-  const target = currentRole === 'business' ? '/business' : currentRole === 'admin' ? '/admin' : '/';
+  const target = currentRole === 'reseller' ? '/reseller' : currentRole === 'business' ? '/business' : currentRole === 'admin' ? '/admin' : '/';
 
-  if (!isAuthenticated) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+  if (!isAuthenticated) return <Navigate to={`${role === 'reseller' ? '/reseller/login' : '/login'}?next=${encodeURIComponent(location.pathname)}`} replace />;
   if (currentRole !== role) return <Navigate to={target} replace />;
   return <>{children}</>;
 }
@@ -73,14 +79,20 @@ function App() {
   const loadProjects = useAppStore((state) => state.loadProjects);
 
   useEffect(() => {
-    if (isAuthenticated && role !== 'admin') void loadProjects();
+    if (isAuthenticated && role !== 'admin' && role !== 'reseller') void loadProjects();
   }, [isAuthenticated, loadProjects, role]);
 
   return (
     <div className={`app ${!isAuthenticated ? 'auth-app' : ''} ${role === 'admin' ? 'admin-app' : ''}`}>
-      {isAuthenticated && role !== 'admin' && <Navbar />}
+      {isAuthenticated && role !== 'admin' && role !== 'reseller' && <Navbar />}
       <main className="app-main">
         <Routes>
+          <Route path="/admin/credits" element={<AdminRoute><AdminCreditsPage /></AdminRoute>} />
+          <Route path="/admin/subscription-orders" element={<AdminRoute><AdminSubscriptionOrdersPage /></AdminRoute>} />
+          <Route path="/admin/certification-payments" element={<AdminRoute><AdminCertificationPaymentsPage /></AdminRoute>} />
+          <Route path="/admin/resellers" element={<AdminRoute><AdminResellersPage /></AdminRoute>} />
+          <Route path="/reseller/login" element={isAuthenticated ? <Navigate to={role === 'reseller' ? '/reseller' : '/'} replace /> : <ResellerLoginPage />} />
+          <Route path="/reseller" element={<RoleRoute role="reseller"><ResellerPage /></RoleRoute>} />
           <Route path="/login" element={isAuthenticated ? <Navigate to={role === 'business' ? '/business' : role === 'admin' ? '/admin' : '/'} replace /> : <LoginPage />} />
           <Route path="/admin/login" element={isAuthenticated ? <Navigate to={role === 'admin' ? '/admin' : role === 'business' ? '/business' : '/'} replace /> : <AdminLoginPage />} />
           <Route path="/" element={<RoleRoute role="consumer"><HomePage /></RoleRoute>} />

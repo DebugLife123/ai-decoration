@@ -20,7 +20,9 @@ public class ProjectHistoryService {
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
 
-    public ProjectHistoryService(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+    private final com.decoration.saas.SaasSubscriptionService subscriptions;
+    public ProjectHistoryService(JdbcTemplate jdbc, ObjectMapper objectMapper, com.decoration.saas.SaasSubscriptionService subscriptions) {
+        this.subscriptions = subscriptions;
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
     }
@@ -116,6 +118,7 @@ public class ProjectHistoryService {
         payload.put("projectId", projectId.toString());
         payload.put("taskType", taskType);
         var now = Timestamp.from(Instant.now());
+        subscriptions.reserveGenerationUsage(ownerId, taskId, 1);
         jdbc.update("""
                 insert into generation_tasks(owner_id, project_id, id, task_type, status, input_json,
                     attempt_count, created_at)

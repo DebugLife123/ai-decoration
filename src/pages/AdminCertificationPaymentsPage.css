@@ -1,0 +1,116 @@
+.certification-payments-page { max-width: 1320px; }
+.certification-payment-notice { margin: 0 0 18px; padding: 13px 16px; border: 1px solid #b9dac8; background: #edf8f1; color: #21603e; font-size: 14px; }
+.certification-payment-summary { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, .7fr); gap: 18px; margin-bottom: 18px; }
+.certification-payment-summary > * { min-width: 0; border: 1px solid #dce1e4; background: #fff; padding: 24px; }
+.certification-payment-summary h2 { margin: 7px 0 6px; font-size: 21px; }
+.certification-payment-summary p { margin: 0 0 22px; color: #657078; font-size: 14px; }
+.certification-payment-summary form label { display: block; max-width: 420px; }
+.certification-payment-summary form label > span { display: block; margin-bottom: 8px; color: #465159; font-size: 13px; font-weight: 700; }
+.certification-payment-summary form label div { display: flex; align-items: center; height: 46px; border: 1px solid #cfd6da; background: #fafbfb; }
+.certification-payment-summary form label i { padding: 0 12px; color: #69747b; font-style: normal; }
+.certification-payment-summary input { min-width: 0; flex: 1; height: 100%; border: 0; outline: 0; background: transparent; font: inherit; font-size: 18px; font-weight: 700; }
+.certification-payment-summary form button, .certification-payment-rows button { border: 0; background: #1d3d35; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.certification-payment-summary form button { margin-top: 14px; padding: 11px 20px; }
+.certification-payment-summary form small { display: block; margin-top: 12px; color: #849097; }
+.certification-payment-summary > div { display: flex; flex-direction: column; justify-content: center; background: #24312e; color: #fff; }
+.certification-payment-summary > div .admin-kicker { color: #a5c3b8; }
+.certification-payment-summary > div > strong { margin-top: 18px; font-size: 54px; line-height: 1; }
+.certification-payment-summary > div p { color: #b9c5c1; }
+.certification-payment-panel { margin-bottom: 18px; border: 1px solid #dce1e4; background: #fff; }
+.certification-payment-panel > header { display: flex; align-items: center; justify-content: space-between; padding: 20px 22px; border-bottom: 1px solid #e4e8ea; }
+.certification-payment-panel > header h2 { margin: 5px 0 0; font-size: 19px; }
+.certification-payment-panel > header > span { color: #68747b; font-size: 13px; }
+.certification-payment-rows article { display: grid; grid-template-columns: minmax(240px, 1fr) 110px 170px 100px 120px; gap: 16px; align-items: center; padding: 17px 22px; border-bottom: 1px solid #edf0f1; }
+.certification-payment-rows article:last-child { border-bottom: 0; }
+.certification-payment-rows article div, .certification-payment-history span { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.certification-payment-rows strong, .certification-payment-history strong { color: #273238; }
+.certification-payment-rows small, .certification-payment-history small { overflow: hidden; color: #77838a; text-overflow: ellipsis; white-space: nowrap; }
+.certification-payment-rows b { font-size: 17px; }
+.certification-payment-rows time { color: #66737a; font-size: 13px; }
+.certification-proof-status { font-size: 12px; font-weight: 700; }
+.certification-proof-status.ready { color: #9c6a16; }
+.certification-proof-status.waiting { color: #7b858b; }
+.certification-proof-status.rejected { color: #a44f54; }
+.certification-payment-rows button { padding: 10px 12px; }
+.certification-payment-rows button:disabled, .certification-payment-summary button:disabled { opacity: .55; cursor: wait; }
+.certification-payment-history > div { display: grid; grid-template-columns: minmax(300px, 1fr) 120px 190px 90px; gap: 18px; align-items: center; padding: 15px 22px; border-bottom: 1px solid #edf0f1; }
+.certification-payment-history > div:last-child { border-bottom: 0; }
+.certification-payment-history em { color: #66737a; font-style: normal; font-size: 13px; }
+.certification-payment-history i { color: #287250; font-style: normal; font-weight: 700; }
+.certification-proof-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 24px; background: #050608d9; }
+.certification-proof-dialog { width: min(1040px, 100%); max-height: 92vh; overflow: hidden; color: #273238; background: #f7f8f8; border: 1px solid #454951; box-shadow: 0 24px 80px #0009; }
+.certification-proof-dialog > header { display: flex; align-items: center; justify-content: space-between; min-height: 70px; padding: 0 22px; color: #ede9e1; background: #191b21; border-bottom: 1px solid #343740; }
+.certification-proof-dialog > header h2 { margin-top: 5px; font-size: 19px; }
+.certification-proof-dialog > header > button { width: 34px; height: 34px; color: #b9b6af; border: 1px solid #41444c; font-size: 22px; }
+.certification-proof-dialog-body { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr); max-height: calc(92vh - 70px); overflow: auto; }
+.certification-proof-preview { display: grid; min-height: 520px; place-items: center; overflow: auto; padding: 18px; background: #111318; }
+.certification-proof-preview img { display: block; max-width: 100%; max-height: 72vh; object-fit: contain; }
+.certification-proof-preview span { color: #999ba2; font-size: 13px; }
+.certification-proof-dialog form { display: flex; flex-direction: column; gap: 17px; padding: 24px; }
+.certification-proof-dialog dl { display: grid; gap: 10px; margin: 0; padding-bottom: 18px; border-bottom: 1px solid #dfe3e5; }
+.certification-proof-dialog dl > div { display: grid; grid-template-columns: 88px 1fr; gap: 12px; }
+.certification-proof-dialog dt { color: #778289; font-size: 12px; }
+.certification-proof-dialog dd { margin: 0; overflow-wrap: anywhere; color: #273238; font-size: 13px; font-weight: 700; }
+.certification-proof-dialog form label { display: grid; gap: 7px; color: #4e5a61; font-size: 12px; font-weight: 700; }
+.certification-proof-dialog input, .certification-proof-dialog textarea { width: 100%; padding: 10px 11px; color: #273238; background: #fff; border: 1px solid #cdd4d8; outline: 0; font: inherit; font-size: 13px; }
+.certification-proof-dialog textarea { min-height: 86px; resize: vertical; }
+.certification-proof-dialog input:focus, .certification-proof-dialog textarea:focus { border-color: #8b713f; box-shadow: 0 0 0 3px #8b713f1a; }
+.certification-proof-dialog form > div:last-child { display: flex; justify-content: flex-end; gap: 9px; margin-top: auto; }
+.certification-proof-dialog form > div:last-child button { min-height: 40px; padding: 0 15px; color: #566168; background: #fff; border: 1px solid #cdd4d8; font: inherit; font-size: 12px; font-weight: 700; }
+.certification-proof-dialog form > div:last-child button:last-child { color: #fff; background: #1d3d35; border-color: #1d3d35; }
+.certification-proof-dialog form > div:last-child button.certification-proof-reject { color: #a44f54; background: #fff; border-color: #d9aeb1; }
+.certification-proof-dialog form > div:last-child button.certification-proof-reject:hover:not(:disabled) { background: #fff2f2; }
+.certification-proof-dialog form > div:last-child button:disabled { opacity: .55; cursor: wait; }
+@media (max-width: 900px) { .certification-payment-summary { grid-template-columns: 1fr; } .certification-payment-rows article, .certification-payment-history > div { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 760px) { .certification-proof-dialog-body { grid-template-columns: 1fr; } .certification-proof-preview { min-height: 280px; } }
+@media (max-width: 600px) { .certification-payment-rows article, .certification-payment-history > div { grid-template-columns: 1fr; gap: 8px; } .certification-proof-backdrop { padding: 8px; } .certification-proof-dialog form { padding: 18px; } }
+
+/* Match the platform console's charcoal and warm-gold palette. */
+.certification-payment-notice { color: #b8d9c5; background: #20372c; border-color: #355541; }
+.certification-billing-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+.certification-billing-toolbar h2 { margin-top: 9px; color: #f4efe6; font-family: var(--font-display); font-size: 26px; font-weight: 500; line-height: 1.15; }
+.certification-billing-toolbar p { margin-top: 8px; color: #92939a; font-size: 13px; }
+.certification-payment-summary > *, .certification-payment-panel { color: #e8e4dc; background: #191b21; border-color: #2d3038; }
+.certification-payment-summary h2, .certification-payment-panel > header h2 { color: #f1eee7; font-weight: 500; }
+.certification-payment-summary p { color: #92939a; }
+.certification-payment-summary form label > span { color: #b8b5ae; }
+.certification-payment-summary form label div { background: #14161b; border-color: #3d4048; }
+.certification-payment-summary form label i { color: #eabf78; }
+.certification-payment-summary input { color: #e8e4dc; }
+.certification-payment-summary form button, .certification-payment-rows button { color: #15161a; background: #eabf78; }
+.certification-payment-summary form button:hover:not(:disabled), .certification-payment-rows button:hover:not(:disabled) { background: #f2cb8d; }
+.certification-payment-summary form button:disabled, .certification-payment-rows button:disabled { opacity: .55; cursor: wait; }
+.certification-payment-summary form small { color: #85868d; }
+.certification-payment-summary > div { background: #22201c; border-color: #51432c; }
+.certification-payment-summary > div .admin-kicker { color: #eabf78; }
+.certification-payment-summary > div > strong { color: #eabf78; }
+.certification-payment-summary > div p { color: #aaa7a0; }
+.certification-payment-panel > header { border-bottom-color: #2c2f36; }
+.certification-payment-panel > header > span { color: #92939a; }
+.certification-payment-rows article, .certification-payment-history > div { border-bottom-color: #292c33; }
+.certification-payment-rows strong, .certification-payment-history strong { color: #e8e4dc; }
+.certification-payment-rows small, .certification-payment-history small { color: #898a91; }
+.certification-payment-rows b, .certification-payment-history b { color: #eabf78; }
+.certification-payment-rows time, .certification-payment-history em { color: #92939a; }
+.certification-proof-status.ready { color: #eabf78; }
+.certification-proof-status.waiting { color: #92939a; }
+.certification-proof-status.rejected { color: #eda9a2; }
+.certification-payment-history i { color: #8ed2a9; }
+.certification-proof-dialog { color: #e8e4dc; background: #191b21; border-color: #3b3e46; }
+.certification-proof-dialog > header { background: #17191f; border-bottom-color: #343740; }
+.certification-proof-dialog > header > button { color: #b9b6af; background: transparent; border-color: #41444c; cursor: pointer; }
+.certification-proof-dialog > header > button:hover { color: #eabf78; background: #25272e; }
+.certification-proof-dialog form { background: #191b21; }
+.certification-proof-dialog dl { border-bottom-color: #343740; }
+.certification-proof-dialog dt, .certification-proof-dialog form label { color: #92939a; }
+.certification-proof-dialog dd { color: #e8e4dc; }
+.certification-proof-dialog input, .certification-proof-dialog textarea { color: #e8e4dc; background: #14161b; border-color: #3d4048; }
+.certification-proof-dialog input::placeholder, .certification-proof-dialog textarea::placeholder { color: #6f7179; }
+.certification-proof-dialog input:focus, .certification-proof-dialog textarea:focus { border-color: #eabf78; box-shadow: 0 0 0 3px #eabf781c; }
+.certification-proof-dialog form > div:last-child button { color: #c2bfb8; background: #14161b; border-color: #3d4048; cursor: pointer; }
+.certification-proof-dialog form > div:last-child button:hover:not(:disabled) { background: #25272e; }
+.certification-proof-dialog form > div:last-child button:last-child { color: #15161a; background: #eabf78; border-color: #eabf78; }
+.certification-proof-dialog form > div:last-child button:last-child:hover:not(:disabled) { background: #f2cb8d; }
+.certification-proof-dialog form > div:last-child button.certification-proof-reject { color: #eda9a2; background: transparent; border-color: #754247; }
+.certification-proof-dialog form > div:last-child button.certification-proof-reject:hover:not(:disabled) { background: #382427; }
+@media (max-width: 620px) { .certification-billing-toolbar { align-items: stretch; flex-direction: column; gap: 16px; } .certification-billing-toolbar .admin-refresh { align-self: stretch; justify-content: center; } }

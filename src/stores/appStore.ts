@@ -5,9 +5,10 @@ import { clearAuthSession, readAuthSession, saveAuthSession, type AuthSession } 
 
 export type { DesignImage, DesignStyle, DesignVersion, GenerationTask, MaterialRecord, Project } from '../services/dataContracts';
 
-export type UserRole = 'guest' | 'consumer' | 'business' | 'admin';
+export type UserRole = 'guest' | 'consumer' | 'business' | 'admin' | 'reseller';
 
 function roleFromSession(session: AuthSession | null): UserRole {
+  if (session?.user.role === 'RESELLER_ADMIN') return 'reseller';
   if (session?.user.role === 'PLATFORM_ADMIN') return 'admin';
   return session?.user.accountType === 'business' ? 'business' : session ? 'consumer' : 'guest';
 }

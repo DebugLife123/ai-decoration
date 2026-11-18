@@ -18,7 +18,9 @@ public class TaskLifecycleService {
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
 
-    public TaskLifecycleService(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+    private final com.decoration.saas.SaasSubscriptionService subscriptions;
+    public TaskLifecycleService(JdbcTemplate jdbc, ObjectMapper objectMapper, com.decoration.saas.SaasSubscriptionService subscriptions) {
+        this.subscriptions = subscriptions;
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
     }
@@ -99,6 +101,7 @@ public class TaskLifecycleService {
         var current = taskRow(ownerId, taskId);
         if (!"FAILED".equals(current.status())) throw conflict("Only failed tasks can be retried");
         if (current.manualRetryCount() >= 3) throw conflict("Manual retry limit has been reached");
+        subscriptions.reserveGenerationUsage(ownerId, taskId, 1);
         jdbc.update("""
                 update generation_tasks set status = 'QUEUED', available_at = ?, completed_at = null,
                     attempt_count = 0, retry_count = 0, manual_retry_count = manual_retry_count + 1,
