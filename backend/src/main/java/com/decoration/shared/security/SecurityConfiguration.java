@@ -14,6 +14,10 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.GrantedAuthority;
@@ -39,7 +43,7 @@ public class SecurityConfiguration {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/api/v1/health", "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/admin/login", "/api/v1/styles/recommendations", "/actuator/health/**", "/actuator/info").permitAll()
+                        .requestMatchers("/api/v1/health", "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/admin/login", "/api/v1/platform-contact", "/api/v1/styles/recommendations", "/api/v1/styles/generation-prompts", "/api/v1/styles/catalog", "/api/v1/budgets/estimate", "/api/v1/budgets/style-references", "/api/v1/inspiration/submissions/public", "/api/v1/inspiration/submissions/*/images/*", "/actuator/health/**", "/actuator/info").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
@@ -67,9 +71,11 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    JwtDecoder jwtDecoder(@Value("${app.security.jwt-secret}") String secret) {
+    JwtDecoder jwtDecoder(@Value("${app.security.jwt-secret}") String secret, ObjectProvider<JdbcTemplate> jdbcProvider) {
         var key = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-        return NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256).build();
+        var decoder = NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256).build();
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(JwtValidators.createDefault(), new SessionTokenValidator(jdbcProvider.getIfAvailable())));
+        return decoder;
     }
 
     private JwtAuthenticationConverter jwtAuthenticationConverter() {

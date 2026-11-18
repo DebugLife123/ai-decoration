@@ -30,13 +30,17 @@ public class ApiExceptionHandler {
     }
 
     @ExceptionHandler(BusinessApiException.class)
-    ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessApiException exception) {
+    ResponseEntity<ApiResponse<Object>> handleBusinessException(BusinessApiException exception) {
         return ResponseEntity.status(exception.status())
-                .body(ApiResponse.failure(exception.code(), exception.getMessage()));
+                .body(ApiResponse.failure(exception.code(), exception.getMessage(), exception.data()));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    ResponseEntity<ApiResponse<Void>> handleInvalidRequest(HttpMessageNotReadableException exception) {
+    ResponseEntity<ApiResponse<Void>> handleInvalidRequest(HttpMessageNotReadableException exception,
+                                                            HttpServletRequest request) {
+        var cause = exception.getMostSpecificCause();
+        log.warn("Invalid request body for {} {} ({})", request.getMethod(), request.getRequestURI(),
+                cause.getClass().getSimpleName());
         return ResponseEntity.badRequest().body(ApiResponse.failure("INVALID_REQUEST", "Invalid request body"));
     }
 
@@ -80,6 +84,16 @@ public class ApiExceptionHandler {
     @ExceptionHandler(DuplicateKeyException.class)
     ResponseEntity<ApiResponse<Void>> handleDuplicate(DuplicateKeyException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.failure("CONFLICT", "A matching business record already exists"));
+    }
+
+    /**
+     * 前端请求了后端不存在的接口时，返回 404 而不是 500。
+     * 之前这类错误会打满堆栈日志，把「接口没实现」伪装成服务端故障。
+     */
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    ResponseEntity<ApiResponse<Void>> handleNoResource(org.springframework.web.servlet.resource.NoResourceFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.failure("NOT_FOUND", "接口不存在"));
     }
 
     @ExceptionHandler(Exception.class)

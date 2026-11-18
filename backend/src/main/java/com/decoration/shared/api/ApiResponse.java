@@ -11,4 +11,8 @@ public record ApiResponse<T>(String code, String message, T data, Instant timest
     public static <T> ApiResponse<T> failure(String code, String message) {
         return new ApiResponse<>(code, message, null, Instant.now());
     }
+
+    public static <T> ApiResponse<T> failure(String code, String message, T data) {
+        return new ApiResponse<>(code, message, data, Instant.now());
+    }
 }
