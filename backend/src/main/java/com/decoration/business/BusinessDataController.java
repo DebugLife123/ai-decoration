@@ -69,7 +69,7 @@ public class BusinessDataController {
     public ResponseEntity<ApiResponse<BusinessCase>> createCase(@AuthenticationPrincipal Jwt jwt,
             @RequestHeader("Idempotency-Key") @NotBlank @Size(min = 8, max = 128) String key,
             @Valid @RequestBody CaseRequest request) {
-        if (request.status() == CaseStatus.published && !isAdmin(jwt)) throw forbidden();
+        // 案例创建只允许草稿：status 由 @Null 校验，发布统一走 POST /cases/{caseId}/publish。
         var result = service.createCase(companyId(jwt), key, request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .location(URI.create("/api/v1/business/cases/" + result.value().id()))
@@ -136,6 +136,18 @@ public class BusinessDataController {
     public ApiResponse<MaterialQuote> patchMaterialQuote(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID quoteId,
                                                           @Valid @RequestBody MaterialQuotePatch patch) {
         return ApiResponse.success(service.patchMaterialQuote(companyId(jwt), quoteId, patch));
+    }
+
+    @PostMapping("/material-quotes/{quoteId}/withdraw")
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR')")
+    public ApiResponse<MaterialQuote> withdrawMaterialQuote(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID quoteId) {
+        return ApiResponse.success(service.setMaterialReviewStatus(companyId(jwt), quoteId, "WITHDRAWN"));
+    }
+
+    @PostMapping("/material-quotes/{quoteId}/submit")
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR')")
+    public ApiResponse<MaterialQuote> submitMaterialQuote(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID quoteId) {
+        return ApiResponse.success(service.setMaterialReviewStatus(companyId(jwt), quoteId, "SUBMIT"));
     }
 
     @DeleteMapping("/material-quotes/{quoteId}")

@@ -64,6 +64,13 @@ export interface Project {
 }
 
 export interface MaterialRecord {
+  styleKeys?: string[];
+  materialScope?: 'GENERAL' | 'STYLE';
+  reviewStatus?: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED';
+  reviewNote?: string | null;
+  unitKind?: string;
+  unitUnknown?: boolean;
+  itemNature?: 'INCLUDED' | 'GIFT' | 'OWNER_SUPPLIED';
   id: string;
   name: string;
   spec: string;

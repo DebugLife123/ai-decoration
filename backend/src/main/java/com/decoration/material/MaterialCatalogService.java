@@ -37,7 +37,11 @@ public class MaterialCatalogService {
             rs.getObject("valid_until", LocalDate.class),
             rs.getObject("image_id", java.util.UUID.class),
             List.of(),
-            instant(rs, "updated_at"));
+            instant(rs, "updated_at"),
+            rs.getString("unit_kind"),
+            rs.getBoolean("unit_unknown"),
+            rs.getString("item_nature"),
+            List.of());
 
     /** 只取出已认证且在有效期内的报价，并带上企业展示名。 */
     private static final String BASE_FROM = """
@@ -54,9 +58,10 @@ public class MaterialCatalogService {
         this.jdbc = jdbc;
     }
 
-    public Page<CatalogMaterial> list(String region, String category, String query,
+    public Page<CatalogMaterial> list(String region, String category, String query, String styleKey,
                                       boolean includeExpired, int page, int size, String sort) {
-        var where = new StringBuilder(" where m.admin_hidden = false and c.is_demo = false");
+        var where = new StringBuilder(" where m.admin_hidden = false and m.review_status = 'APPROVED' and c.is_demo = false");
+        where.append(" and not exists (select 1 from auth_users u where u.company_id = m.company_id and u.role = 'COMPANY_ADMIN' and u.account_status <> 'ACTIVE')");
         var args = new ArrayList<Object>();
         if (region != null && !region.isBlank()) {
             where.append(" and m.region = ?");
@@ -72,6 +77,11 @@ public class MaterialCatalogService {
             args.add(pattern);
             args.add(pattern);
             args.add(pattern);
+        }
+        if (styleKey != null && !styleKey.isBlank()) {
+            where.append(" and (not exists (select 1 from material_quote_styles any_style where any_style.quote_id = m.id)"
+                    + " or exists (select 1 from material_quote_styles ms where ms.quote_id = m.id and ms.style_key = ?))");
+            args.add(styleKey.trim());
         }
         if (!includeExpired) where.append(" and m.valid_until >= current_date");
 
@@ -93,10 +103,13 @@ public class MaterialCatalogService {
     private CatalogMaterial withImages(CatalogMaterial item) {
         var imageIds = jdbc.query("select image_id from material_quote_images where quote_id = ? order by position",
                 (rs, row) -> rs.getObject(1, java.util.UUID.class), item.id());
+        var styleKeys = jdbc.query("select style_key from material_quote_styles where quote_id = ? order by position",
+                (rs, row) -> rs.getString(1), item.id());
         return new CatalogMaterial(item.id(), item.companyId(), item.companyName(), item.companyContactName(),
                 item.companyContactInfo(), item.name(), item.spec(), item.unit(), item.price(), item.brand(),
                 item.category(), item.region(), item.validUntil(),
-                imageIds.isEmpty() ? item.imageId() : imageIds.getFirst(), imageIds, item.updatedAt());
+                imageIds.isEmpty() ? item.imageId() : imageIds.getFirst(), imageIds, item.updatedAt(),
+                item.unitKind(), item.unitUnknown(), item.itemNature(), styleKeys);
     }
 
     private static String order(String sort) {

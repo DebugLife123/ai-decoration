@@ -1,0 +1,52 @@
+.admin-style-material-content .admin-heading { align-items: center; }
+.admin-style-material-actions { display: flex; gap: 10px; align-items: center; }
+.admin-style-material-actions > button { min-height: 38px; padding: 0 14px; border: 1px solid #4c5058; background: #252830; color: #eee9df; border-radius: 4px; cursor: pointer; }
+.admin-style-material-actions > button:first-of-type { border-color: #c59a61; color: #f3d5aa; }
+.admin-style-material-toolbar { display: flex; gap: 12px; align-items: end; padding: 15px; margin-bottom: 18px; border: 1px solid #30343d; background: #20232a; }
+.admin-style-material-toolbar label { display: grid; gap: 6px; color: #9b9da5; font-size: 12px; }
+.admin-style-material-toolbar select, .admin-style-material-toolbar input { min-height: 36px; padding: 0 10px; border: 1px solid #454952; background: #17191e; color: #eee9df; border-radius: 3px; }
+.admin-style-material-search { flex: 1; }
+.admin-style-material-toolbar > button { min-height: 36px; padding: 0 16px; border: 0; background: #b48451; color: #17191e; font-weight: 700; border-radius: 3px; cursor: pointer; }
+.admin-style-material-panel { border: 1px solid #30343d; background: #20232a; }
+.admin-style-material-panel > header { display: flex; justify-content: space-between; align-items: end; padding: 20px 22px; border-bottom: 1px solid #30343d; }
+.admin-style-material-panel > header h2 { margin: 5px 0 0; color: #f0ece3; font-size: 22px; }
+.admin-style-material-panel > header h2 small { color: #b48451; font-size: 13px; }
+.admin-style-material-panel > header p { margin: 0; max-width: 420px; color: #999ba2; font-size: 12px; }
+.admin-style-material-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px; }
+.admin-style-material-card { min-width: 0; padding: 16px; border: 1px solid #373b44; background: #181a20; }
+.admin-style-material-card-head { display: flex; justify-content: space-between; gap: 10px; }
+.admin-style-material-style { color: #c59a61; font-size: 11px; }
+.admin-style-material-card h3 { margin: 5px 0 0; color: #f0ece3; font-size: 16px; }
+.admin-style-material-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
+.admin-style-material-meta span { padding: 4px 7px; border: 1px solid #393d46; color: #aaaab0; font-size: 11px; }
+.admin-style-material-source { min-height: 42px; margin: 13px 0; color: #858890; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.admin-style-material-price { margin: 0 0 13px; color: #d6b17c; font-size: 12px; }
+.admin-style-material-card footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px solid #30343d; padding-top: 12px; }
+.admin-style-material-card footer small { color: #70727a; font-size: 10px; }
+.admin-style-material-card-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+.admin-style-material-card-actions button { padding: 7px 10px; border: 1px solid #454952; background: transparent; color: #bcb8ae; cursor: pointer; font-size: 11px; }
+.admin-style-material-card-actions button + button { border-color: #b48451; color: #dbb47c; }
+.admin-style-material-card footer button { padding: 7px 10px; border: 1px solid #b48451; background: transparent; color: #dbb47c; cursor: pointer; }
+.admin-style-material-dialog { width: min(640px, calc(100vw - 32px)); }
+.admin-style-material-dialog > header { display: flex; justify-content: space-between; align-items: start; }
+.admin-style-material-dialog > header h2 { margin: 5px 0 0; color: #f0ece3; }
+.admin-style-material-dialog-source { color: #858890; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.admin-style-material-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.admin-style-material-form label, .admin-style-material-note { display: grid; gap: 6px; color: #aaaab0; font-size: 12px; }
+.admin-style-material-form input, .admin-style-material-note textarea { padding: 10px; border: 1px solid #454952; background: #17191e; color: #f0ece3; border-radius: 3px; }
+.admin-style-material-note { margin-top: 12px; }
+.admin-style-material-note textarea { min-height: 92px; resize: vertical; }
+.admin-style-material-dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
+.admin-style-material-dialog-actions button { min-height: 36px; padding: 0 14px; border: 1px solid #4a4d55; background: #292c33; color: #ded9cf; cursor: pointer; }
+.admin-style-material-dialog-actions button.primary { border-color: #b48451; background: #b48451; color: #17191e; font-weight: 700; }
+.admin-style-material-preview-backdrop { z-index: 30; }
+.admin-style-material-preview { width: min(980px, calc(100vw - 32px)); max-height: calc(100vh - 40px); display: grid; grid-template-rows: auto 1fr auto; background: #17191e; border: 1px solid #454952; }
+.admin-style-material-preview header, .admin-style-material-preview footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; color: #e8e2d8; }
+.admin-style-material-preview header { border-bottom: 1px solid #30343d; }
+.admin-style-material-preview header button { border: 0; background: transparent; color: #aaaab0; font-size: 24px; cursor: pointer; }
+.admin-style-material-preview img { display: block; width: 100%; max-height: calc(100vh - 150px); object-fit: contain; background: #0d0e11; }
+.admin-style-material-preview footer { border-top: 1px solid #30343d; color: #999ba2; font-size: 12px; }
+.admin-style-material-preview footer button { padding: 7px 11px; border: 1px solid #454952; background: #252830; color: #e8e2d8; cursor: pointer; }
+.admin-style-material-preview footer button:disabled { opacity: .4; cursor: not-allowed; }
+@media (max-width: 1000px) { .admin-style-material-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .admin-style-material-toolbar, .admin-style-material-panel > header { align-items: stretch; flex-direction: column; } .admin-style-material-grid { grid-template-columns: 1fr; } .admin-style-material-actions { flex-wrap: wrap; } }

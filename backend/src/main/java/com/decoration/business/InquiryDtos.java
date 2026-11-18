@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public final class InquiryDtos {
@@ -20,6 +21,11 @@ public final class InquiryDtos {
 
     public record UpdateInquiryStatusRequest(@NotNull InquiryStatus status, int version) { }
 
+    public record CreateInquiryReplyRequest(@NotBlank @Size(max = 2000) String content) { }
+
+    public record InquiryEvent(long id, String actorType, String eventType, InquiryStatus status,
+                               String content, Instant createdAt) { }
+
     public record CompanyInquiry(
             UUID id,
             UUID materialId,
@@ -30,5 +36,6 @@ public final class InquiryDtos {
             InquiryStatus status,
             int version,
             Instant createdAt,
-            Instant updatedAt) { }
+            Instant updatedAt,
+            List<InquiryEvent> events) { }
 }

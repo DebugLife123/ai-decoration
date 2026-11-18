@@ -1,0 +1,5 @@
+.admin-workspace-tabs { display: flex; gap: 4px; margin: 22px 0 20px; border-bottom: 1px solid #2c2f36; }
+.admin-workspace-tabs a { display: inline-flex; align-items: center; min-height: 38px; padding: 0 15px; color: #898a91; border-bottom: 2px solid transparent; font-size: 12px; text-decoration: none; }
+.admin-workspace-tabs a:hover { color: #eabf78; }
+.admin-workspace-tabs a.active { color: #eabf78; border-bottom-color: #eabf78; }
+@media (max-width: 620px) { .admin-workspace-tabs { overflow-x: auto; } .admin-workspace-tabs a { flex: 0 0 auto; } }

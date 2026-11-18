@@ -1,5 +1,6 @@
+import AdminSidebar from '../components/AdminSidebar';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { apiDownload, apiRequest } from '../services/authSession';
 import { useAppStore } from '../stores/appStore';
 import './AdminPage.css';
@@ -135,16 +136,7 @@ export default function AdminPage() {
 
   return (
     <div className="admin-page">
-      <aside className="admin-rail">
-        <div className="admin-brand"><span className="admin-brand-mark"><Icon name="shield" /></span><span><strong>简艺装</strong><small>CONTROL ROOM</small></span></div>
-        <div className="admin-rail-label">平台治理</div>
-        <Link className="admin-rail-current" aria-current="page" to="/admin"><span className="admin-rail-icon"><Icon name="building" /></span><span><strong>企业认证</strong><small>准入审核队列</small></span></Link>
-        <Link className="admin-rail-link" to="/admin/marketplace"><span className="admin-rail-icon"><Icon name="building" /></span><span><strong>企业与材料</strong><small>企业状态与公开报价</small></span></Link>
-        <Link className="admin-rail-link" to="/admin/assets"><span className="admin-rail-icon"><Icon name="file" /></span><span><strong>图片清理</strong><small>未关联图片管理</small></span></Link>
-        <Link className="admin-rail-link" to="/admin/audit"><span className="admin-rail-icon"><Icon name="shield" /></span><span><strong>操作日志</strong><small>管理员操作记录</small></span></Link>
-        <Link className="admin-rail-link" to="/admin/notifications"><span className="admin-rail-icon"><Icon name="shield" /></span><span><strong>审核通知</strong><small>新的认证待办</small></span></Link>
-        <div className="admin-rail-footer"><i />运行正常<span>INTERNAL CONSOLE</span></div>
-      </aside>
+      <AdminSidebar />
 
       <div className="admin-stage">
         <header className="admin-topbar">

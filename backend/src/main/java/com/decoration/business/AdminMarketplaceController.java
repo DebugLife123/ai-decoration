@@ -53,9 +53,11 @@ public class AdminMarketplaceController {
     }
 
     @org.springframework.web.bind.annotation.PostMapping(value = "/companies/{companyId}/assets", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ApiResponse<BusinessAssetService.BusinessAsset> uploadCompanyAsset(
+    public org.springframework.http.ResponseEntity<ApiResponse<BusinessAssetService.BusinessAsset>> uploadCompanyAsset(
             @PathVariable UUID companyId, @RequestPart("file") MultipartFile file) {
-        return ApiResponse.success(assets.upload(companyId, file));
+        // 与企业端上传保持一致：创建资源返回 201。
+        return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
+                .body(ApiResponse.success(assets.upload(companyId, file)));
     }
 
     @org.springframework.web.bind.annotation.PostMapping("/companies/{companyId}/cases/{caseId}/files")
@@ -94,13 +96,16 @@ public class AdminMarketplaceController {
     @GetMapping("/material-quotes")
     public ApiResponse<AdminMarketplaceService.Page> quotes(
             @RequestParam(required = false) @Size(max = 120) String query,
+            @RequestParam(required = false) UUID companyId,
             @RequestParam(defaultValue = "ALL") String visibility,
             @RequestParam(defaultValue = "1") @Min(1) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        if (!java.util.Set.of("ALL", "PUBLISHED", "HIDDEN", "EXPIRED").contains(visibility))
+        if (!java.util.Set.of("ALL", "PUBLISHED", "HIDDEN", "EXPIRED", "PENDING", "REJECTED").contains(visibility))
             throw new com.decoration.shared.api.BusinessApiException(org.springframework.http.HttpStatus.BAD_REQUEST,
                     "INVALID_REQUEST", "Unknown material visibility filter");
-        return ApiResponse.success(service.listQuotes(query, visibility, page, size));
+        return ApiResponse.success(companyId == null
+                ? service.listQuotes(query, visibility, page, size)
+                : service.listQuotes(query, visibility, companyId, page, size));
     }
 
     @PatchMapping("/material-quotes/{quoteId}/visibility")
@@ -110,5 +115,11 @@ public class AdminMarketplaceController {
             throw new com.decoration.shared.api.BusinessApiException(org.springframework.http.HttpStatus.BAD_REQUEST,
                     "INVALID_REQUEST", "Reason must be 500 characters or fewer");
         return ApiResponse.success(service.setVisibility(quoteId, UUID.fromString(jwt.getSubject()), request));
+    }
+
+    @org.springframework.web.bind.annotation.PatchMapping("/material-quotes/{quoteId}/review")
+    public ApiResponse<AdminMarketplaceService.Quote> review(@AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID quoteId, @Valid @RequestBody AdminMarketplaceService.ReviewRequest request) {
+        return ApiResponse.success(service.reviewQuote(quoteId, UUID.fromString(jwt.getSubject()), request));
     }
 }

@@ -43,6 +43,15 @@
 .admin-market-dialog > div button { min-height: 34px; padding: 0 12px; color: #aaa7a0; background: transparent; border: 1px solid #41434b; border-radius: 4px; font: inherit; font-size: 11px; cursor: pointer; }
 .admin-market-dialog > div button:last-child { color: #17181c; background: #eabf78; border-color: #eabf78; }
 .admin-market-dialog > div button:disabled { opacity: .55; cursor: wait; }
+.admin-review-queue { display: grid; gap: 18px; margin-top: 18px; padding: 20px; background: #191b21; border: 1px solid #3a3d46; border-radius: 6px; }
+.admin-review-queue h2 { margin: 5px 0 4px; color: #f1eee7; font-size: 17px; font-weight: 550; }
+.admin-review-queue p { margin: 0; color: #85868d; font-size: 11px; }
+.admin-review-queue-list { display: grid; gap: 8px; }
+.admin-review-queue-list article { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; background: #16181d; border: 1px solid #2d3038; border-radius: 5px; }
+.admin-review-queue-list article div:first-child { display: grid; gap: 4px; min-width: 0; }
+.admin-review-queue-list strong { color: #e4e0d8; font-size: 12px; }
+.admin-review-queue-list span, .admin-review-queue-list small { color: #999ca4; font-size: 11px; }
+.admin-review-queue-list small { color: #70737b; }
 @media (max-width: 780px) { .admin-market-toolbar { align-items: stretch; flex-wrap: wrap; } .admin-market-tabs { flex: 1 0 100%; } .admin-market-toolbar form { max-width: none; margin-left: 0; } .admin-market-toolbar select { flex: 0 0 145px; } .admin-market-panel-head { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 520px) { .admin-market-toolbar form { flex: 1 0 100%; } .admin-market-toolbar select { flex: 1; } .admin-market-panel-head { padding: 14px; } }
 .admin-import-form { max-width: 780px; max-height: min(860px, calc(100vh - 48px)); overflow: auto; padding: 30px; }

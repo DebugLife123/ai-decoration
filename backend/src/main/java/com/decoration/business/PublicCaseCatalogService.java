@@ -37,6 +37,7 @@ public class PublicCaseCatalogService {
         var from = " from business_cases c join company_certifications cert on cert.company_id = c.company_id "
                 + "join auth_companies a on a.id = c.company_id left join company_profiles p on p.company_id = c.company_id";
         where.append(" and a.is_demo = false");
+        where.append(" and not exists (select 1 from auth_users u where u.company_id = c.company_id and u.role = 'COMPANY_ADMIN' and u.account_status <> 'ACTIVE')");
         var total = jdbc.queryForObject("select count(*)" + from + where, Long.class, args.toArray());
         var pageArgs = new ArrayList<>(args);
         pageArgs.add(size); pageArgs.add((long) (page - 1) * size);
@@ -63,6 +64,7 @@ public class PublicCaseCatalogService {
                 join business_assets a on a.company_id = cf.company_id and a.id = cf.file_id
                 join auth_companies ac on ac.id = c.company_id and ac.is_demo = false
                 where c.id = ? and c.status = 'published'
+                  and not exists (select 1 from auth_users u where u.company_id = c.company_id and u.role = 'COMPANY_ADMIN' and u.account_status <> 'ACTIVE')
                 order by cf.position
                 """, (rs, row) -> new CaseFile(rs.getObject("id", UUID.class), rs.getString("file_name"), rs.getString("media_type")), caseId);
     }

@@ -1,6 +1,7 @@
 import type { MaterialRecord } from './dataContracts';
 import { businessApiConfig } from './businessData';
 import { currentAccessToken } from './authSession';
+import { isUnitRecognized, unitKindOf } from './budgetUnits';
 
 type ApiEnvelope<T> = { code: string; message: string; data: T; timestamp: string };
 type ApiPage<T> = { items: T[]; page: { page: number; size: number; total: number; totalPages: number } };
@@ -22,6 +23,10 @@ interface ApiCatalogMaterial {
   imageId: string | null;
   imageIds: string[];
   updatedAt: string;
+  unitKind?: string | null;
+  unitUnknown?: boolean;
+  itemNature?: string | null;
+  styleKeys?: string[];
 }
 
 /**
@@ -62,6 +67,10 @@ export async function loadCatalogMaterials(): Promise<MaterialRecord[]> {
     imageId: item.imageId || undefined,
     imageIds: item.imageIds?.length ? item.imageIds : item.imageId ? [item.imageId] : [],
     brand: item.brand || undefined,
+    unitKind: item.unitKind || unitKindOf(item.unit),
+    unitUnknown: item.unitUnknown ?? !isUnitRecognized(item.unit),
+    itemNature: (item.itemNature as MaterialRecord['itemNature']) || 'INCLUDED',
+    styleKeys: item.styleKeys || [],
   }));
 }
 

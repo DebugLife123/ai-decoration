@@ -1,6 +1,6 @@
 import { apiRequest } from './authSession';
 
-export type NotificationType = 'CERTIFICATION' | 'QUOTE_EXPIRING' | 'INQUIRY' | 'ADMIN_REVIEW';
+export type NotificationType = 'CERTIFICATION' | 'CERTIFICATION_PAYMENT' | 'QUOTE_EXPIRING' | 'INQUIRY' | 'ADMIN_REVIEW' | 'ADMIN_PAYMENT' | 'ADMIN_SUBSCRIPTION' | 'MATERIAL_REVIEW';
 
 export interface AppNotification {
   key: string;

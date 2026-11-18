@@ -81,7 +81,7 @@ public class StyleProfileService {
 
     /** C 端推荐候选集合：只取已认证企业的资料。 */
     public List<RecommendationProfile> publishedProfiles() {
-        return jdbc.query("select sp.profiles, sp.company_id, coalesce(p.name, c.name) as company_name " + BASE_FROM + " where c.is_demo = false",
+        return jdbc.query("select sp.profiles, sp.company_id, coalesce(p.name, c.name) as company_name " + BASE_FROM + " where c.is_demo = false and not exists (select 1 from auth_users u where u.company_id = sp.company_id and u.role = 'COMPANY_ADMIN' and u.account_status <> 'ACTIVE')",
                 (rs, row) -> {
                     var companyId = rs.getObject("company_id", UUID.class);
                     var companyName = rs.getString("company_name");

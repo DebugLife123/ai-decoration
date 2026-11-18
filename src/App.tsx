@@ -1,3 +1,11 @@
+import BusinessStyleSubmissionsPage from './pages/BusinessStyleSubmissionsPage';
+import MyInquiriesPage from './pages/MyInquiriesPage';
+import InspirationSubmissionsPage from './pages/InspirationSubmissionsPage';
+import AdminBudgetSettingsPage from './pages/AdminBudgetSettingsPage';
+import AdminPlatformContactPage from './pages/AdminPlatformContactPage';
+import AdminStyleMaterialsPage from './pages/AdminStyleMaterialsPage';
+import AdminInspirationPage from './pages/AdminInspirationPage';
+import AdminAccountsPage from './pages/AdminAccountsPage';
 import { useEffect, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
@@ -98,6 +106,14 @@ function App() {
           <Route path="/admin/marketplace/companies/:companyId" element={<AdminRoute><AdminCompanyDetailPage /></AdminRoute>} />
           <Route path="/admin/audit" element={<AdminRoute><AdminAuditPage /></AdminRoute>} />
           <Route path="/admin/notifications" element={<AdminRoute><NotificationsPage /></AdminRoute>} />
+          <Route path="/admin/accounts" element={<AdminRoute><AdminAccountsPage /></AdminRoute>} />
+          <Route path="/admin/inspiration" element={<AdminRoute><AdminInspirationPage /></AdminRoute>} />
+          <Route path="/admin/style-materials" element={<AdminRoute><AdminStyleMaterialsPage /></AdminRoute>} />
+          <Route path="/admin/platform-contact" element={<AdminRoute><AdminPlatformContactPage /></AdminRoute>} />
+          <Route path="/admin/budget-settings" element={<AdminRoute><AdminBudgetSettingsPage /></AdminRoute>} />
+          <Route path="/inspiration/submissions" element={<RoleRoute role="consumer"><InspirationSubmissionsPage /></RoleRoute>} />
+          <Route path="/inquiries" element={<RoleRoute role="consumer"><MyInquiriesPage /></RoleRoute>} />
+          <Route path="/business/style-submissions" element={<RoleRoute role="business"><BusinessStyleSubmissionsPage /></RoleRoute>} />
           <Route path="*" element={<Navigate to={role === 'business' ? '/business' : role === 'admin' ? '/admin' : '/'} replace />} />
         </Routes>
       </main>

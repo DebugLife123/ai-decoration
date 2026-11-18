@@ -1,0 +1,36 @@
+.my-inquiries-page { width: min(900px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0 80px; color: var(--color-text-primary); }
+.my-inquiries-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--color-border); }
+.my-inquiries-header > div > span { color: var(--color-primary); font-size: 11px; font-weight: 800; }
+.my-inquiries-header h1 { margin-top: 7px; font-family: var(--font-display); font-size: 32px; }
+.my-inquiries-header p { margin-top: 7px; color: var(--color-text-secondary); font-size: 14px; }
+.my-inquiries-header button { min-height: 38px; padding: 0 13px; color: var(--color-text-secondary); background: #fff; border: 1px solid var(--color-border); border-radius: 5px; font-size: 13px; font-weight: 700; }
+.my-inquiries-header button:disabled { opacity: .6; cursor: wait; }
+.my-inquiries-list { display: grid; gap: 14px; padding-top: 20px; }
+.my-inquiry { padding: 20px 22px; border: 1px solid var(--color-border-light); border-radius: 7px; background: #fff; transition: border-color 180ms ease, box-shadow 180ms ease; }
+.my-inquiry.focused { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgb(106 90 212 / 14%); }
+.my-inquiry-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.my-inquiry-heading > div > span, .my-inquiry-message > span { color: var(--color-text-muted); font-size: 12px; }
+.my-inquiry-heading h2 { margin-top: 4px; font-size: 18px; }
+.my-inquiry-status { flex: none; padding: 6px 9px; color: #315c52; background: #e7f2ee; border-radius: 4px; font-size: 12px; font-weight: 700; }
+.my-inquiry-status.new { color: #775a18; background: #fbf2d9; }
+.my-inquiry-status.closed { color: #59616a; background: #eef0f1; }
+.my-inquiry-contact { display: flex; flex-wrap: wrap; gap: 7px 14px; margin-top: 12px; color: var(--color-text-secondary); font-size: 13px; }
+.my-inquiry-contact a { color: var(--color-primary); }
+.my-inquiry-contact time { margin-left: auto; color: var(--color-text-muted); }
+.my-inquiry-message { margin-top: 16px; padding: 12px 14px; background: #f7f8f8; }
+.my-inquiry-message p, .my-inquiry-timeline p { margin-top: 5px; color: var(--color-text-secondary); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; white-space: pre-wrap; }
+.my-inquiry-timeline { display: grid; gap: 0; margin: 18px 0 0 5px; padding: 0; list-style: none; }
+.my-inquiry-timeline li { position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 10px; min-height: 48px; }
+.my-inquiry-timeline li:not(:last-child)::after { position: absolute; top: 12px; bottom: -1px; left: 5px; width: 1px; background: #d9dfdc; content: ''; }
+.my-inquiry-dot { position: relative; z-index: 1; width: 11px; height: 11px; margin-top: 3px; border: 2px solid #6a927f; border-radius: 50%; background: #fff; }
+.company-event .my-inquiry-dot { border-color: var(--color-primary); background: var(--color-primary); }
+.my-inquiry-timeline li > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 4px 12px; padding-bottom: 15px; }
+.my-inquiry-timeline strong { font-size: 13px; }
+.my-inquiry-timeline time { color: var(--color-text-muted); font-size: 11px; }
+.my-inquiry-timeline p { grid-column: 1 / -1; margin-top: 2px; }
+.my-inquiries-empty { display: grid; justify-items: center; gap: 8px; margin-top: 24px; padding: 64px 20px; border: 1px solid var(--color-border-light); background: #fff; text-align: center; }
+.my-inquiries-empty strong { font-size: 18px; }
+.my-inquiries-empty span, .my-inquiries-error { color: var(--color-text-secondary); font-size: 13px; }
+.my-inquiries-empty a { margin-top: 7px; color: var(--color-primary); font-size: 13px; font-weight: 700; }
+.my-inquiries-error { margin-top: 18px; padding: 12px 14px; color: var(--color-error); background: #fff4f3; border: 1px solid #f2d3d0; }
+@media (max-width: 620px) { .my-inquiries-page { width: calc(100% - 28px); padding-top: 30px; } .my-inquiries-header { align-items: flex-start; flex-direction: column; } .my-inquiries-header h1 { font-size: 28px; } .my-inquiry { padding: 16px; } .my-inquiry-contact time { width: 100%; margin-left: 0; } .my-inquiry-timeline li > div { grid-template-columns: 1fr; } }
