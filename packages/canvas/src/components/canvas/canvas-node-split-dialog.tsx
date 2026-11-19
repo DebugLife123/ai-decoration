@@ -157,10 +157,9 @@ export function CanvasNodeSplitDialog({ dataUrl, open, saving = false, result, o
     const confirmParams = { ...params, horizontalLines, verticalLines, rows, columns };
 
     return (
-        <Modal className="canvas-overlay-modal" title={null} open={open && Boolean(dataUrl)} closable={!saving} keyboard={!saving} onCancel={() => { if (!saving) onClose(); }} footer={null} width={780} centered destroyOnHidden transitionName="" maskTransitionName="">
+        <Modal className="canvas-overlay-modal" title={t("canvas.editors.splitTitle")} open={open && Boolean(dataUrl)} closable={!saving} keyboard={!saving} onCancel={() => { if (!saving) onClose(); }} footer={null} width={780} centered destroyOnHidden transitionName="" maskTransitionName="" styles={{ body: { maxHeight: "calc(100dvh - 160px)", overflowY: "auto" } }}>
             <div className="space-y-5" data-canvas-no-zoom>
                 <div>
-                    <h2 className="text-xl font-semibold">{t("canvas.editors.splitTitle")}</h2>
                     <p className="mt-1 text-sm opacity-60">{t("canvas.editors.splitDescription", { count: total })}</p>
                     <p className="mt-2 text-xs leading-5 opacity-55">{t("canvas.editors.splitHint")}</p>
                 </div>
@@ -169,7 +168,7 @@ export function CanvasNodeSplitDialog({ dataUrl, open, saving = false, result, o
                         <div
                             ref={viewport.viewportRef}
                             {...viewport.panHandlers}
-                            className={`relative isolate h-[340px] min-h-[300px] rounded-lg bg-black/5 ${viewport.scrollClassName} ${viewport.isPanning ? "cursor-grabbing" : viewport.spacePressed ? "cursor-grab" : ""}`}
+                            className={`relative isolate h-[min(40dvh,320px)] min-h-[200px] rounded-lg bg-black/5 md:h-[340px] md:min-h-[300px] ${viewport.scrollClassName} ${viewport.isPanning ? "cursor-grabbing" : viewport.spacePressed ? "cursor-grab" : ""}`}
                         >
                             <div className="relative" style={viewport.contentStyle}>
                                 <div ref={previewRef} className="absolute isolate overflow-hidden rounded-lg bg-black [backface-visibility:hidden] [contain:layout_paint] [transform:translateZ(0)]" style={viewport.stageStyle}>

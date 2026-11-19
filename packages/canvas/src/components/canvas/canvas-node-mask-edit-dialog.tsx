@@ -23,7 +23,6 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, saving = false, canGen
     const { t } = useTranslation();
     const maskCanvasRef = useRef<HTMLCanvasElement>(null);
     const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-    const imageRef = useRef<HTMLImageElement>(null);
     const drawingRef = useRef<{ active: boolean; stroke: CanvasMaskStroke | null }>({ active: false, stroke: null });
     const brushAdjustRef = useRef<{ active: boolean; pointerId: number; startX: number; startSize: number; previewX: number; previewY: number } | null>(null);
     const historyRef = useRef(resetCanvasMaskStrokeHistory());
@@ -201,9 +200,8 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, saving = false, canGen
         if (saving || (generate && !canGenerate)) return;
         const nextPrompt = prompt.trim();
         const canvas = maskCanvasRef.current;
-        const element = imageRef.current;
         if (generate && !nextPrompt) return setError(t("canvas.editors.maskPromptRequired"));
-        if (!canvas || !element) return;
+        if (!canvas) return;
         try {
             if (!canvasHasPaint(canvas)) return setError(t("canvas.editors.maskRequired"));
             onConfirm({ prompt: nextPrompt, maskDataUrl: buildMaskBinary(canvas), generate });
@@ -226,7 +224,7 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, saving = false, canGen
                                 <>
                                     <canvas ref={maskCanvasRef} width={image.width} height={image.height} className="hidden" />
                                     <div className="absolute left-0 top-0 [backface-visibility:hidden]" style={viewport.mediaStyle}>
-                                        <img ref={imageRef} src={dataUrl} alt="" className="absolute inset-0 block h-full w-full bg-transparent object-contain" draggable={false} />
+                                        <img src={dataUrl} alt="" className="absolute inset-0 block h-full w-full bg-transparent object-contain" draggable={false} />
                                         <canvas
                                             ref={previewCanvasRef}
                                             width={image.width}
@@ -415,4 +413,3 @@ function canvasHasPaint(canvas: HTMLCanvasElement) {
     }
     return false;
 }
-

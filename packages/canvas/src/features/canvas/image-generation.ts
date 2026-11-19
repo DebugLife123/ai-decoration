@@ -5,6 +5,7 @@ export type CanvasImageInput = Pick<ReferenceImage, "id" | "name" | "type" | "da
 export type CanvasImageRequest = {
     projectId: string;
     operation: "generate" | "edit";
+    editIntent?: "edit" | "fill";
     prompt: string;
     settings: CanvasImageSettings;
     references: CanvasImageInput[];
@@ -26,7 +27,7 @@ export async function generateCanvasImage(adapter: CanvasImageGeneration | undef
     if (!adapter) throw new Error("当前项目尚未配置图片生成服务，请先完成服务配置");
     const { model, quality, size, background } = request.settings;
     const result = await adapter.execute({
-        projectId: request.projectId, operation: request.operation, prompt: request.prompt,
+        projectId: request.projectId, operation: request.operation, ...(request.editIntent ? { editIntent: request.editIntent } : {}), prompt: request.prompt,
         settings: { model, quality, size, background },
         references: request.references.map(({ id, name, type, dataUrl }) => ({ id, name, type, dataUrl })),
     }, signal);

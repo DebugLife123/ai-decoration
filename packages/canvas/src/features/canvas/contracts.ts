@@ -126,6 +126,7 @@ export type RegisterCanvasAsset = RegisterCanvasAssetBase & (
 export type CanvasVersion = {
     versionId: string;
     projectId: string;
+    parentVersionId?: string | null;
     sourceAssetId: string | null;
     resultAssetId: string | null;
     createdAt: string;
@@ -135,6 +136,7 @@ export type CanvasVersion = {
 export type CanvasVersionDocument = {
     versionId: string;
     projectId: string;
+    parentVersionId?: string | null;
     sourceAssetId?: string | null;
     resultAssetId?: string | null;
     title: string;
@@ -172,6 +174,7 @@ export function getCanvasTaskStateViolation(task: Pick<CanvasTask, "status" | "r
 export type SubmitCanvasTask = {
     projectId: string;
     type: "GENERATE" | "EDIT";
+    editIntent?: "edit" | "fill";
     prompt: string;
     sourceAssetId?: string;
     sourceVersionId?: string;

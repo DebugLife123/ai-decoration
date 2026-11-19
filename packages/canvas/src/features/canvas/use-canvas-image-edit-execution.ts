@@ -31,6 +31,7 @@ export function useCanvasImageEditExecution({
         targetNodeId,
         originNodeId,
         prompt,
+        editIntent = "edit",
         settings,
         references,
         sourceVersionId,
@@ -41,6 +42,7 @@ export function useCanvasImageEditExecution({
         targetNodeId: string;
         originNodeId: string;
         prompt: string;
+        editIntent?: "edit" | "fill";
         settings: CanvasImageSettings;
         references: ReferenceImage[];
         sourceVersionId?: string;
@@ -53,11 +55,11 @@ export function useCanvasImageEditExecution({
             const referenceAssetIds = references.map(({ assetId }) => assetId).filter((assetId): assetId is string => Boolean(assetId));
             const sourceAssetId = references[0]?.assetId;
             if (submitNodeTask && sourceAssetId && referenceAssetIds.length === references.length) {
-                await submitNodeTask({ projectId, type: "EDIT", prompt, sourceAssetId, sourceVersionId, referenceAssetIds, image: settings }, targetNodeId, "图片编辑任务", controller.signal);
+                await submitNodeTask({ projectId, type: "EDIT", editIntent, prompt, sourceAssetId, sourceVersionId, referenceAssetIds, image: settings }, targetNodeId, "图片编辑任务", controller.signal);
                 return;
             }
             const resolvedReferences = await readCanvasReferenceImages(media, projectId, references, controller.signal);
-            const image = await generateCanvasImage(generation, { projectId, operation: "edit", prompt, settings, references: resolvedReferences }, controller.signal);
+            const image = await generateCanvasImage(generation, { projectId, operation: "edit", editIntent, prompt, settings, references: resolvedReferences }, controller.signal);
             const uploaded = await saveResultImage(image.dataUrl, `canvas-${targetNodeId}.png`, controller.signal);
             onSuccess(uploaded);
         } catch (error) {

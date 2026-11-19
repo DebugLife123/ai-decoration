@@ -7,6 +7,7 @@ export { CanvasTaskStatusPanel } from "../../components/canvas/canvas-task-statu
 export type { CanvasInstalledPlugin, CanvasOfficialPlugin, CanvasPluginManager } from "./plugin-manager";
 export { createApiCanvasHostAdapters, type CanvasHostAdapterBundle } from "./api-host-adapters";
 export { createCanvasHttpHostAdapters } from "../../services/api/canvas/http-host-adapters";
+export { createCanvasHttpWorkflow, type CanvasHttpWorkflowOptions } from "../../services/api/canvas/http-workflow";
 export type { CanvasHttpAdapterOptions, CanvasHttpHeaders, CanvasHttpResponseEnvelope, CanvasHttpTaskSubmission, CanvasHttpTransport } from "../../services/api/canvas/http-adapter";
 export { selectCanvasVersionId } from "./version-selection";
 export { restoreCanvasVersionDocument } from "./version-restore";
@@ -90,6 +91,9 @@ export { createCanvasImportPlan, filterCanvasImportFiles, getCanvasFileKind, get
 export { createCanvasImportedFileNode, importCanvasFile, importCanvasFileAsNode, replaceCanvasNodeInList, replaceCanvasNodeWithImportedFile, resolveCanvasFileImportFailures, runCanvasFileImportBatch, runCanvasImportPlan, type CanvasFileImportBatchItem, type CanvasFileImportBatchResult, type CanvasFileImportFailure, type CanvasFileImportHost, type CanvasFileReplacementResult, type CanvasImportedFile, type CanvasImportedFileNode } from "./file-import";
 export type { CanvasImageGeneration, CanvasImageRequest, CanvasImageSettings, CanvasImageInput, CanvasPluginImageGeneration, CanvasPluginImageRequest } from "./image-generation";
 export { createCanvasHttpImageGeneration, type CanvasHttpImageGenerationOptions } from "./http-image-generation";
+export { createCanvasHttpMaskRefinement, type CanvasHttpMaskRefinementOptions } from "./http-mask-refinement";
+export type { CanvasMaskRefinement, CanvasMaskRefinementBounds, CanvasMaskRefinementRequest, CanvasMaskRefinementResult } from "./mask-refinement";
+export { CanvasProjectGenerationDialog, type CanvasProjectGenerationDialogProps, type CanvasProjectGenerationMode } from "../../components/canvas/canvas-project-generation-dialog";
 export type { CanvasAudioGeneration, CanvasAudioRequest, CanvasAudioSettings } from "./audio-generation";
 export type { CanvasProviderModelResolution, CanvasProviderModelResolver, CanvasVideoGeneration, CanvasVideoRequest, CanvasVideoSettings, CanvasVideoProviderHandle, CanvasVideoResult } from "./video-generation";
 export type { CanvasVideoProvider, CanvasVideoTaskHandle } from "../../types/canvas";
