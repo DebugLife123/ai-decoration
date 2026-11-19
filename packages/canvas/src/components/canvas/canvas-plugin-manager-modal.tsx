@@ -214,7 +214,7 @@ export function CanvasPluginManagerModal({ open, onClose, pluginManager }: { ope
     ];
 
     return (
-        <Modal className="canvas-overlay-modal" title={t("canvas.plugins.title")} open={open} onCancel={onClose} footer={null} centered width={640}>
+        <Modal className="canvas-overlay-modal" title={t("canvas.plugins.title")} open={open} onCancel={onClose} footer={null} centered width={640} styles={{ body: { maxHeight: "calc(100dvh - 144px)", overflowY: "auto" } }}>
             <div className="space-y-3">
                 <div className="flex items-start gap-2 rounded-lg border px-3 py-2 text-xs leading-5" style={{ borderColor: "#f59e0b55", background: "#f59e0b14", color: theme.node.text }}>
                     <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />

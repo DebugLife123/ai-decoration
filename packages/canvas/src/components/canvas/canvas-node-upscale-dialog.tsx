@@ -50,16 +50,15 @@ export function CanvasNodeUpscaleDialog({ dataUrl, open, saving = false, onClose
     }, [image, sourceLongEdge]);
 
     return (
-        <Modal className="canvas-overlay-modal" title={null} open={open && Boolean(dataUrl)} closable={!saving} keyboard={!saving} onCancel={() => { if (!saving) onClose(); }} footer={null} width={820} centered destroyOnHidden>
+        <Modal className="canvas-overlay-modal" title={t("canvas.editors.upscaleTitle")} open={open && Boolean(dataUrl)} closable={!saving} keyboard={!saving} onCancel={() => { if (!saving) onClose(); }} footer={null} width={820} centered destroyOnHidden styles={{ body: { maxHeight: "calc(100dvh - 160px)", overflowY: "auto" } }}>
             <div className="space-y-5">
                 <div>
-                    <h2 className="text-xl font-semibold">{t("canvas.editors.upscaleTitle")}</h2>
                     <p className="mt-1 text-sm opacity-60">{t("canvas.editors.upscaleDescription")}</p>
                 </div>
                 <div className="grid gap-6 md:grid-cols-[minmax(260px,1fr)_360px]">
                     <div className="rounded-xl border p-4">
-                        <div className="grid min-h-[280px] place-items-center rounded-lg bg-black/5">
-                            <img src={dataUrl} alt="" className="max-h-[320px] max-w-full rounded-lg object-contain shadow-xl" draggable={false} />
+                        <div className="grid min-h-[200px] place-items-center rounded-lg bg-black/5 md:min-h-[280px]">
+                            <img src={dataUrl} alt="" className="max-h-[200px] max-w-full rounded-lg object-contain shadow-xl md:max-h-[320px]" draggable={false} />
                         </div>
                         <div className="mt-3 flex items-center justify-between text-sm">
                             <span className="opacity-60">{t("canvas.editors.source")}</span>

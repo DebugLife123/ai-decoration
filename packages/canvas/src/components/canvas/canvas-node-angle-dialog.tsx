@@ -28,10 +28,9 @@ export function CanvasNodeAngleDialog({ dataUrl, open, onClose, onConfirm }: { d
     const update = <Key extends keyof CanvasImageAngleParams>(key: Key, value: CanvasImageAngleParams[Key]) => setParams((current) => ({ ...current, [key]: value }));
 
     return (
-        <Modal className="canvas-overlay-modal" title={null} open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={860} centered destroyOnHidden>
+        <Modal className="canvas-overlay-modal" title={t("canvas.editors.angleTitle")} open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={860} centered destroyOnHidden styles={{ body: { maxHeight: "calc(100dvh - 160px)", overflowY: "auto" } }}>
             <div className="space-y-5">
                 <div>
-                    <h2 className="text-xl font-semibold">{t("canvas.editors.angleTitle")}</h2>
                     <p className="mt-1 text-sm opacity-60">{t("canvas.editors.angleDescription")}</p>
                 </div>
                 <div className="grid gap-6 md:grid-cols-[minmax(260px,1fr)_360px]">

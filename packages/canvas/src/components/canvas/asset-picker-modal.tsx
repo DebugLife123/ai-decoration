@@ -21,7 +21,7 @@ type Props = {
 export function AssetPickerModal({ open, library, defaultTab = "my-assets", onInsert, onClose }: Props) {
     const { t } = useTranslation();
     return (
-        <Modal className="canvas-overlay-modal" title={t("canvas.assetPicker.title")} open={open} onCancel={onClose} footer={null} width={860} destroyOnHidden styles={{ body: { padding: "0 24px 24px", minHeight: 480 } }}>
+        <Modal className="canvas-overlay-modal" title={t("canvas.assetPicker.title")} open={open} onCancel={onClose} footer={null} width={860} destroyOnHidden styles={{ body: { padding: "0 24px 24px", minHeight: "min(480px, calc(100dvh - 160px))", maxHeight: "calc(100dvh - 160px)", overflowY: "auto" } }}>
             {open ? <LibraryBrowser library={library} defaultTab={defaultTab} onInsert={onInsert} /> : null}
         </Modal>
     );
