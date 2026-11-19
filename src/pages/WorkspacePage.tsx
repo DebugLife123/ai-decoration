@@ -7,7 +7,7 @@ import { loadBudgetSnapshot } from '../services/budgetSnapshot';
 import RoomImageEditor, { type RoomImageVersion } from '../components/RoomImageEditor';
 import { templates } from '../features/styleLibrary/inspirationTemplates';
 import { createPersistentGenerationTask, failPersistentGenerationTask, finishPersistentGenerationTask, getPersistentGenerationTask, hasPersistentWorkspaceSession, persistWorkspaceProject, startPersistentGenerationTask, updatePersistentGenerationTask } from '../services/workspaceData';
-import { clearActiveGeneration, patchActiveGeneration, writeActiveGeneration } from '../services/generationTracker';
+import { clearActiveGeneration, isActiveGenerationFresh, patchActiveGeneration, readActiveGeneration, writeActiveGeneration } from '../services/generationTracker';
 import type { Project, DesignVersion, GenerationTask } from '../services/dataContracts';
 import { createId } from '../utils/id';
 import './WorkspacePage.css';
@@ -266,6 +266,7 @@ export default function WorkspacePage() {
         setResults(partialResults);
         setTaskRecoveryError(errorMessage);
         setMessage('');
+        clearActiveGeneration(task.id);
         return;
       }
       const taskSource = project.spaceType.startsWith('CAD') ? 'cad' : 'floorplan';
@@ -295,6 +296,14 @@ export default function WorkspacePage() {
         if (!isActive()) return;
         setWorkKind('generating');
         setGenerationProgress(job);
+        const now = Date.now();
+        if (now - progressTrackerRef.current > 3000) {
+          progressTrackerRef.current = now;
+          patchActiveGeneration({
+            stage: job.stage, message: job.message,
+            completedRooms: job.completedRooms, totalRooms: job.totalRooms,
+          });
+        }
         void updatePersistentGenerationTask(task.id, {
           stage: job.stage || 'generating', progress: 25 + Math.floor(70 * Math.min(1, job.completedRooms / Math.max(job.totalRooms, 1))),
           message: job.message || '正在恢复生成进度', completedRooms: job.completedRooms, totalRooms: job.totalRooms,
@@ -323,6 +332,7 @@ export default function WorkspacePage() {
         setStage(3);
         setWorkKind(null);
         setMessage('方案已恢复并生成完成。');
+        clearActiveGeneration(task.id);
         return;
       }
       const completedAt = new Date().toISOString();
@@ -351,6 +361,7 @@ export default function WorkspacePage() {
       setResults(generatedResults);
       setStage(3);
       setMessage(warning ? `部分效果图未完成：${warning}` : '方案已恢复并生成完成。');
+      clearActiveGeneration(task.id);
       const record: DesignHistoryRecord = {
         id: version.id, name: `${styleOptions.find((style) => style.key === task.style)?.name || task.style} · ${new Date(completedAt).toLocaleDateString('zh-CN')}`,
         createdAt: completedAt, style: task.style, source, floorPlan: project.floorPlanUrl || '', analysis: result.analysis,
@@ -374,9 +385,27 @@ export default function WorkspacePage() {
     const requestedProject = searchParams.get('projectId');
     const requestedTask = searchParams.get('taskId');
     if (!requestedProject || !requestedTask || !savedProjects.length) return;
+    if (activeTaskRef.current === requestedTask) return;
     const project = savedProjects.find((item) => item.id === requestedProject);
     const task = project?.tasks.find((item) => item.id === requestedTask);
     if (!project || !task || task.status === 'completed') return;
+    let active = true;
+    void recoverPersistentTask(project, task, () => active);
+    return () => { active = false; };
+  }, [recoverPersistentTask, searchParams, savedProjects]);
+
+  // Reload recovery: the URL usually carries the ids, but when it does not (history
+  // rewrite blocked, link opened in a new tab) fall back to the stored pointer.
+  useEffect(() => {
+    if (searchParams.get('taskId')) return;
+    if (!savedProjects.length) return;
+    const pointer = readActiveGeneration();
+    if (!pointer) return;
+    if (activeTaskRef.current === pointer.taskId) return;
+    if (!isActiveGenerationFresh(pointer)) { clearActiveGeneration(pointer.taskId); return; }
+    const project = savedProjects.find((item) => item.id === pointer.projectId);
+    const task = project?.tasks.find((item) => item.id === pointer.taskId);
+    if (!project || !task || task.status !== 'generating') { clearActiveGeneration(pointer.taskId); return; }
     let active = true;
     void recoverPersistentTask(project, task, () => active);
     return () => { active = false; };
