@@ -168,6 +168,8 @@ export default function WorkspacePage() {
   const recoveryTaskRef = useRef<string | null>(null);
   /** Task started by this tab; keeps the mount-recovery effect from hijacking a live run. */
   const activeTaskRef = useRef<string | null>(null);
+  /** Tasks already handed to the recovery flow in this mount, so it retries once at most. */
+  const recoveredTaskRef = useRef<Set<string>>(new Set());
   /** Throttles progress writes to the tracker. */
   const progressTrackerRef = useRef(0);
   const generatePlanRef = useRef<GeneratePlanRunner | null>(null);
@@ -395,9 +397,11 @@ export default function WorkspacePage() {
     const requestedTask = searchParams.get('taskId');
     if (!requestedProject || !requestedTask || !savedProjects.length) return;
     if (activeTaskRef.current === requestedTask) return;
+    if (recoveredTaskRef.current.has(requestedTask)) return;
     const project = savedProjects.find((item) => item.id === requestedProject);
     const task = project?.tasks.find((item) => item.id === requestedTask);
     if (!project || !task || task.status === 'completed') return;
+    recoveredTaskRef.current.add(requestedTask);
     let active = true;
     void recoverPersistentTask(project, task, () => active);
     return () => { active = false; };
@@ -411,10 +415,12 @@ export default function WorkspacePage() {
     const pointer = readActiveGeneration();
     if (!pointer) return;
     if (activeTaskRef.current === pointer.taskId) return;
+    if (recoveredTaskRef.current.has(pointer.taskId)) return;
     if (!isActiveGenerationFresh(pointer)) { clearActiveGeneration(pointer.taskId); return; }
     const project = savedProjects.find((item) => item.id === pointer.projectId);
     const task = project?.tasks.find((item) => item.id === pointer.taskId);
     if (!project || !task || task.status !== 'generating') { clearActiveGeneration(pointer.taskId); return; }
+    recoveredTaskRef.current.add(pointer.taskId);
     let active = true;
     void recoverPersistentTask(project, task, () => active);
     return () => { active = false; };
