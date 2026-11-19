@@ -62,13 +62,13 @@ function ProjectTile({ project, status, progress, hero, onOpen }: { project: Pro
         <span className="project-tile-meta">{styleNames[project.style]} · {project.spaceType}</span>
         <span className="project-tile-foot">
           <span className={`project-tile-status ${status}`}>{statusNames[status]}</span>
-          <time>{formatDate(project.updatedAt)}</time>
+          <span className="project-tile-foot-right">
+            <time>{formatDate(project.updatedAt)}</time>
+            <Link className="project-tile-cta" to={`/workspace?projectId=${project.id}`}>继续编辑<Icon name="arrow" /></Link>
+          </span>
         </span>
       </span>
     </button>
-    <span className="project-tile-actions">
-      <Link to={`/workspace?projectId=${project.id}`}>继续编辑<Icon name="arrow" /></Link>
-    </span>
   </article>;
 }
 
