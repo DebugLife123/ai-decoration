@@ -9,7 +9,7 @@ function insufficient(res: ServerResponse, result: { required: number; balance: 
   return sendJson(res, 402, { error: `积分不足：本次需要 ${result.required} 积分，当前余额 ${result.balance}。请联系管理员核对余额。`, code: 'INSUFFICIENT_CREDITS', required: result.required, balance: result.balance });
 }
 
-export type GatewayConfig = { baseUrl: string; apiKey: string; visionModel: string; imageModel: string; analysisTimeoutMs?: number; reviewTimeoutMs?: number; imageTimeoutMs?: number };
+export type GatewayConfig = { baseUrl: string; apiKey: string; imageApiKey?: string; visionModel: string; imageModel: string; analysisTimeoutMs?: number; reviewTimeoutMs?: number; imageTimeoutMs?: number };
 type RoomBounds = { x: number; y: number; width: number; height: number };
 type RoomEvidence = { type: string; detail: string };
 type IdentifiedRoom = { id?: string; name: string; description: string; suggestedName?: string; confidence?: number | null; status?: 'confirmed' | 'identified' | 'unknown'; evidence?: RoomEvidence[]; adjacentTo?: string[]; bounds?: RoomBounds | null };
@@ -82,8 +82,7 @@ export function textFrom(payload: any): string {
 }
 export function imageFrom(payload: any): string | null {
   const item = payload?.data?.[0];
-  if (typeof item?.url === 'string') return item.url;
-  if (typeof item?.b64_json === 'string') {
+  if (typeof item?.b64_json === 'string' && item.b64_json.length > 0) {
     const mime = item.b64_json.startsWith('/9j/')
       ? 'image/jpeg'
       : item.b64_json.startsWith('iVBORw0KGgo')
@@ -93,6 +92,7 @@ export function imageFrom(payload: any): string | null {
           : 'image/png';
     return `data:${mime};base64,${item.b64_json}`;
   }
+  if (typeof item?.url === 'string') return item.url;
   return typeof payload?.image_url === 'string' ? payload.image_url : null;
 }
 
@@ -133,10 +133,11 @@ export async function callApi(config: GatewayConfig, path: string, init: Request
     let upstreamRequestId: string | undefined;
     let responseReceived = false;
     try {
+      const apiKey = isImageRequest ? config.imageApiKey || config.apiKey : config.apiKey;
       const response = await fetch(`${baseUrl(config.baseUrl)}/v1${path}`, {
         ...init,
         signal: controller.signal,
-        headers: { Authorization: `Bearer ${config.apiKey}`, ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...init.headers },
+        headers: { Authorization: `Bearer ${apiKey}`, ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...init.headers },
       });
       responseReceived = true;
       status = response.status;
@@ -435,7 +436,7 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
     return Number.isFinite(parsed) && parsed >= 10_000 && parsed <= 600_000 ? parsed : fallback;
   };
   const config: GatewayConfig = {
-    baseUrl: env.AI_BASE_URL || 'https://codex2api.com', apiKey: env.CODEX2API_API_KEY || env.AI_API_KEY || '',
+    baseUrl: env.AI_BASE_URL || 'https://codex2api.com', apiKey: env.CODEX2API_API_KEY || env.AI_API_KEY || '', imageApiKey: env.AI_IMAGE_API_KEY,
     visionModel: env.AI_VISION_MODEL || env.AI_MODEL || 'gpt-6.1-sol', imageModel: env.AI_IMAGE_MODEL || env.IMAGE_MODEL || 'gpt-image-1',
     analysisTimeoutMs: timeoutValue('AI_ANALYSIS_TIMEOUT_MS', DEFAULT_ANALYSIS_TIMEOUT_MS),
     reviewTimeoutMs: timeoutValue('AI_REVIEW_TIMEOUT_MS', DEFAULT_REVIEW_TIMEOUT_MS),

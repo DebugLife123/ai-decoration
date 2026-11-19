@@ -53,7 +53,7 @@ deploy_production:
     $sourceDeploymentPath = 'D:/wyx/decoration-main-deploy'
     $releaseRoot = 'D:/wyx/decoration-releases'
     $releasePath = Join-Path $releaseRoot $env:CI_COMMIT_SHA
-    $sourceBaseComposeFile = Join-Path $sourceDeploymentPath 'docker-compose.yml'
+    $sourceBaseComposeFile = Join-Path $env:CI_PROJECT_DIR 'docker-compose.yml'
     $sourceComposeFile = Join-Path $sourceDeploymentPath '.docker-compose.integration.yml'
     $sourceEnvFile = Join-Path $sourceDeploymentPath '.env'
     if (-not (Test-Path -LiteralPath $sourceBaseComposeFile -PathType Leaf)) { throw "Production base compose file not found: $sourceBaseComposeFile" }
@@ -73,18 +73,20 @@ deploy_production:
     $composeFile = Join-Path $releasePath '.docker-compose.integration.yml'
     $composeArgs = @('--env-file', (Join-Path $releasePath '.env'), '--project-directory', $releasePath, '-p', 'wyx-decoration-integration', '-f', $baseComposeFile, '-f', $composeFile)
     $env:IMAGE_TAG = "wyx-decoration:$env:CI_COMMIT_SHA"
-    $previousImage = docker inspect wyx-decoration-integration-decoration-1 --format '{{.Config.Image}}' 2>$null
-    if ($LASTEXITCODE -eq 0 -and $previousImage) { $env:ROLLBACK_IMAGE = "wyx-decoration:rollback"; docker tag $previousImage $env:ROLLBACK_IMAGE; if ($LASTEXITCODE -ne 0) { throw "Could not preserve the current production image." } }
+    $env:BACKEND_IMAGE = "wyx-decoration-backend:$env:CI_COMMIT_SHA"
     docker build --tag $env:IMAGE_TAG $env:CI_PROJECT_DIR
-    if ($LASTEXITCODE -ne 0) { throw "Docker image build failed." }
+    if ($LASTEXITCODE -ne 0) { throw "Frontend build failed." }
+    docker build --tag $env:BACKEND_IMAGE (Join-Path $env:CI_PROJECT_DIR 'backend')
+    if ($LASTEXITCODE -ne 0) { throw "Backend build failed." }
     $env:DECORATION_IMAGE = $env:IMAGE_TAG
     docker compose @composeArgs config --quiet
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose configuration validation failed." }
-    docker compose @composeArgs up -d --no-build --no-deps decoration
-    if ($LASTEXITCODE -ne 0) { throw "Docker Compose could not start the production service." }
-    $healthy = $false
-    for ($attempt = 1; $attempt -le 18; $attempt++) { try { $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:4175/" -TimeoutSec 5; if ([int]$response.StatusCode -eq 200) { $healthy = $true; break } } catch {}; Start-Sleep -Seconds 5 }
-    if (-not $healthy) { docker compose @composeArgs ps; docker compose @composeArgs logs --tail 80 decoration; if ($env:ROLLBACK_IMAGE) { $env:DECORATION_IMAGE = $env:ROLLBACK_IMAGE; docker compose @composeArgs up -d --no-build --no-deps decoration; Start-Sleep -Seconds 10 }; throw "Production health check failed; previous image rollback was attempted." }
+    docker compose @composeArgs up -d --no-build --no-deps --wait backend
+    if ($LASTEXITCODE -ne 0) { throw "Backend readiness failed." }
+    docker compose @composeArgs up -d --no-build --no-deps --wait decoration
+    if ($LASTEXITCODE -ne 0) { throw "Gateway readiness failed." }
+    $response = Invoke-RestMethod -Uri 'http://127.0.0.1:4175/api/v1/health' -TimeoutSec 10
+    if ($response.data.status -ne 'UP') { throw "Application health failed." }
     $runningImage = docker inspect wyx-decoration-integration-decoration-1 --format '{{.Config.Image}}'
     if ($runningImage -ne $env:IMAGE_TAG) { throw "Unexpected running image: $runningImage" }
     $policy = docker inspect wyx-decoration-integration-decoration-1 --format '{{.HostConfig.RestartPolicy.Name}}'

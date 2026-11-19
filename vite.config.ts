@@ -5,7 +5,7 @@ import { createCadWorkflowMiddleware } from './server/cadWorkflow.js'
 import { createBackendProxyPlugin } from './server/backendProxy.js'
 import { resolve } from 'node:path'
 
-const aiEnvKeys = ['CODEX2API_API_KEY', 'AI_BASE_URL', 'AI_VISION_MODEL', 'AI_IMAGE_MODEL', 'AI_API_KEY', 'AI_MODEL', 'IMAGE_MODEL', 'AI_ANALYSIS_TIMEOUT_MS', 'AI_REVIEW_TIMEOUT_MS', 'AI_IMAGE_TIMEOUT_MS']
+const aiEnvKeys = ['CODEX2API_API_KEY', 'AI_IMAGE_API_KEY', 'AI_BASE_URL', 'AI_VISION_MODEL', 'AI_IMAGE_MODEL', 'AI_API_KEY', 'AI_MODEL', 'IMAGE_MODEL', 'AI_ANALYSIS_TIMEOUT_MS', 'AI_REVIEW_TIMEOUT_MS', 'AI_IMAGE_TIMEOUT_MS']
 
 export default defineConfig(() => {
   const env = process.env as Record<string, string | undefined>
@@ -24,6 +24,7 @@ export default defineConfig(() => {
   const cadGatewayConfig = {
     baseUrl: loadedEnv.AI_BASE_URL || 'https://codex2api.com',
     apiKey: loadedEnv.CODEX2API_API_KEY || loadedEnv.AI_API_KEY || '',
+    imageApiKey: loadedEnv.AI_IMAGE_API_KEY,
     visionModel: loadedEnv.AI_VISION_MODEL || loadedEnv.AI_MODEL || 'gpt-6.1-sol',
     imageModel: loadedEnv.AI_IMAGE_MODEL || loadedEnv.IMAGE_MODEL || 'gpt-image-1',
     analysisTimeoutMs: configuredTimeout('AI_ANALYSIS_TIMEOUT_MS', 90000),

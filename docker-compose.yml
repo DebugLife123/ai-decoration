@@ -18,6 +18,7 @@ services:
     build: ./backend
     image: ${BACKEND_IMAGE:-wyx-decoration-backend:local}
     environment:
+      CREDIT_GATEWAY_SECRET: ${CREDIT_GATEWAY_SECRET:-}
       SERVER_PORT: 8080
       DATABASE_URL: jdbc:postgresql://postgres:5432/decoration
       DATABASE_USERNAME: decoration
@@ -48,9 +49,11 @@ services:
     environment:
       BACKEND_URL: http://backend:8080
       CODEX2API_API_KEY: ${CODEX2API_API_KEY:-}
-      AI_BASE_URL: ${AI_BASE_URL:-https://codex2api.com}
+      AI_IMAGE_API_KEY: ${AI_IMAGE_API_KEY:-}
+      CREDIT_GATEWAY_SECRET: ${CREDIT_GATEWAY_SECRET:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://www.codex2api.com}
       AI_VISION_MODEL: ${AI_VISION_MODEL:-gpt-6.1-sol}
-      AI_IMAGE_MODEL: ${AI_IMAGE_MODEL:-grok-imagine-image-quality}
+      AI_IMAGE_MODEL: ${AI_IMAGE_MODEL:-gpt-image-2.6}
       AI_ANALYSIS_TIMEOUT_MS: ${AI_ANALYSIS_TIMEOUT_MS:-90000}
       AI_REVIEW_TIMEOUT_MS: ${AI_REVIEW_TIMEOUT_MS:-90000}
       AI_IMAGE_TIMEOUT_MS: ${AI_IMAGE_TIMEOUT_MS:-180000}
