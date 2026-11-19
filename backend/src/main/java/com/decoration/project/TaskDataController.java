@@ -53,12 +53,6 @@ public class TaskDataController {
         return queued(jwt, projectId, "RECOMMENDATION", input);
     }
 
-    @GetMapping("/projects/{projectId}/tasks")
-    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR', 'COMPANY_VIEWER', 'PERSONAL_USER')")
-    public ApiResponse<List<JsonNode>> list(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID projectId) {
-        return ApiResponse.success(historyService.listTasks(ownerId(jwt), projectId));
-    }
-
     @GetMapping("/tasks/active")
     @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR', 'COMPANY_VIEWER', 'PERSONAL_USER')")
     public ApiResponse<List<JsonNode>> active(@AuthenticationPrincipal Jwt jwt) {
