@@ -7,6 +7,7 @@ import { loadBudgetSnapshot } from '../services/budgetSnapshot';
 import RoomImageEditor, { type RoomImageVersion } from '../components/RoomImageEditor';
 import { templates } from '../features/styleLibrary/inspirationTemplates';
 import { createPersistentGenerationTask, failPersistentGenerationTask, finishPersistentGenerationTask, getPersistentGenerationTask, hasPersistentWorkspaceSession, persistWorkspaceProject, startPersistentGenerationTask, updatePersistentGenerationTask } from '../services/workspaceData';
+import { clearActiveGeneration, patchActiveGeneration, writeActiveGeneration } from '../services/generationTracker';
 import type { Project, DesignVersion, GenerationTask } from '../services/dataContracts';
 import { createId } from '../utils/id';
 import './WorkspacePage.css';
@@ -142,7 +143,7 @@ function PlanComparison({ original, render, title }: { original: string; render:
 }
 
 export default function WorkspacePage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { selectedStyle, setSelectedStyle, loadProjects } = useAppStore();
   const routeSourceType: PlanSource = searchParams.get('source') === 'floorplan' ? 'floorplan' : 'cad';
   const [sourceOverride, setSourceOverride] = useState<{ route: PlanSource; value: PlanSource } | null>(null);
@@ -165,6 +166,10 @@ export default function WorkspacePage() {
   const [taskRecoveryError, setTaskRecoveryError] = useState('');
   const [projectId, setProjectId] = useState<string | null>(null);
   const recoveryTaskRef = useRef<string | null>(null);
+  /** Task started by this tab; keeps the mount-recovery effect from hijacking a live run. */
+  const activeTaskRef = useRef<string | null>(null);
+  /** Throttles progress writes to the tracker. */
+  const progressTrackerRef = useRef(0);
   const generatePlanRef = useRef<GeneratePlanRunner | null>(null);
   const savedProjects = useAppStore((state) => state.projects);
   const isWorking = workKind !== null;
@@ -409,6 +414,20 @@ export default function WorkspacePage() {
       persistedProject = { ...persistedProject, tasks: [task] };
       await persistWorkspaceProject(persistedProject);
       setProjectId(persistentProjectId);
+      activeTaskRef.current = taskId;
+      writeActiveGeneration({
+        taskId, projectId: persistentProjectId,
+        mode: hasPersistentWorkspaceSession() ? 'api' : 'local',
+        style: workflowStyle, source: sourceType, startedAt: now, stage: 'recognizing', progress: 5,
+      });
+      // Keep the task id in the URL so a reload can find the run even before the
+      // backend pointer is read back.
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        next.set('projectId', persistentProjectId);
+        next.set('taskId', taskId);
+        return next;
+      }, { replace: true });
       await loadProjects();
     } catch (error) {
       setWorkKind(null);
@@ -437,7 +456,7 @@ export default function WorkspacePage() {
       await failPersistentGenerationTask(taskId, failedTask.error || '户型识别失败').catch(() => undefined);
       await persistWorkspaceProject({ ...persistedProject, updatedAt: failedTask.completedAt, status: 'failed', tasks: [failedTask] }).then(loadProjects).catch(() => undefined);
     }
-    finally { setWorkKind(null); }
+    finally { setWorkKind(null); if (activeTaskRef.current === taskId) activeTaskRef.current = null; }
   };
   const generatePlan = async (input: GenerationInput, taskId: string, baseProject: Project, context?: GenerationContext) => {
     const planImage = context?.floorPlan || imageData;
@@ -445,6 +464,7 @@ export default function WorkspacePage() {
     const planStyle = context?.style || workflowStyle;
     const planTemplate = styleOptions.find((style) => style.key === planStyle);
     if (!planImage) { setMessage('请先上传户型图片。'); setStage(1); return; }
+    activeTaskRef.current = taskId;
     setWorkElapsed(0); setWorkKind('generating'); setGenerationProgress(null); setMessage(''); setResults([]); setStage(2);
     const sourcePrompt = planSource === 'cad' ? '输入来源为 CAD 导出的住宅平面图，严格参考图中墙体、门窗和尺寸标注。' : '输入来源为住宅户型图，严格参考图中可见的房间边界与空间连接。';
     const prompt = [sourcePrompt, planTemplate?.prompt, ...(planStyle === routeStyle ? preferences : []).map(([label, value]) => `${label}:${value}`), `户型识别结果：${input.analysis}`, `识别空间：${input.rooms.map((room) => `${room.name}${room.suggestedName ? `（候选：${room.suggestedName}）` : ''}（${room.description}；${room.evidence?.map((item) => item.detail).join('、') || '无额外可见证据'}）`).join('；')}`].filter(Boolean).join('。');
@@ -454,6 +474,14 @@ export default function WorkspacePage() {
       const reportProgress = (job: GenerationJob) => {
         setGenerationProgress(job);
         const progress = 25 + Math.floor(70 * Math.min(1, job.completedRooms / Math.max(job.totalRooms, 1)));
+        const now = Date.now();
+        if (now - progressTrackerRef.current > 3000) {
+          progressTrackerRef.current = now;
+          patchActiveGeneration({
+            stage: job.stage, progress, message: job.message,
+            completedRooms: job.completedRooms, totalRooms: job.totalRooms,
+          });
+        }
         progressQueue = progressQueue.then(() => updatePersistentGenerationTask(taskId, {
           stage: job.stage || 'generating', progress, message: job.message || '正在生成空间效果图',
           completedRooms: job.completedRooms, totalRooms: job.totalRooms,
@@ -472,6 +500,7 @@ export default function WorkspacePage() {
       setResults(generatedResults);
       setMessage(result.warning ? `部分效果图未完成：${result.warning}` : '');
       setStage(3);
+      clearActiveGeneration(taskId);
       const completedAt = new Date().toISOString();
       const versionId = newId();
       const task: GenerationTask = { ...baseProject.tasks[0], status: result.warning ? 'failed' : 'completed', stage: result.warning ? 'failed' : 'completed', completedAt, error: result.warning, result: { versionId, roomCount: generatedResults.length - 1, coverReady: true } };
@@ -499,6 +528,7 @@ export default function WorkspacePage() {
     } catch (error) {
       console.error('Whole-home generation failed:', error);
       setStage(1); setMessage(error instanceof Error ? '方案生成失败：' + error.message : '方案生成失败，请稍后重试。');
+      clearActiveGeneration(taskId);
       const completedAt = new Date().toISOString();
       const task: GenerationTask = { ...baseProject.tasks[0], status: 'failed', stage: 'failed', completedAt, error: error instanceof Error ? error.message : '方案生成失败' };
       await failPersistentGenerationTask(task.id, task.error || '方案生成失败', generationProgress ? { cover: generationProgress.cover, rooms: generationProgress.rooms, failedRooms: generationProgress.failedRooms } : undefined).catch(() => undefined);
@@ -589,7 +619,7 @@ export default function WorkspacePage() {
       setHistoryMessage(error instanceof Error ? error.message : '删除方案记录失败。');
     }
   };
-  const reset = () => { setFile(null); setImageData(''); setImageMeta(null); setRooms([]); setSelectedRooms([]); setResults([]); setGenerationProgress(null); setGenerationJobId(null); setTaskRecoveryError(''); setActiveHistoryId(null); setEditingRoomIndex(null); setStage(1); setMessage(''); };
+  const reset = () => { clearActiveGeneration(); setFile(null); setImageData(''); setImageMeta(null); setRooms([]); setSelectedRooms([]); setResults([]); setGenerationProgress(null); setGenerationJobId(null); setTaskRecoveryError(''); setActiveHistoryId(null); setEditingRoomIndex(null); setStage(1); setMessage(''); };
 
   return <div className="workspace-page"><main className="workspace-main">
     <header className={`workspace-header ${stage === 4 ? 'report-workspace-header' : ''}`}><div><span className="workspace-eyebrow">{stage === 4 ? 'JIAN YI ZHUANG / WHOLE-HOME STUDY' : 'JIAN YI ZHUANG / DESIGN FLOW'}</span><h2>{stage === 1 ? sourceType === 'cad' ? 'CAD 图纸全屋渲染' : '户型图全屋设计' : stage === 2 ? taskRecoveryError ? '生成任务记录' : '正在识别并生成方案' : stage === 3 ? '方案已生成，等待查看' : `${activeStyle.name} · 整屋设计方案`}</h2>{stage < 4 && <p>{taskRecoveryError ? '任务状态与已完成结果已恢复。' : stage === 3 ? '方案已经生成并保存到当前浏览器，点击下方按钮进入完整汇报。' : sourceType === 'cad' ? '上传图纸、选择风格后，系统会自动识别空间并生成方案。' : '上传户型图、选择风格后，系统会自动识别空间并生成方案。'}</p>}</div><button className="reset-button" onClick={stage === 4 ? () => setStage(3) : reset}><Icon name="refresh" />{stage === 4 ? '返回预览' : '重新开始'}</button></header>
