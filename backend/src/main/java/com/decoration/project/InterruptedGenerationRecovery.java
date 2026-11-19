@@ -28,7 +28,7 @@ public class InterruptedGenerationRecovery {
     public void markInterruptedTasks() {
         var now = Timestamp.from(Instant.now());
         jdbc.update("""
-                update generation_tasks set status = 'FAILED', error_message = ?,
+                update generation_tasks set status = 'FAILED', stage = 'interrupted', error_message = ?,
                     started_at = coalesce(started_at, created_at), completed_at = ?
                 where status in ('QUEUED', 'RUNNING')
                 """, RESTART_MESSAGE, now);

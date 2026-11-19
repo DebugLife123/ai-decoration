@@ -126,9 +126,9 @@ public class TaskLifecycleService {
                 update generation_tasks set status = 'RUNNING', started_at = coalesce(started_at, ?),
                     stage = case when stage = 'queued' then 'recognizing' else stage end,
                     progress = greatest(progress, 1), progress_message = ?, completed_at = null,
-                    error_message = null, available_at = ?
+                    error_message = null, available_at = ?, heartbeat_at = ?
                 where owner_id = ? and id = ? and status in ('QUEUED', 'RUNNING')
-                """, Timestamp.from(now), "正在准备 AI 分析…", Timestamp.from(now), ownerId, taskId);
+                """, Timestamp.from(now), "正在准备 AI 分析…", Timestamp.from(now), Timestamp.from(now), ownerId, taskId);
         return task(taskId, ownerId);
     }
 
@@ -147,10 +147,11 @@ public class TaskLifecycleService {
         jdbc.update("""
                 update generation_tasks set status = 'RUNNING', started_at = coalesce(started_at, ?),
                     stage = ?, progress = ?, progress_message = ?, completed_rooms = ?, total_rooms = ?,
-                    result_json = coalesce(?::jsonb, result_json), completed_at = null
+                    result_json = coalesce(?::jsonb, result_json), completed_at = null, heartbeat_at = ?
                 where owner_id = ? and id = ? and status in ('QUEUED', 'RUNNING')
                 """, Timestamp.from(now), cleanStage(stage), progress, cleanMessage(message), completedRooms,
-                totalRooms, partialResult == null || partialResult.isNull() ? null : json(partialResult), ownerId, taskId);
+                totalRooms, partialResult == null || partialResult.isNull() ? null : json(partialResult),
+                Timestamp.from(now), ownerId, taskId);
         return task(taskId, ownerId);
     }
 
@@ -197,6 +198,15 @@ public class TaskLifecycleService {
 
     public JsonNode get(UUID ownerId, UUID taskId) { return task(taskId, ownerId); }
 
+    /** Tasks the owner can still see moving; drives the workspace banner and project list. */
+    public java.util.List<JsonNode> listActive(UUID ownerId) {
+        return jdbc.query("""
+                select id from generation_tasks
+                where owner_id = ? and status in ('QUEUED', 'RUNNING')
+                order by created_at desc, id
+                """, (rs, row) -> task(rs.getObject("id", UUID.class), ownerId), ownerId);
+    }
+
     @Transactional
     public JsonNode claimNext(String workerId, int leaseSeconds) {
         var now = Instant.now();
@@ -230,7 +240,7 @@ public class TaskLifecycleService {
         var sql = """
                 select owner_id, project_id, input_json, result_json, status, error_message,
                     retry_count, max_attempts, created_at, started_at, completed_at, manual_retry_count,
-                    stage, progress, progress_message, completed_rooms, total_rooms
+                    stage, progress, progress_message, completed_rooms, total_rooms, heartbeat_at
                 from generation_tasks where id = ? and (?::uuid is null or owner_id = ?)
                 """;
         var rows = jdbc.query(sql, (rs, row) -> {
@@ -256,6 +266,8 @@ public class TaskLifecycleService {
                     var completed = rs.getTimestamp("completed_at");
                     if (started != null) output.put("startedAt", started.toInstant().toString());
                     if (completed != null) output.put("completedAt", completed.toInstant().toString());
+                    var heartbeat = rs.getTimestamp("heartbeat_at");
+                    if (heartbeat != null) output.put("heartbeatAt", heartbeat.toInstant().toString());
                     return new TaskRecord(rs.getObject("owner_id", UUID.class), rs.getObject("project_id", UUID.class),
                             taskId, output, rs.getString("status"), rs.getInt("retry_count"), rs.getInt("max_attempts"),
                             rs.getInt("manual_retry_count"), null, null);

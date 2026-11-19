@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -50,6 +51,18 @@ public class TaskDataController {
                                                                   @PathVariable UUID projectId,
                                                                   @RequestBody JsonNode input) {
         return queued(jwt, projectId, "RECOMMENDATION", input);
+    }
+
+    @GetMapping("/projects/{projectId}/tasks")
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR', 'COMPANY_VIEWER', 'PERSONAL_USER')")
+    public ApiResponse<List<JsonNode>> list(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID projectId) {
+        return ApiResponse.success(historyService.listTasks(ownerId(jwt), projectId));
+    }
+
+    @GetMapping("/tasks/active")
+    @PreAuthorize("hasAnyRole('COMPANY_ADMIN', 'COMPANY_EDITOR', 'COMPANY_VIEWER', 'PERSONAL_USER')")
+    public ApiResponse<List<JsonNode>> active(@AuthenticationPrincipal Jwt jwt) {
+        return ApiResponse.success(lifecycleService.listActive(ownerId(jwt)));
     }
 
     @GetMapping("/tasks/{taskId}")
