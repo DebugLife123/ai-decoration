@@ -176,6 +176,56 @@ export async function failPersistentGenerationTask(taskId: string, error: string
   if (hasPersistentWorkspaceSession()) await projectApiRequest(`/api/v1/tasks/${taskId}/failure`, { method: 'POST', body: JSON.stringify({ error, retryable: false, partialResult, snapshot }) });
 }
 
+/** A task as the backend reports it; used by the project list to show live progress. */
+export interface RemoteGenerationTask {
+  id: string;
+  projectId: string;
+  status: string;
+  stage?: string;
+  progress?: number;
+  progressMessage?: string;
+  completedRooms?: number;
+  totalRooms?: number;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+  heartbeatAt?: string;
+}
+
+function normalizeRemoteTask(value: unknown): RemoteGenerationTask {
+  const task = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
+  const numberOrUndefined = (input: unknown) => typeof input === 'number' && Number.isFinite(input) ? input : undefined;
+  const stringOrUndefined = (input: unknown) => typeof input === 'string' && input ? input : undefined;
+  return {
+    id: String(task.id ?? ''),
+    projectId: String(task.projectId ?? ''),
+    status: String(task.status ?? '').toUpperCase(),
+    stage: stringOrUndefined(task.stage),
+    progress: numberOrUndefined(task.progress),
+    progressMessage: stringOrUndefined(task.progressMessage),
+    completedRooms: numberOrUndefined(task.completedRooms),
+    totalRooms: numberOrUndefined(task.totalRooms),
+    error: stringOrUndefined(task.error),
+    startedAt: stringOrUndefined(task.startedAt),
+    completedAt: stringOrUndefined(task.completedAt),
+    heartbeatAt: stringOrUndefined(task.heartbeatAt),
+  };
+}
+
+/** Tasks that are still queued or running for the signed-in account. */
+export async function listActiveGenerationTasks(): Promise<RemoteGenerationTask[]> {
+  if (!hasPersistentWorkspaceSession()) return [];
+  const tasks = await projectApiRequest<unknown[]>('/api/v1/tasks/active');
+  return Array.isArray(tasks) ? tasks.map(normalizeRemoteTask) : [];
+}
+
+/** Every task the backend recorded for one project, newest first. */
+export async function listProjectGenerationTasks(projectId: string): Promise<RemoteGenerationTask[]> {
+  if (!hasPersistentWorkspaceSession()) return [];
+  const tasks = await projectApiRequest<unknown[]>(`/api/v1/projects/${encodeURIComponent(projectId)}/tasks`);
+  return Array.isArray(tasks) ? tasks.map(normalizeRemoteTask) : [];
+}
+
 export function workspaceAssetUrl(url: string): string {
   if (!url.startsWith('/api/v1/projects/') || !currentAccessToken()) return url;
   return `${authApiBaseUrl}${url}`;

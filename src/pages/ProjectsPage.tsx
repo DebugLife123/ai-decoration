@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../stores/appStore';
-import { workspaceDataAdapter } from '../services/workspaceData';
+import { hasPersistentWorkspaceSession, listActiveGenerationTasks, workspaceDataAdapter, type RemoteGenerationTask } from '../services/workspaceData';
 import type { Project } from '../stores/appStore';
 import type { MaterialRecord } from '../services/dataContracts';
 import { wholeHomeStyles, type WholeHomeStyle } from '../features/styleLibrary/wholeHomeStyles';
@@ -33,9 +33,9 @@ function Icon({ name }: { name: 'arrow' | 'plus' | 'trash' | 'layers' | 'clock' 
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
-function ProjectCard({ project, status, selected, onSelect }: { project: Project; status: ProjectStatus; selected: boolean; onSelect: () => void }) {
+function ProjectCard({ project, status, progress, selected, onSelect }: { project: Project; status: ProjectStatus; progress?: number; selected: boolean; onSelect: () => void }) {
   return <button className={`project-card ${selected ? 'selected' : ''}`} onClick={onSelect}>
-    <div className="project-card-media">{project.thumbnail ? <img src={project.thumbnail} alt={`${project.name}方案缩略图`} /> : <div className="project-card-placeholder"><Icon name="layers" /></div>}<span className={`project-status ${status}`}>{statusNames[status]}</span></div>
+    <div className="project-card-media">{project.thumbnail ? <img src={project.thumbnail} alt={`${project.name}方案缩略图`} /> : <div className="project-card-placeholder"><Icon name="layers" /></div>}<span className={`project-status ${status}`}>{statusNames[status]}</span>{typeof progress === 'number' && <span className="project-card-progress" aria-hidden="true"><i style={{ width: `${Math.min(100, Math.max(2, progress))}%` }} /></span>}</div>
     <div className="project-card-body"><strong>{project.name}</strong><span>{styleNames[project.style]} · {project.spaceType}</span><small>更新于 {formatDate(project.updatedAt)}</small></div>
   </button>;
 }
@@ -58,6 +58,26 @@ export default function ProjectsPage() {
     return () => { active = false; };
   }, []);
   const navigate = useNavigate();
+  const [activeTasks, setActiveTasks] = useState<RemoteGenerationTask[]>([]);
+  useEffect(() => {
+    if (!hasPersistentWorkspaceSession()) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      if (!cancelled && !document.hidden) {
+        try {
+          const tasks = await listActiveGenerationTasks();
+          if (!cancelled) setActiveTasks(tasks);
+        } catch {
+          // Live progress is an enhancement; project loading already surfaces real errors.
+        }
+      }
+      if (!cancelled) timer = window.setTimeout(poll, 4000);
+    };
+    void poll();
+    return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
+  }, []);
+  const liveTaskByProject = useMemo(() => new Map(activeTasks.map((task) => [task.projectId, task])), [activeTasks]);
   const [selectedId, setSelectedId] = useState(projects[0]?.id || '');
   const [selectedVersionId, setSelectedVersionId] = useState(projects[0]?.versions.at(-1)?.id || '');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -84,9 +104,25 @@ export default function ProjectsPage() {
 
   return <div className="projects-page">
     <header className="projects-header"><div><span className="projects-eyebrow">YOUR DESIGN ARCHIVE</span><h1>我的项目</h1><p>所有设计尝试、生成任务和方案版本都集中在这里。</p></div><Link className="projects-primary-button" to="/workspace"><Icon name="plus" />新建项目</Link></header>
+    {activeTasks.length > 0 && <section className="projects-live" aria-live="polite">
+      <div className="projects-live-head"><span className="projects-live-dot" aria-hidden="true" /><strong>正在生成 {activeTasks.length} 个方案</strong><small>可以离开这个页面，进度会保存在账号里</small></div>
+      <div className="projects-live-rows">{activeTasks.map((task) => {
+        const project = projects.find((item) => item.id === task.projectId);
+        const percent = typeof task.progress === 'number' ? task.progress : Math.round(((task.completedRooms ?? 0) / Math.max(task.totalRooms ?? 1, 1)) * 100);
+        return <article className="projects-live-row" key={task.id}>
+          <div className="projects-live-thumb">{project?.thumbnail ? <img src={project.thumbnail} alt="" /> : <Icon name="layers" />}</div>
+          <div className="projects-live-copy">
+            <strong>{project?.name ?? '新方案'}</strong>
+            <small>{task.progressMessage || '正在生成空间效果图'}{task.totalRooms ? ` · ${task.completedRooms ?? 0}/${task.totalRooms} 个空间` : ''}</small>
+            <div className="projects-live-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><span style={{ width: `${Math.min(100, Math.max(3, percent))}%` }} /></div>
+          </div>
+          <Link className="detail-button primary" to={`/workspace?projectId=${task.projectId}&taskId=${task.id}`}>进入工作台 <Icon name="arrow" /></Link>
+        </article>;
+      })}</div>
+    </section>}
     <div className={`projects-local-note ${storageWarning ? 'warning' : ''}`}><Icon name="clock" /><span>{storageWarning || '当前使用本机保存，等后端接口接入后再同步到账号。'}</span></div>
     {projectsStatus === 'loading' ? <div className="projects-empty" role="status"><h2>正在加载项目</h2><p>请稍候。</p></div> : projectsStatus === 'error' ? <div className="projects-empty" role="alert"><h2>项目暂时无法加载</h2><p>{projectsError}</p><button className="projects-primary-button" onClick={() => void loadProjects()}>重试</button></div> : projects.length === 0 ? <EmptyProjects /> : <div className="projects-layout">
-      <section className="projects-list" aria-label="项目列表"><div className="projects-list-heading"><strong>全部项目</strong><span>{projects.length} 个</span></div>{projects.map((project) => <ProjectCard key={project.id} project={project} status={statusById.get(project.id) ?? 'draft'} selected={selectedProject?.id === project.id} onSelect={() => chooseProject(project)} />)}</section>
+      <section className="projects-list" aria-label="项目列表"><div className="projects-list-heading"><strong>全部项目</strong><span>{projects.length} 个</span></div>{projects.map((project) => <ProjectCard key={project.id} project={project} status={statusById.get(project.id) ?? 'draft'} progress={liveTaskByProject.get(project.id)?.progress} selected={selectedProject?.id === project.id} onSelect={() => chooseProject(project)} />)}</section>
       {selectedProject && <section className="project-detail"><div className="project-detail-head"><div><span className="projects-eyebrow">PROJECT DETAIL</span><h2>{selectedProject.name}</h2><p>{styleNames[selectedProject.style]} · {selectedProject.spaceType}{selectedProject.budget !== undefined ? ` · 预算 ${selectedProject.budget} 万元` : ''} · 创建于 {formatDate(selectedProject.createdAt)}</p></div><div className="detail-actions"><Link className="detail-button primary" to={`/workspace?projectId=${selectedProject.id}${selectedVersion ? `&versionId=${selectedVersion.id}` : ''}`}>继续编辑 <Icon name="arrow" /></Link><button className="detail-button danger" onClick={() => setConfirmDelete(true)}><Icon name="trash" />删除</button></div></div>
         <div className="detail-summary"><div><span>项目状态</span><strong className={`detail-status ${selectedStatus}`}>{statusNames[selectedStatus]}</strong></div><div><span>方案版本</span><strong>{selectedProject.versions.length}</strong></div><div><span>生成任务</span><strong>{selectedProject.tasks.length}</strong></div><div><span>关联材料</span><strong>{selectedProject.materialIds.length}</strong></div></div>
         <section className="detail-section"><div className="detail-section-heading"><div><span className="projects-eyebrow">PROJECT MATERIALS</span><h3>关联材料</h3></div><Link to="/materials">管理材料</Link></div>{materialsError ? <p className="detail-empty" role="alert">材料资料暂时无法加载：{materialsError}</p> : selectedProject.materialIds.length === 0 ? <p className="detail-empty">还没有关联材料。浏览材料库，把需要对比的材料加入项目。</p> : <div className="project-material-list">{selectedProject.materialIds.map((id) => {
