@@ -40,3 +40,7 @@ var/uploads/
 
 # WorkBuddy workspace memory (local only)
 .workbuddy/
+
+# Local QA artifacts (generated smoke-test images and screenshots)
+qa/fixtures/
+qa/screenshots/
