@@ -41,8 +41,8 @@ public class ProjectHistoryService {
         for (var row : taskRows) {
             jdbc.update("""
                     insert into generation_tasks(owner_id, project_id, id, task_type, status, input_json,
-                        result_json, error_message, attempt_count, created_at, started_at, completed_at)
-                    values (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, 0, ?, ?, ?)
+                        result_json, error_message, attempt_count, created_at, started_at, completed_at, heartbeat_at)
+                    values (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, 0, ?, ?, ?, ?)
                     on conflict (owner_id, id) do update set task_type = excluded.task_type,
                         status = excluded.status, input_json = excluded.input_json,
                         result_json = excluded.result_json,
@@ -51,7 +51,10 @@ public class ProjectHistoryService {
                     where generation_tasks.project_id = excluded.project_id
                     """, ownerId, projectId, row.id(), row.type(), row.status(), row.payload(), row.result(), row.error(),
                     Timestamp.from(row.createdAt()), row.startedAt() == null ? null : Timestamp.from(row.startedAt()),
-                    row.completedAt() == null ? null : Timestamp.from(row.completedAt()));
+                    row.completedAt() == null ? null : Timestamp.from(row.completedAt()),
+                    // Synced tasks must look alive immediately, otherwise the stale-task sweeper
+                    // cannot tell a live browser run from a row that never reported progress.
+                    Timestamp.from(row.startedAt() == null ? row.createdAt() : row.startedAt()));
         }
         for (var row : versionRows) {
             var nextVersion = jdbc.queryForObject("""
