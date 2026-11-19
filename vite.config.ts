@@ -5,7 +5,7 @@ import { createCadWorkflowMiddleware } from './server/cadWorkflow.js'
 import { createBackendProxyPlugin } from './server/backendProxy.js'
 import { resolve } from 'node:path'
 
-const aiEnvKeys = ['CODEX2API_API_KEY', 'AI_IMAGE_API_KEY', 'AI_BASE_URL', 'AI_VISION_MODEL', 'AI_IMAGE_MODEL', 'AI_API_KEY', 'AI_MODEL', 'IMAGE_MODEL', 'AI_ANALYSIS_TIMEOUT_MS', 'AI_REVIEW_TIMEOUT_MS', 'AI_IMAGE_TIMEOUT_MS']
+const aiEnvKeys = ['CODEX2API_API_KEY', 'AI_IMAGE_API_KEY', 'AI_BASE_URL', 'AI_VISION_MODEL', 'AI_IMAGE_MODEL', 'AI_API_KEY', 'AI_MODEL', 'IMAGE_MODEL', 'AI_VISION_FALLBACK_MODELS', 'AI_ANALYSIS_TOTAL_TIMEOUT_MS', 'AI_ANALYSIS_TIMEOUT_MS', 'AI_REVIEW_TIMEOUT_MS', 'AI_IMAGE_TIMEOUT_MS']
 
 export default defineConfig(() => {
   const env = process.env as Record<string, string | undefined>
@@ -27,7 +27,9 @@ export default defineConfig(() => {
     imageApiKey: loadedEnv.AI_IMAGE_API_KEY,
     visionModel: loadedEnv.AI_VISION_MODEL || loadedEnv.AI_MODEL || 'gpt-6.1-sol',
     imageModel: loadedEnv.AI_IMAGE_MODEL || loadedEnv.IMAGE_MODEL || 'gpt-image-1',
-    analysisTimeoutMs: configuredTimeout('AI_ANALYSIS_TIMEOUT_MS', 90000),
+    visionFallbackModels: (loadedEnv.AI_VISION_FALLBACK_MODELS || '').split(',').map(model => model.trim()).filter(Boolean),
+    analysisTotalTimeoutMs: configuredTimeout('AI_ANALYSIS_TOTAL_TIMEOUT_MS', 300000),
+    analysisTimeoutMs: configuredTimeout('AI_ANALYSIS_TIMEOUT_MS', 120000),
     reviewTimeoutMs: configuredTimeout('AI_REVIEW_TIMEOUT_MS', 90000),
     imageTimeoutMs: configuredTimeout('AI_IMAGE_TIMEOUT_MS', 180000),
   }

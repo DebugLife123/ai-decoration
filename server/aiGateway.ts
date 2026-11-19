@@ -4,12 +4,13 @@ import { getWholeHomeStyle, wholeHomePrompt } from '../src/features/styleLibrary
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 import { CREDIT_COSTS, databaseCredits } from './databaseCredits.ts';
+import { fetchAiUpstream } from './aiTransport.ts';
 
 function insufficient(res: ServerResponse, result: { required: number; balance: number }) {
   return sendJson(res, 402, { error: `积分不足：本次需要 ${result.required} 积分，当前余额 ${result.balance}。请联系管理员核对余额。`, code: 'INSUFFICIENT_CREDITS', required: result.required, balance: result.balance });
 }
 
-export type GatewayConfig = { baseUrl: string; apiKey: string; imageApiKey?: string; visionModel: string; imageModel: string; analysisTimeoutMs?: number; reviewTimeoutMs?: number; imageTimeoutMs?: number };
+export type GatewayConfig = { baseUrl: string; apiKey: string; imageApiKey?: string; visionModel: string; imageModel: string; analysisTimeoutMs?: number; visionFallbackModels?: string[]; analysisTotalTimeoutMs?: number; reviewTimeoutMs?: number; imageTimeoutMs?: number };
 type RoomBounds = { x: number; y: number; width: number; height: number };
 type RoomEvidence = { type: string; detail: string };
 type IdentifiedRoom = { id?: string; name: string; description: string; suggestedName?: string; confidence?: number | null; status?: 'confirmed' | 'identified' | 'unknown'; evidence?: RoomEvidence[]; adjacentTo?: string[]; bounds?: RoomBounds | null };
@@ -18,7 +19,7 @@ type GenerateRequest = { mode: 'photo' | 'floorplan'; style: string; prompt?: st
 type AnalyzeRequest = { floorPlan?: string; imageMeta?: PlanImageMeta; source?: 'cad' | 'floorplan' };
 type RoomImageEditRequest = { image?: string; mask?: string; instruction?: string; roomName?: string; style?: string };
 type ImageResult = { imageUrl: string };
-type AiCallContext = { requestId?: string; operation?: string; stage?: string; model?: string; inputImageBytes?: number };
+type AiCallContext = { requestId?: string; operation?: string; stage?: string; model?: string; inputImageBytes?: number; maxAttempts?: number };
 type GenerationJob = {
   id: string;
   requestId: string;
@@ -48,7 +49,7 @@ export async function readBody<T = GenerateRequest>(req: IncomingMessage): Promi
 }
 
 function baseUrl(value: string) { return value.replace(/\/+$/, '').replace(/\/v1$/, ''); }
-const DEFAULT_ANALYSIS_TIMEOUT_MS = 90_000;
+const DEFAULT_ANALYSIS_TIMEOUT_MS = 120_000;
 const DEFAULT_REVIEW_TIMEOUT_MS = 90_000;
 const DEFAULT_IMAGE_TIMEOUT_MS = 180_000;
 function imageByteLength(image: string) {
@@ -113,6 +114,10 @@ export class UpstreamError extends Error {
   }
 }
 
+export class AiConnectionError extends Error {}
+export class AiDeadlineError extends Error {}
+export class InvalidAnalysisError extends Error {}
+
 export async function callApi(config: GatewayConfig, path: string, init: RequestInit, context: AiCallContext = {}) {
   const isImageRequest = path.startsWith('/images/');
   const timeoutMs = isImageRequest
@@ -123,7 +128,7 @@ export async function callApi(config: GatewayConfig, path: string, init: Request
   const startedAt = Date.now();
   const requestId = context.requestId || crypto.randomUUID();
   const inputImageBytes = context.inputImageBytes ?? (typeof init.body === 'string' ? [...init.body.matchAll(/data:image\/[a-z0-9.+-]+;base64,([A-Za-z0-9+/=]+)/gi)].reduce((sum, match) => sum + Math.floor(match[1].length * 0.75), 0) : undefined);
-  const maxAttempts = 2;
+  const maxAttempts = context.maxAttempts ?? 2;
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const attemptStartedAt = Date.now();
@@ -134,7 +139,7 @@ export async function callApi(config: GatewayConfig, path: string, init: Request
     let responseReceived = false;
     try {
       const apiKey = isImageRequest ? config.imageApiKey || config.apiKey : config.apiKey;
-      const response = await fetch(`${baseUrl(config.baseUrl)}/v1${path}`, {
+      const response = await fetchAiUpstream(`${baseUrl(config.baseUrl)}/v1${path}`, {
         ...init,
         signal: controller.signal,
         headers: { Authorization: `Bearer ${apiKey}`, ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...init.headers },
@@ -161,9 +166,9 @@ export async function callApi(config: GatewayConfig, path: string, init: Request
         continue;
       }
       logAiEvent({ event: 'upstream_request', requestId, operation: context.operation || 'unspecified', stage: context.stage || path, path, model: context.model, inputImageBytes, attempt, status, upstreamRequestId, networkErrorCode: !responseReceived ? networkErrorCode(error) : undefined, attemptDurationMs: Date.now() - attemptStartedAt, durationMs: Date.now() - startedAt, outcome: error instanceof Error && error.name === 'AbortError' ? 'local_timeout' : 'failure' });
-      if (error instanceof Error && error.name === 'AbortError') throw new Error(`${context.stage === 'room-review' ? '效果图复核' : isImageRequest ? '图片生成' : 'AI 分析'}请求超过 ${timeoutMs / 1000} 秒，本次步骤未完成。`);
+      if (error instanceof Error && error.name === 'AbortError') throw new AiDeadlineError(`${context.stage === 'room-review' ? '效果图复核' : isImageRequest ? '图片生成' : 'AI 分析'}请求超过 ${timeoutMs / 1000} 秒，本次步骤未完成。`);
       if (error instanceof UpstreamError) throw error;
-      throw new Error(`上游接口连接失败：${error instanceof Error ? error.message : '未知网络错误'}`);
+      throw new AiConnectionError(`上游接口连接失败：${error instanceof Error ? error.message : '未知网络错误'}`);
     } finally {
       clearTimeout(timeout);
     }
@@ -179,8 +184,45 @@ export async function analyze(config: GatewayConfig, image: string, mode: 'photo
       : '分析这张住宅户型图。严格依据图面识别全部可辨空间、墙体、门窗开口、固定设施、邻接和主要动线，不清晰内容列入 uncertainties，不得猜测尺寸或结构。只输出严格 JSON，包含 rooms、walls、openings、connections、circulation、uncertainties。rooms 项包含 id、name、description、confidence、status、evidence、adjacentTo、bounds。evidence 是可见证据数组，每项为 {type:"label|fixture|adjacency|geometry",detail:"图上看到的具体依据"}。bounds 是房间在原图中的归一化矩形 {x,y,width,height}，左上为原点、值在 0 到 1，只在边界清楚时给出，否则 null，禁止估算坐标。主卧/次卧仅在房间文字标注或明确套卫/衣帽间关系支持时使用，否则 name 写“待确认房间（方位/特征）”，候选名称放入 suggestedName；不得只凭面积/采光命名。卫生间需有洁具/排水设施或文字证据。房间名称不得使用编号占位；confidence 为 0 到 1，status 只能 confirmed、identified、unknown；最多 20 个空间。';
   const prompt = mode === 'photo' ? instruction : `${mode === 'cad' ? '分析这张 CAD 导出的住宅平面图' : '分析这张住宅户型图'}。识别图中全部文字标注的房间/区域，以及明显独立围合但未标注的房间；玄关、过道、阳台等标注区域即使开放连接也必须列出，不得遗漏或虚构。忽略图框，不猜测尺寸。只输出严格 JSON：{"rooms":[{"id":"r1","name":"原图标注名称或待确认房间（方位/特征）","description":"简短可见结构描述","confidence":0.0,"status":"confirmed|identified|unknown","evidence":[{"type":"label|fixture|adjacency|geometry","detail":"图上看到的依据"}],"adjacentTo":[],"bounds":null}],"uncertainties":[]}。卧室主次只按原图标注或明确套卫/衣帽间关系确认；否则使用待确认名称并将候选写入 suggestedName。卫生间须有洁具或文字证据。边界清楚时 bounds 用左上为原点的 0 到 1 归一化矩形 {"x":0,"y":0,"width":0,"height":0}，否则 null，不估算。最多20个空间，不要 Markdown。`;
   const stage = mode === 'photo' ? 'photo-analysis' : mode === 'cad' ? 'cad-plan-analysis' : 'floorplan-analysis';
-  const payload = await callApi(config, '/chat/completions', { method: 'POST', body: JSON.stringify({ model: config.visionModel, temperature: 0.2, messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: image, detail: 'high' } }] }] }) }, { ...context, operation: context.operation || 'analysis', stage, model: config.visionModel, inputImageBytes: imageByteLength(image) });
-  return textFrom(payload);
+  const requestId = context.requestId || crypto.randomUUID();
+  const models = [...new Set([config.visionModel, ...(config.visionFallbackModels || [])].map(m => m.trim()).filter(Boolean))].slice(0, 3);
+  const startedAt = Date.now();
+  const perModelTimeout = config.analysisTimeoutMs || DEFAULT_ANALYSIS_TIMEOUT_MS;
+  const totalTimeout = config.analysisTotalTimeoutMs || 300_000;
+  let lastError: unknown;
+  for (let index = 0; index < models.length; index += 1) {
+    const remaining = totalTimeout - (Date.now() - startedAt);
+    if (remaining <= 0) throw new AiDeadlineError(`AI 分析总耗时超过 ${totalTimeout / 1000} 秒，本次步骤未完成。`);
+    const model = models[index];
+    try {
+      const payload = await callApi({ ...config, analysisTimeoutMs: Math.min(perModelTimeout, remaining) }, '/chat/completions', {
+        method: 'POST', body: JSON.stringify({ model, temperature: 0.2, messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: image, detail: 'high' } }] }] }),
+      }, { ...context, requestId, operation: context.operation || 'analysis', stage, model, inputImageBytes: imageByteLength(image), maxAttempts: 1 });
+      const text = textFrom(payload);
+      if (!text.trim() || (mode !== 'photo' && !hasRecognizedRooms(text))) {
+        throw new InvalidAnalysisError('模型未返回有效的空间识别结果，本次识别未完成。');
+      }
+      logAiEvent({ event: 'vision_route_success', requestId, stage, model, candidate: index + 1, durationMs: Date.now() - startedAt });
+      return text;
+    } catch (error) {
+      lastError = error;
+      const retryable = error instanceof AiConnectionError || error instanceof AiDeadlineError || error instanceof InvalidAnalysisError
+        || (error instanceof UpstreamError && [403, 404, 408, 429, 500, 502, 503, 504, 524].includes(error.status));
+      if (!retryable || index === models.length - 1) throw error;
+      logAiEvent({ event: 'vision_route_fallback', requestId, stage, model, nextModel: models[index + 1], reason: error instanceof UpstreamError ? `http_${error.status}` : error instanceof AiDeadlineError ? 'timeout' : error instanceof InvalidAnalysisError ? 'invalid_result' : 'connection_failure', durationMs: Date.now() - startedAt });
+    }
+  }
+  throw lastError;
+}
+
+function hasRecognizedRooms(text: string): boolean {
+  try {
+    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    const parsed = JSON.parse(cleaned);
+    return Array.isArray(parsed.rooms) && parsed.rooms.length > 0 && parsed.rooms.length <= 20
+      && parsed.rooms.every((room: unknown) => room && typeof room === 'object' && typeof (room as { name?: unknown }).name === 'string' && (room as { name: string }).name.trim());
+  } catch { return false; }
+
 }
 
 // 灵感广场发布门禁：判断图片是否为家居实景或户型图，拦截无关内容。
@@ -438,6 +480,8 @@ export function createAiGatewayPlugin(env: Record<string, string>): Plugin {
   const config: GatewayConfig = {
     baseUrl: env.AI_BASE_URL || 'https://codex2api.com', apiKey: env.CODEX2API_API_KEY || env.AI_API_KEY || '', imageApiKey: env.AI_IMAGE_API_KEY,
     visionModel: env.AI_VISION_MODEL || env.AI_MODEL || 'gpt-6.1-sol', imageModel: env.AI_IMAGE_MODEL || env.IMAGE_MODEL || 'gpt-image-1',
+    visionFallbackModels: (env.AI_VISION_FALLBACK_MODELS || '').split(',').map(model => model.trim()).filter(Boolean),
+    analysisTotalTimeoutMs: timeoutValue('AI_ANALYSIS_TOTAL_TIMEOUT_MS', 300_000),
     analysisTimeoutMs: timeoutValue('AI_ANALYSIS_TIMEOUT_MS', DEFAULT_ANALYSIS_TIMEOUT_MS),
     reviewTimeoutMs: timeoutValue('AI_REVIEW_TIMEOUT_MS', DEFAULT_REVIEW_TIMEOUT_MS),
     imageTimeoutMs: timeoutValue('AI_IMAGE_TIMEOUT_MS', DEFAULT_IMAGE_TIMEOUT_MS),
