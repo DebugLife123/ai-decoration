@@ -164,12 +164,24 @@ export default function WorkspacePage() {
   const [generationProgress, setGenerationProgress] = useState<GenerationJob | null>(null);
   const [generationJobId, setGenerationJobId] = useState<string | null>(null);
   const [taskRecoveryError, setTaskRecoveryError] = useState('');
+  /** A resume that still needs a fresh recognition pass before it can continue. */
+  const [pendingResume, setPendingResume] = useState<{ project: Project; task: GenerationTask; floorPlan: string; source: PlanSource } | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const recoveryTaskRef = useRef<string | null>(null);
   /** Task started by this tab; keeps the mount-recovery effect from hijacking a live run. */
   const activeTaskRef = useRef<string | null>(null);
   /** Tasks already handed to the recovery flow in this mount, so it retries once at most. */
   const recoveredTaskRef = useRef<Set<string>>(new Set());
+  /**
+   * Recovery can run for minutes, so its lifetime follows the mounted component instead of
+   * the recovering effect. Under StrictMode the effect is torn down and re-run on mount,
+   * which used to abort the first recovery and let a dedupe guard swallow the retry.
+   */
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   /** Throttles progress writes to the tracker. */
   const progressTrackerRef = useRef(0);
   const generatePlanRef = useRef<GeneratePlanRunner | null>(null);
@@ -288,19 +300,30 @@ export default function WorkspacePage() {
         const snapshot = await loadRunningSnapshot(task.id).catch(() => null);
         const floorPlan = snapshot?.floorPlan || await toSupportedImageDataUrl(project.floorPlanUrl || '');
         setImageData(floorPlan);
-        // Local sessions have no backend analysis row: reuse the IndexedDB snapshot so a
-        // reload never pays for a second recognition pass.
-        const recognized: GenerationInput = snapshot?.analysis && snapshot.rooms?.length
-          ? { analysis: snapshot.analysis, rooms: snapshot.rooms, selectedRooms: snapshot.selectedRooms?.length ? snapshot.selectedRooms : snapshot.rooms.map((room) => room.name) }
-          : await analyzeFloorPlan(floorPlan, taskSource).then((analysis) => ({
-              analysis: analysis.analysis, rooms: analysis.rooms, selectedRooms: analysis.rooms.map((room) => room.name),
-            }));
-        await updatePersistentGenerationTask(task.id, { stage: 'generating', progress: 20, message: '户型空间识别完成，正在准备全屋效果图', completedRooms: 0, totalRooms: recognized.rooms.length });
-        setRooms(recognized.rooms);
-        setSelectedRooms(recognized.selectedRooms);
+        // Prefer the analysis already stored on the task, then the local snapshot. Without
+        // either, stop and ask: re-running recognition costs a credit, so a reload must not
+        // pay for it silently.
+        const remoteRooms = Array.isArray(partial.rooms) && partial.rooms.length ? partial.rooms as IdentifiedRoom[] : null;
+        const remoteAnalysis = typeof partial.analysis === 'string' ? partial.analysis : '';
+        const cached: GenerationInput | null = remoteAnalysis && remoteRooms?.length
+          ? { analysis: remoteAnalysis, rooms: remoteRooms, selectedRooms: remoteRooms.map((room) => room.name) }
+          : snapshot?.analysis && snapshot.rooms?.length
+            ? { analysis: snapshot.analysis, rooms: snapshot.rooms, selectedRooms: snapshot.selectedRooms?.length ? snapshot.selectedRooms : snapshot.rooms.map((room) => room.name) }
+            : null;
+        if (!cached) {
+          if (!isActive()) return;
+          setStage(2);
+          setWorkKind(null);
+          setPendingResume({ project, task, floorPlan, source: taskSource });
+          setTaskRecoveryError('上次识别还没有完成。继续会重新识别户型空间，并消耗 1 积分。');
+          return;
+        }
+        await updatePersistentGenerationTask(task.id, { stage: 'generating', progress: 20, message: '户型空间识别完成，正在准备全屋效果图', completedRooms: 0, totalRooms: cached.rooms.length, partialResult: { analysis: cached.analysis, rooms: cached.rooms } });
+        setRooms(cached.rooms);
+        setSelectedRooms(cached.selectedRooms);
         const runGeneration = generatePlanRef.current;
         if (!runGeneration) throw new Error('生成工作流尚未准备好，请稍后重试。');
-        await runGeneration(recognized, task.id, project, { floorPlan, source: taskSource, style: task.style });
+        await runGeneration(cached, task.id, project, { floorPlan, source: taskSource, style: task.style });
         return;
       }
       const previous = {
@@ -389,6 +412,9 @@ export default function WorkspacePage() {
       await saveDesignHistory(record).then(() => setHistory((current) => [record, ...current.filter((item) => item.id !== record.id)])).catch(() => undefined);
       await loadProjects();
     } catch (error) {
+      // A failed recovery must release the stored pointer, otherwise every later visit to
+      // the workspace resurrects the same dead task.
+      clearActiveGeneration(task.id);
       if (isActive()) {
         const recoveryMessage = error instanceof Error ? `任务进度恢复失败：${error.message}` : '任务进度暂时无法恢复，请稍后重试。';
         setTaskRecoveryError(recoveryMessage);
@@ -400,19 +426,59 @@ export default function WorkspacePage() {
     }
   }, [loadProjects, requestedStyle, routeSourceType, setSelectedStyle]);
 
+  /**
+   * Continues a task whose recognition never finished. Kept behind an explicit click so a
+   * reload cannot silently spend another recognition call.
+   */
+  const resumeWithRecognition = useCallback(async () => {
+    const pending = pendingResume;
+    if (!pending) return;
+    setPendingResume(null);
+    setTaskRecoveryError('');
+    setMessage('');
+    activeTaskRef.current = pending.task.id;
+    recoveryTaskRef.current = pending.task.id;
+    setWorkElapsed(0);
+    setWorkKind('recognizing');
+    try {
+      const analysis = await analyzeFloorPlan(pending.floorPlan, pending.source);
+      await updatePersistentGenerationTask(pending.task.id, {
+        stage: 'generating', progress: 20, message: '户型空间识别完成，正在准备全屋效果图',
+        completedRooms: 0, totalRooms: analysis.rooms.length,
+        partialResult: { analysis: analysis.analysis, rooms: analysis.rooms },
+      });
+      setRooms(analysis.rooms);
+      setSelectedRooms(analysis.rooms.map((room) => room.name));
+      const runGeneration = generatePlanRef.current;
+      if (!runGeneration) throw new Error('生成工作流尚未准备好，请稍后重试。');
+      await runGeneration(
+        { analysis: analysis.analysis, rooms: analysis.rooms, selectedRooms: analysis.rooms.map((room) => room.name) },
+        pending.task.id,
+        pending.project,
+        { floorPlan: pending.floorPlan, source: pending.source, style: pending.task.style },
+      );
+    } catch (error) {
+      clearActiveGeneration(pending.task.id);
+      setWorkKind(null);
+      setTaskRecoveryError(error instanceof Error ? `继续生成失败：${error.message}` : '继续生成失败，请稍后重试。');
+      setPendingResume(pending);
+    } finally {
+      if (recoveryTaskRef.current === pending.task.id) recoveryTaskRef.current = null;
+      if (activeTaskRef.current === pending.task.id) activeTaskRef.current = null;
+    }
+  }, [pendingResume]);
+
   useEffect(() => {
     const requestedProject = searchParams.get('projectId');
     const requestedTask = searchParams.get('taskId');
     if (!requestedProject || !requestedTask || !savedProjects.length) return;
-    if (activeTaskRef.current === requestedTask) return;
+    if (activeTaskRef.current || recoveryTaskRef.current) return;
     if (recoveredTaskRef.current.has(requestedTask)) return;
     const project = savedProjects.find((item) => item.id === requestedProject);
     const task = project?.tasks.find((item) => item.id === requestedTask);
     if (!project || !task || task.status === 'completed') return;
     recoveredTaskRef.current.add(requestedTask);
-    let active = true;
-    void recoverPersistentTask(project, task, () => active);
-    return () => { active = false; };
+    void recoverPersistentTask(project, task, () => mountedRef.current);
   }, [recoverPersistentTask, searchParams, savedProjects]);
 
   // Reload recovery: the URL usually carries the ids, but when it does not (history
@@ -422,16 +488,14 @@ export default function WorkspacePage() {
     if (!savedProjects.length) return;
     const pointer = readActiveGeneration();
     if (!pointer) return;
-    if (activeTaskRef.current === pointer.taskId) return;
+    if (activeTaskRef.current || recoveryTaskRef.current) return;
     if (recoveredTaskRef.current.has(pointer.taskId)) return;
     if (!isActiveGenerationFresh(pointer)) { clearActiveGeneration(pointer.taskId); return; }
     const project = savedProjects.find((item) => item.id === pointer.projectId);
     const task = project?.tasks.find((item) => item.id === pointer.taskId);
     if (!project || !task || task.status !== 'generating') { clearActiveGeneration(pointer.taskId); return; }
     recoveredTaskRef.current.add(pointer.taskId);
-    let active = true;
-    void recoverPersistentTask(project, task, () => active);
-    return () => { active = false; };
+    void recoverPersistentTask(project, task, () => mountedRef.current);
   }, [recoverPersistentTask, searchParams, savedProjects]);
 
   useEffect(() => {
@@ -488,7 +552,7 @@ export default function WorkspacePage() {
     }
     try {
       const result = await analyzeFloorPlan(imageData, sourceType, imageMeta || undefined);
-      await updatePersistentGenerationTask(taskId, { stage: 'generating', progress: 20, message: '户型空间识别完成，正在准备全屋效果图', completedRooms: 0, totalRooms: result.rooms.length });
+      await updatePersistentGenerationTask(taskId, { stage: 'generating', progress: 20, message: '户型空间识别完成，正在准备全屋效果图', completedRooms: 0, totalRooms: result.rooms.length, partialResult: { analysis: result.analysis, rooms: result.rooms } });
       const selected = result.rooms.map((room) => room.name);
       setRooms(result.rooms);
       setSelectedRooms(selected);
@@ -554,11 +618,19 @@ export default function WorkspacePage() {
         progressQueue = progressQueue.then(() => updatePersistentGenerationTask(taskId, {
           stage: job.stage || 'generating', progress, message: job.message || '正在生成空间效果图',
           completedRooms: job.completedRooms, totalRooms: job.totalRooms,
-          partialResult: job.cover || job.rooms?.length ? { cover: job.cover, rooms: job.rooms, failedRooms: job.failedRooms } : undefined,
+          partialResult: job.cover || job.rooms?.length ? { cover: job.cover, rooms: job.rooms, failedRooms: job.failedRooms, analysis: input.analysis } : undefined,
         })).catch((error: unknown) => console.warn('Could not persist generation progress:', error));
       };
       await updatePersistentGenerationTask(taskId, { stage: 'generating', progress: 25, message: '正在生成全屋总览和分空间效果图', completedRooms: 0, totalRooms: input.selectedRooms.length });
-      const result = await generateDesign({ mode: 'floorplan', style: planStyle, templateId: planTemplate?.id, referenceAssetId: planTemplate?.referenceAssetId, prompt, floorPlan: planImage, imageMeta: context?.imageMeta || imageMeta || undefined, source: planSource, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, roomReferenceImages, taskId }, reportProgress);
+      let result: Awaited<ReturnType<typeof generateDesign>>;
+      try {
+        result = await generateDesign({ mode: 'floorplan', style: planStyle, templateId: planTemplate?.id, referenceAssetId: planTemplate?.referenceAssetId, prompt, floorPlan: planImage, imageMeta: context?.imageMeta || imageMeta || undefined, source: planSource, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms, roomReferenceImages, taskId }, reportProgress);
+      } catch (error) {
+        // The gateway keeps one job per task id. When this task already has a job (a second
+        // resume submitting it again), attach to that job instead of failing the run.
+        if (!(error instanceof Error) || !/已处理|already|duplicate|conflict/i.test(error.message)) throw error;
+        result = await resumeGenerationJob(taskId, { type: 'floorplan', cover: '', analysis: input.analysis, rooms: [] }, reportProgress);
+      }
       await progressQueue;
       if (result.type !== 'floorplan') throw new Error('返回结果类型不正确。');
       setGenerationJobId(result.jobId || null);
@@ -690,7 +762,18 @@ export default function WorkspacePage() {
       setHistoryMessage(error instanceof Error ? error.message : '删除方案记录失败。');
     }
   };
-  const reset = () => { clearActiveGeneration(); setFile(null); setImageData(''); setImageMeta(null); setRooms([]); setSelectedRooms([]); setResults([]); setGenerationProgress(null); setGenerationJobId(null); setTaskRecoveryError(''); setActiveHistoryId(null); setEditingRoomIndex(null); setStage(1); setMessage(''); };
+  const reset = () => {
+    clearActiveGeneration();
+    setPendingResume(null);
+    // Drop the ids too: otherwise a later reload re-enters the old task from the URL.
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete('projectId');
+      next.delete('taskId');
+      return next;
+    }, { replace: true });
+    setFile(null); setImageData(''); setImageMeta(null); setRooms([]); setSelectedRooms([]); setResults([]); setGenerationProgress(null); setGenerationJobId(null); setTaskRecoveryError(''); setActiveHistoryId(null); setEditingRoomIndex(null); setStage(1); setMessage('');
+  };
 
   return <div className="workspace-page"><main className="workspace-main">
     <header className={`workspace-header ${stage === 4 ? 'report-workspace-header' : ''}`}><div><span className="workspace-eyebrow">{stage === 4 ? 'JIAN YI ZHUANG / WHOLE-HOME STUDY' : 'JIAN YI ZHUANG / DESIGN FLOW'}</span><h2>{stage === 1 ? sourceType === 'cad' ? 'CAD 图纸全屋渲染' : '户型图全屋设计' : stage === 2 ? taskRecoveryError ? '生成任务记录' : '正在识别并生成方案' : stage === 3 ? '方案已生成，等待查看' : `${activeStyle.name} · 整屋设计方案`}</h2>{stage < 4 && <p>{taskRecoveryError ? '任务状态与已完成结果已恢复。' : stage === 3 ? '方案已经生成并保存到当前浏览器，点击下方按钮进入完整汇报。' : sourceType === 'cad' ? '上传图纸、选择风格后，系统会自动识别空间并生成方案。' : '上传户型图、选择风格后，系统会自动识别空间并生成方案。'}</p>}</div><button className="reset-button" onClick={stage === 4 ? () => setStage(3) : reset}><Icon name="refresh" />{stage === 4 ? '返回预览' : '重新开始'}</button></header>
@@ -720,7 +803,7 @@ export default function WorkspacePage() {
         </aside>)}
     {stage < 4 && <div className="workspace-stepper"><span className="workspace-stepper-label">全屋方案流程</span>{[['上传资料与风格', '图片 · 风格'], ['识别空间并生成', '户型 · 效果图'], ['查看生成结果', '预览 · 汇报']].map(([label, note], index) => <div className={`workspace-step ${stage === index + 1 ? 'active' : ''} ${stage > index + 1 ? 'done' : ''}`} key={label}><span className="step-index">{stage > index + 1 ? <Icon name="check" /> : `0${index + 1}`}</span><span><strong>{label}</strong><small>{note}</small></span></div>)}</div>}
     {stage < 4 && !isWorking && <div className="flow-content">
-      {stage === 2 && taskRecoveryError && <section className="working-state recovery-state" role="status"><div className="working-state-topline"><span className="live-indicator" />任务状态</div><h3>本次生成未能继续</h3><p>{taskRecoveryError}</p>{results.length > 0 && <div className="working-results">{results.map((result) => <figure key={result.name}><img src={result.imageUrl} alt={result.name} /><figcaption>{result.name}</figcaption></figure>)}</div>}<div className="flow-actions"><button className="quiet-button" type="button" onClick={reset}>返回上传</button><button className="continue-button" type="button" onClick={reset}>重新上传并生成</button></div></section>}
+      {stage === 2 && taskRecoveryError && <section className="working-state recovery-state" role="status"><div className="working-state-topline"><span className="live-indicator" />任务状态</div><h3>本次生成未能继续</h3><p>{taskRecoveryError}</p>{results.length > 0 && <div className="working-results">{results.map((result) => <figure key={result.name}><img src={result.imageUrl} alt={result.name} /><figcaption>{result.name}</figcaption></figure>)}</div>}<div className="flow-actions">{pendingResume && <button className="continue-button" type="button" onClick={() => void resumeWithRecognition()}>继续识别并生成</button>}<button className="quiet-button" type="button" onClick={reset}>返回上传</button><button className="quiet-button" type="button" onClick={reset}>重新上传并生成</button></div></section>}
       {stage === 1 && message && <div className="flow-message flow-message-error" role="alert">{message}{/积分不足|INSUFFICIENT/.test(message) && <Link className="flow-message-action" to="/subscription">去补充积分 →</Link>}</div>}
       {stage === 1 && <section className="flow-panel"><div className="panel-title"><span><b>01</b>上传资料并选择风格</span><small>{sourceType === 'cad' ? 'CAD 图纸导出图片' : '户型平面图图片'}</small></div><div className="source-tabs" role="tablist" aria-label="识别方案"><button type="button" role="tab" aria-selected={sourceType === 'cad'} className={sourceType === 'cad' ? 'active' : ''} onClick={() => { setSourceOverride({ route: routeSourceType, value: 'cad' }); setFile(null); setImageData(''); setMessage(''); }}><Icon name="file" /><span><strong>CAD 图纸全屋渲染</strong><small>DWG / DXF 导出为图片后上传</small></span></button><button type="button" role="tab" aria-selected={sourceType === 'floorplan'} className={sourceType === 'floorplan' ? 'active' : ''} onClick={() => { setSourceOverride({ route: routeSourceType, value: 'floorplan' }); setFile(null); setImageData(''); setMessage(''); }}><Icon name="upload" /><span><strong>户型图设计</strong><small>上传户型平面图图片</small></span></button></div><div className={`upload-zone ${file ? 'has-file' : ''}`} role="button" tabIndex={0} onClick={() => inputRef.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter') inputRef.current?.click(); }} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>{file ? <><span className="file-preview"><img src={file.preview} alt={sourceType === 'cad' ? 'CAD 平面图预览' : '户型图预览'} /></span><span className="file-info"><strong>{file.name}</strong><small>{file.size} · {sourceType === 'cad' ? 'CAD 平面图' : '户型图'}</small></span><button className="remove-file" onClick={(event) => { event.stopPropagation(); setFile(null); setImageData(''); }} aria-label="移除文件"><Icon name="close" /></button></> : <><span className="upload-zone-icon"><Icon name="upload" /></span><strong>{sourceType === 'cad' ? '拖入 CAD 导出图，或点击选择图片' : '拖入户型图，或点击选择图片'}</strong><small>{sourceType === 'cad' ? 'DWG / DXF / PDF 请先导出为 PNG、JPG 或 WEBP' : '支持 PNG、JPG、WEBP 格式的户型平面图'}</small></>}<input ref={inputRef} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={handleChange} /></div><div className="panel-tip"><span>i</span>{sourceType === 'cad' ? '按 CAD 图纸的墙体、门窗和尺寸标注识别；目前请先导出为图片，暂不直接读取 DWG / DXF / PDF 文件。' : '识别户型图中的房间、门窗和空间动线；请上传清晰、完整的平面图。'}</div><div className="style-picker-heading"><div><strong>选择空间风格</strong><small>先定下全屋的色彩与材质方向，识别后可直接生成</small></div></div><div className="workspace-style-grid">{styleOptions.map((style) => <button type="button" key={style.key} aria-pressed={workflowStyle === style.key} className={`workspace-style-card ${workflowStyle === style.key ? 'selected' : ''}`} onClick={() => { setStyleOverride({ route: requestedStyle, value: style.key }); setSelectedStyle(style.key); }}><span className="workspace-style-image"><img src={style.image} alt={`${style.name}风格参考`} /></span><span className="workspace-style-meta"><strong>{style.name}</strong><small>{style.note}</small></span>{workflowStyle === style.key && <span className="style-check"><Icon name="check" /></span>}</button>)}</div><div className="upload-actions"><span className="style-current">当前风格：<strong>{activeStyle.name}</strong></span><button className="continue-button" onClick={() => void runRecognition()} disabled={isWorking || !imageData}>{isWorking ? <><span className="spinner" />正在识别…</> : <>识别户型空间 <Icon name="arrow" /></>}</button></div>{message && <p className="flow-message">{message}</p>}</section>}
       {stage === 3 && results.length > 0 && <section className="result-board generation-preview"><div className="result-board-head"><div><span className="panel-kicker">生成完成</span><h3>方案已经准备好</h3><p>结果已保存到当前浏览器，查看汇报前仍可回到工作区调整资料。</p></div><button className="continue-button" onClick={() => setStage(4)}>查看汇报方案 <Icon name="arrow" /></button></div><div className="result-cover"><img src={results[0].imageUrl} alt="全屋方案总览预览" /><div><span>全屋效果总览</span><strong>{activeStyle.name} · {selectedRooms.length} 个空间</strong></div></div><div className="result-room-grid">{results.slice(1).map((result) => <article key={result.name}><img src={result.imageUrl} alt={`${result.name}效果图预览`} /><div><strong>{result.name}</strong><small>空间效果已生成</small></div></article>)}</div><div className="flow-actions"><button className="quiet-button" onClick={() => setStage(1)}>重新上传资料</button><button className="continue-button" onClick={() => setStage(4)}>进入完整汇报 <Icon name="arrow" /></button></div>{message && <p className="flow-message">{message}</p>}</section>}
