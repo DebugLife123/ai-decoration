@@ -5,6 +5,7 @@ import { workspaceDataAdapter } from '../services/workspaceData';
 import type { Project } from '../stores/appStore';
 import type { MaterialRecord } from '../services/dataContracts';
 import { wholeHomeStyles, type WholeHomeStyle } from '../features/styleLibrary/wholeHomeStyles';
+import { deriveProjectStatus, type ProjectStatus } from '../utils/projectStatus';
 import './ProjectsPage.css';
 
 const styleNames: Record<Project['style'], string> = {
@@ -32,9 +33,9 @@ function Icon({ name }: { name: 'arrow' | 'plus' | 'trash' | 'layers' | 'clock' 
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 
-function ProjectCard({ project, selected, onSelect }: { project: Project; selected: boolean; onSelect: () => void }) {
+function ProjectCard({ project, status, selected, onSelect }: { project: Project; status: ProjectStatus; selected: boolean; onSelect: () => void }) {
   return <button className={`project-card ${selected ? 'selected' : ''}`} onClick={onSelect}>
-    <div className="project-card-media">{project.thumbnail ? <img src={project.thumbnail} alt={`${project.name}方案缩略图`} /> : <div className="project-card-placeholder"><Icon name="layers" /></div>}<span className={`project-status ${project.status}`}>{statusNames[project.status]}</span></div>
+    <div className="project-card-media">{project.thumbnail ? <img src={project.thumbnail} alt={`${project.name}方案缩略图`} /> : <div className="project-card-placeholder"><Icon name="layers" /></div>}<span className={`project-status ${status}`}>{statusNames[status]}</span></div>
     <div className="project-card-body"><strong>{project.name}</strong><span>{styleNames[project.style]} · {project.spaceType}</span><small>更新于 {formatDate(project.updatedAt)}</small></div>
   </button>;
 }
@@ -62,6 +63,8 @@ export default function ProjectsPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const selectedProject = useMemo(() => projects.find((project) => project.id === selectedId) || projects[0], [projects, selectedId]);
   const selectedVersion = selectedProject?.versions.find((version) => version.id === selectedVersionId) || selectedProject?.versions.at(-1);
+  const statusById = useMemo(() => new Map(projects.map((project) => [project.id, deriveProjectStatus(project)])), [projects]);
+  const selectedStatus: ProjectStatus = selectedProject ? statusById.get(selectedProject.id) ?? 'draft' : 'draft';
 
   const chooseProject = (project: Project) => {
     setSelectedId(project.id);
@@ -83,9 +86,9 @@ export default function ProjectsPage() {
     <header className="projects-header"><div><span className="projects-eyebrow">YOUR DESIGN ARCHIVE</span><h1>我的项目</h1><p>所有设计尝试、生成任务和方案版本都集中在这里。</p></div><Link className="projects-primary-button" to="/workspace"><Icon name="plus" />新建项目</Link></header>
     <div className={`projects-local-note ${storageWarning ? 'warning' : ''}`}><Icon name="clock" /><span>{storageWarning || '当前使用本机保存，等后端接口接入后再同步到账号。'}</span></div>
     {projectsStatus === 'loading' ? <div className="projects-empty" role="status"><h2>正在加载项目</h2><p>请稍候。</p></div> : projectsStatus === 'error' ? <div className="projects-empty" role="alert"><h2>项目暂时无法加载</h2><p>{projectsError}</p><button className="projects-primary-button" onClick={() => void loadProjects()}>重试</button></div> : projects.length === 0 ? <EmptyProjects /> : <div className="projects-layout">
-      <section className="projects-list" aria-label="项目列表"><div className="projects-list-heading"><strong>全部项目</strong><span>{projects.length} 个</span></div>{projects.map((project) => <ProjectCard key={project.id} project={project} selected={selectedProject?.id === project.id} onSelect={() => chooseProject(project)} />)}</section>
+      <section className="projects-list" aria-label="项目列表"><div className="projects-list-heading"><strong>全部项目</strong><span>{projects.length} 个</span></div>{projects.map((project) => <ProjectCard key={project.id} project={project} status={statusById.get(project.id) ?? 'draft'} selected={selectedProject?.id === project.id} onSelect={() => chooseProject(project)} />)}</section>
       {selectedProject && <section className="project-detail"><div className="project-detail-head"><div><span className="projects-eyebrow">PROJECT DETAIL</span><h2>{selectedProject.name}</h2><p>{styleNames[selectedProject.style]} · {selectedProject.spaceType}{selectedProject.budget !== undefined ? ` · 预算 ${selectedProject.budget} 万元` : ''} · 创建于 {formatDate(selectedProject.createdAt)}</p></div><div className="detail-actions"><Link className="detail-button primary" to={`/workspace?projectId=${selectedProject.id}${selectedVersion ? `&versionId=${selectedVersion.id}` : ''}`}>继续编辑 <Icon name="arrow" /></Link><button className="detail-button danger" onClick={() => setConfirmDelete(true)}><Icon name="trash" />删除</button></div></div>
-        <div className="detail-summary"><div><span>项目状态</span><strong className={`detail-status ${selectedProject.status}`}>{statusNames[selectedProject.status]}</strong></div><div><span>方案版本</span><strong>{selectedProject.versions.length}</strong></div><div><span>生成任务</span><strong>{selectedProject.tasks.length}</strong></div><div><span>关联材料</span><strong>{selectedProject.materialIds.length}</strong></div></div>
+        <div className="detail-summary"><div><span>项目状态</span><strong className={`detail-status ${selectedStatus}`}>{statusNames[selectedStatus]}</strong></div><div><span>方案版本</span><strong>{selectedProject.versions.length}</strong></div><div><span>生成任务</span><strong>{selectedProject.tasks.length}</strong></div><div><span>关联材料</span><strong>{selectedProject.materialIds.length}</strong></div></div>
         <section className="detail-section"><div className="detail-section-heading"><div><span className="projects-eyebrow">PROJECT MATERIALS</span><h3>关联材料</h3></div><Link to="/materials">管理材料</Link></div>{materialsError ? <p className="detail-empty" role="alert">材料资料暂时无法加载：{materialsError}</p> : selectedProject.materialIds.length === 0 ? <p className="detail-empty">还没有关联材料。浏览材料库，把需要对比的材料加入项目。</p> : <div className="project-material-list">{selectedProject.materialIds.map((id) => {
           const material = materials.find((item) => item.id === id);
           return <div className="project-material-row" key={id}><strong>{material?.name || '材料记录不可用'}</strong><span>{material ? `${material.category || '未分类'} · ${material.spec || '规格未填写'} · ${material.region || '地区未填写'}` : '该材料可能已从企业材料清单移除'}</span><b>{material ? `¥${material.price}${material.unit ? ` / ${material.unit}` : ''}` : '—'}</b></div>;
