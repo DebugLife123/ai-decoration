@@ -184,7 +184,7 @@ async function readVideoImage(image: ReferenceImage, options?: VideoMediaOptions
 function isPrivateNewApi(baseUrl: string) {
     try {
         const url = new URL(/^https?:\/\//i.test(baseUrl) ? baseUrl : `http://${baseUrl}`);
-        return ["localhost", "127.0.0.1", "192.168.6.78"].includes(url.hostname);
+        return ["localhost", "127.0.0.1"].includes(url.hostname);
     } catch {
         return false;
     }

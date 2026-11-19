@@ -48,10 +48,10 @@ deploy_production:
   resource_group: decoration-production
   environment:
     name: production
-    url: http://www.openai2api.com:4175/
+    url: https://example.com/
   script: |
-    $sourceDeploymentPath = 'D:/wyx/decoration-main-deploy'
-    $releaseRoot = 'D:/wyx/decoration-releases'
+    $sourceDeploymentPath = 'D:/ci/decoration-main-deploy'
+    $releaseRoot = 'D:/ci/decoration-releases'
     $releasePath = Join-Path $releaseRoot $env:CI_COMMIT_SHA
     $sourceBaseComposeFile = Join-Path $env:CI_PROJECT_DIR 'docker-compose.yml'
     $sourceComposeFile = Join-Path $sourceDeploymentPath '.docker-compose.integration.yml'
