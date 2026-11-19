@@ -118,8 +118,10 @@ async function pollGenerationJob(jobId: string, initialAnalysis: string, onProgr
       const statusResponse = await fetch(`/api/ai/generation-jobs/${encodeURIComponent(jobId)}?${query}`, { cache: 'no-store', headers: gatewayIdentityHeaders() });
       if (statusResponse.status === 404) {
         notFoundSince ??= Date.now();
-        if (Date.now() - notFoundSince < 60_000) continue;
-        throw new Error('生成任务尚未登记或已过期，请稍后重试。');
+        // Twenty seconds is enough for a fresh job to register; longer waits only make a
+        // dead job (expired, or gateway restarted) look like a frozen page.
+        if (Date.now() - notFoundSince < 20_000) continue;
+        throw new Error('生成任务已过期或服务已重启，本次进度无法继续，请重新发起生成。');
       }
       if (!statusResponse.ok) throw new Error('暂时无法获取生成进度。');
       notFoundSince = null;
