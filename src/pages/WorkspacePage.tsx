@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, ty
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAppStore, type DesignStyle } from '../stores/appStore';
 import { analyzeFloorPlan, editRoomImage, generateDesign, resumeGenerationJob, retryGenerationRooms, toSupportedImageDataUrl, type GenerationJob, type IdentifiedRoom, type PlanSource } from '../services/aiClient';
-import { deleteDesignHistory, listDesignHistory, saveDesignHistory, type DesignHistoryRecord } from '../services/designHistory';
+import { clearRunningSnapshot, deleteDesignHistory, listDesignHistory, loadRunningSnapshot, saveDesignHistory, saveRunningSnapshot, type DesignHistoryRecord } from '../services/designHistory';
 import { loadBudgetSnapshot } from '../services/budgetSnapshot';
 import RoomImageEditor, { type RoomImageVersion } from '../components/RoomImageEditor';
 import { templates } from '../features/styleLibrary/inspirationTemplates';
@@ -267,6 +267,7 @@ export default function WorkspacePage() {
         setTaskRecoveryError(errorMessage);
         setMessage('');
         clearActiveGeneration(task.id);
+        void clearRunningSnapshot(task.id).catch(() => undefined);
         return;
       }
       const taskSource = project.spaceType.startsWith('CAD') ? 'cad' : 'floorplan';
@@ -274,16 +275,22 @@ export default function WorkspacePage() {
       const shouldResumeRecognition = task.status === 'generating'
         && (persistedStage === 'queued' || persistedStage === 'recognizing' || persistedStage === 'plan-analysis');
       if (shouldResumeRecognition) {
-        const floorPlan = await toSupportedImageDataUrl(project.floorPlanUrl || '');
+        const snapshot = await loadRunningSnapshot(task.id).catch(() => null);
+        const floorPlan = snapshot?.floorPlan || await toSupportedImageDataUrl(project.floorPlanUrl || '');
         setImageData(floorPlan);
-        const analysis = await analyzeFloorPlan(floorPlan, taskSource);
-        await updatePersistentGenerationTask(task.id, { stage: 'generating', progress: 20, message: '户型空间识别完成，正在准备全屋效果图', completedRooms: 0, totalRooms: analysis.rooms.length });
-        const selectedRooms = analysis.rooms.map((room) => room.name);
-        setRooms(analysis.rooms);
-        setSelectedRooms(selectedRooms);
+        // Local sessions have no backend analysis row: reuse the IndexedDB snapshot so a
+        // reload never pays for a second recognition pass.
+        const recognized: GenerationInput = snapshot?.analysis && snapshot.rooms?.length
+          ? { analysis: snapshot.analysis, rooms: snapshot.rooms, selectedRooms: snapshot.selectedRooms?.length ? snapshot.selectedRooms : snapshot.rooms.map((room) => room.name) }
+          : await analyzeFloorPlan(floorPlan, taskSource).then((analysis) => ({
+              analysis: analysis.analysis, rooms: analysis.rooms, selectedRooms: analysis.rooms.map((room) => room.name),
+            }));
+        await updatePersistentGenerationTask(task.id, { stage: 'generating', progress: 20, message: '户型空间识别完成，正在准备全屋效果图', completedRooms: 0, totalRooms: recognized.rooms.length });
+        setRooms(recognized.rooms);
+        setSelectedRooms(recognized.selectedRooms);
         const runGeneration = generatePlanRef.current;
         if (!runGeneration) throw new Error('生成工作流尚未准备好，请稍后重试。');
-        await runGeneration({ analysis: analysis.analysis, rooms: analysis.rooms, selectedRooms }, task.id, project, { floorPlan, source: taskSource, style: task.style });
+        await runGeneration(recognized, task.id, project, { floorPlan, source: taskSource, style: task.style });
         return;
       }
       const previous = {
@@ -333,6 +340,7 @@ export default function WorkspacePage() {
         setWorkKind(null);
         setMessage('方案已恢复并生成完成。');
         clearActiveGeneration(task.id);
+        void clearRunningSnapshot(task.id).catch(() => undefined);
         return;
       }
       const completedAt = new Date().toISOString();
@@ -362,6 +370,7 @@ export default function WorkspacePage() {
       setStage(3);
       setMessage(warning ? `部分效果图未完成：${warning}` : '方案已恢复并生成完成。');
       clearActiveGeneration(task.id);
+      void clearRunningSnapshot(task.id).catch(() => undefined);
       const record: DesignHistoryRecord = {
         id: version.id, name: `${styleOptions.find((style) => style.key === task.style)?.name || task.style} · ${new Date(completedAt).toLocaleDateString('zh-CN')}`,
         createdAt: completedAt, style: task.style, source, floorPlan: project.floorPlanUrl || '', analysis: result.analysis,
@@ -469,6 +478,15 @@ export default function WorkspacePage() {
       const selected = result.rooms.map((room) => room.name);
       setRooms(result.rooms);
       setSelectedRooms(selected);
+      patchActiveGeneration({ stage: 'generating', progress: 20 });
+      if (!hasPersistentWorkspaceSession()) {
+        void saveRunningSnapshot({
+          id: taskId, taskId, projectId: persistentProjectId, style: workflowStyle, source: sourceType,
+          floorPlan: imageData, analysis: result.analysis, rooms: result.rooms, selectedRooms: selected,
+          stage: 'generating', progress: 20, completedRooms: 0, totalRooms: result.rooms.length,
+          updatedAt: new Date().toISOString(),
+        }).catch(() => undefined);
+      }
       setStage(2);
       task = { ...task, stage: 'generating' };
       persistedProject = { ...persistedProject, updatedAt: new Date().toISOString(), tasks: [task] };
@@ -510,6 +528,14 @@ export default function WorkspacePage() {
             stage: job.stage, progress, message: job.message,
             completedRooms: job.completedRooms, totalRooms: job.totalRooms,
           });
+          if (!hasPersistentWorkspaceSession()) {
+            void saveRunningSnapshot({
+              id: taskId, taskId, projectId: baseProject.id, style: planStyle, source: planSource,
+              floorPlan: planImage, analysis: input.analysis, rooms: input.rooms, selectedRooms: input.selectedRooms,
+              stage: job.stage || 'generating', progress, message: job.message,
+              completedRooms: job.completedRooms, totalRooms: job.totalRooms, updatedAt: new Date().toISOString(),
+            }).catch(() => undefined);
+          }
         }
         progressQueue = progressQueue.then(() => updatePersistentGenerationTask(taskId, {
           stage: job.stage || 'generating', progress, message: job.message || '正在生成空间效果图',
@@ -530,6 +556,7 @@ export default function WorkspacePage() {
       setMessage(result.warning ? `部分效果图未完成：${result.warning}` : '');
       setStage(3);
       clearActiveGeneration(taskId);
+      void clearRunningSnapshot(taskId).catch(() => undefined);
       const completedAt = new Date().toISOString();
       const versionId = newId();
       const task: GenerationTask = { ...baseProject.tasks[0], status: result.warning ? 'failed' : 'completed', stage: result.warning ? 'failed' : 'completed', completedAt, error: result.warning, result: { versionId, roomCount: generatedResults.length - 1, coverReady: true } };
@@ -558,6 +585,7 @@ export default function WorkspacePage() {
       console.error('Whole-home generation failed:', error);
       setStage(1); setMessage(error instanceof Error ? '方案生成失败：' + error.message : '方案生成失败，请稍后重试。');
       clearActiveGeneration(taskId);
+      void clearRunningSnapshot(taskId).catch(() => undefined);
       const completedAt = new Date().toISOString();
       const task: GenerationTask = { ...baseProject.tasks[0], status: 'failed', stage: 'failed', completedAt, error: error instanceof Error ? error.message : '方案生成失败' };
       await failPersistentGenerationTask(task.id, task.error || '方案生成失败', generationProgress ? { cover: generationProgress.cover, rooms: generationProgress.rooms, failedRooms: generationProgress.failedRooms } : undefined).catch(() => undefined);
