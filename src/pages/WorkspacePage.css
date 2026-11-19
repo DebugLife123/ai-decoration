@@ -59,6 +59,12 @@
 .continue-button svg { width: 16px; height: 16px; }
 .upload-panel > .continue-button { margin-top: 24px; }
 .flow-message { margin-top: 12px; color: #a55e68; font-size: 11px; }
+/* Failures used to render only on stages 3-4, so a failed recognition looked like a dead button. */
+.flow-message-error { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; padding: 12px 15px; color: #8d4550; background: #fdf2f2; border-left: 2px solid #d9a3a8; font-size: 12px; line-height: 1.6; }
+.flow-message-action { color: var(--color-primary); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.flow-message-action:hover { text-decoration: underline; }
+.working-progress { width: min(420px, 100%); height: 4px; margin-top: 16px; overflow: hidden; background: #eae5f1; border-radius: 999px; }
+.working-progress span { display: block; height: 100%; background: linear-gradient(90deg, #8870d4, #6a5ad4); border-radius: inherit; transition: width 800ms ease; }
 .recognition-layout { display: grid; grid-template-columns: .85fr 1.15fr; gap: 30px; margin-top: 26px; }
 .plan-preview { position: relative; min-height: 340px; overflow: hidden; background: #f3f0ea; }
 .plan-preview img { width: 100%; height: 100%; min-height: 340px; object-fit: cover; }
