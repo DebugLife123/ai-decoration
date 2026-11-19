@@ -5,7 +5,7 @@ import { createCadWorkflowMiddleware } from './server/cadWorkflow.js'
 import { createBackendProxyPlugin } from './server/backendProxy.js'
 import { resolve } from 'node:path'
 
-const aiEnvKeys = ['CODEX2API_API_KEY', 'AI_IMAGE_API_KEY', 'AI_BASE_URL', 'AI_VISION_MODEL', 'AI_IMAGE_MODEL', 'AI_API_KEY', 'AI_MODEL', 'IMAGE_MODEL', 'AI_VISION_FALLBACK_MODELS', 'AI_ANALYSIS_TOTAL_TIMEOUT_MS', 'AI_ANALYSIS_TIMEOUT_MS', 'AI_REVIEW_TIMEOUT_MS', 'AI_IMAGE_TIMEOUT_MS']
+const aiEnvKeys = ['CODEX2API_API_KEY', 'AI_IMAGE_API_KEY', 'AI_BASE_URL', 'AI_VISION_MODEL', 'AI_IMAGE_MODEL', 'AI_API_KEY', 'AI_MODEL', 'IMAGE_MODEL', 'AI_VISION_FALLBACK_MODELS', 'AI_ANALYSIS_TOTAL_TIMEOUT_MS', 'AI_ANALYSIS_TIMEOUT_MS', 'AI_REVIEW_TIMEOUT_MS', 'AI_IMAGE_TIMEOUT_MS', 'CREDIT_GATEWAY_SECRET']
 
 export default defineConfig(() => {
   const env = process.env as Record<string, string | undefined>
