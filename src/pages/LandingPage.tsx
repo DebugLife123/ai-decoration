@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDown, ArrowRight, Box, ChevronLeft, ChevronRight, FolderOpen, Layers3, Ruler, Sparkles } from 'lucide-react';
 import { templates } from '../features/styleLibrary/inspirationTemplates';
@@ -18,19 +18,70 @@ const resources = [
 ];
 
 function Comparison() {
-  const [position, setPosition] = useState(50);
+  const [position, setPosition] = useState(10);
   const stageRef = useRef<HTMLDivElement>(null);
-  const clamp = (value: number) => setPosition(Math.max(0, Math.min(100, value)));
+  const stopAutoRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const timers: number[] = [];
+    let started = false;
+    let disposed = false;
+    const stop = () => {
+      started = true;
+      timers.forEach(window.clearTimeout);
+      timers.length = 0;
+      stage.classList.remove('ld-compare-auto');
+      observer?.disconnect();
+    };
+    // Effect-local resources safely reset during StrictMode's setup/cleanup replay.
+    const observer = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entries) => {
+      if (disposed || started || !entries.some((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.35)) return;
+      started = true;
+      observer?.disconnect();
+      if (motion.matches) return;
+      stage.classList.add('ld-compare-auto');
+      stage.style.setProperty('--compare-motion-duration', '1600ms');
+      void stage.offsetWidth;
+      setPosition(90);
+      timers.push(window.setTimeout(() => {
+        stage.style.setProperty('--compare-motion-duration', '1100ms');
+        setPosition(50);
+        timers.push(window.setTimeout(stop, 1100));
+      }, 1600 + 2500));
+    }, { threshold: [0.35] });
+    stopAutoRef.current = stop;
+    const onMotionChange = () => { if (motion.matches) stop(); };
+    motion.addEventListener('change', onMotionChange);
+    observer?.observe(stage);
+    return () => {
+      disposed = true;
+      stop();
+      motion.removeEventListener('change', onMotionChange);
+      stopAutoRef.current = () => {};
+    };
+  }, []);
+  const clamp = (value: number) => setPosition(Math.max(10, Math.min(90, value)));
   const updatePointer = (event: PointerEvent<HTMLButtonElement>) => {
     const bounds = stageRef.current?.getBoundingClientRect();
     if (bounds?.width) clamp((event.clientX - bounds.left) / bounds.width * 100);
   };
   const handleKey = (event: KeyboardEvent<HTMLButtonElement>) => {
-    const step = event.shiftKey ? 10 : 2;
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') clamp(position - step);
-    else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') clamp(position + step);
-    else if (event.key === 'Home') clamp(0);
-    else if (event.key === 'End') clamp(100);
+    const stage = stageRef.current;
+    const line = stage?.querySelector<HTMLElement>('.ld-compare-line');
+    // Freeze the rendered position, not the transition target, when taking control.
+    const visualPosition = stage?.clientWidth && line
+      ? Number.parseFloat(getComputedStyle(line).left) / stage.clientWidth * 100
+      : position;
+    const currentPosition = Number.isFinite(visualPosition) ? visualPosition : position;
+    stopAutoRef.current();
+    clamp(currentPosition);
+    const step = event.shiftKey ? 5 : 2;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') clamp(currentPosition - step);
+    else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') clamp(currentPosition + step);
+    else if (event.key === 'Home') clamp(10);
+    else if (event.key === 'End') clamp(90);
     else return;
     event.preventDefault();
   };
@@ -39,10 +90,112 @@ function Comparison() {
       <img src={asset('floorplan-original')} alt="原始黑白户型平面图示例" loading="lazy" decoding="async" />
       <div className="ld-compare-after"><img src={asset('floorplan-ai-render-aligned')} alt="同一户型的材质渲染示例" loading="lazy" decoding="async" /></div>
       <span className="ld-compare-tag ld-tag-before">原始户型图</span><span className="ld-compare-tag ld-tag-after">材质渲染示例</span>
-      <div className="ld-compare-line"><button type="button" className="ld-compare-handle" role="slider" aria-label="拖动查看户型渲染前后对比" aria-orientation="horizontal" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(position)} aria-valuetext={`材质渲染显示 ${Math.round(position)}%`} onKeyDown={handleKey} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); updatePointer(event); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) updatePointer(event); }} onPointerUp={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}><ChevronLeft size={18} /><ChevronRight size={18} /></button></div>
+      <div className="ld-compare-line"><button type="button" className="ld-compare-handle" role="slider" aria-label="拖动查看户型渲染前后对比" aria-orientation="horizontal" aria-valuemin={10} aria-valuemax={90} aria-valuenow={Math.round(position)} aria-valuetext={`材质渲染显示 ${Math.round(position)}%`} onKeyDown={handleKey} onPointerDown={(event) => { stopAutoRef.current(); event.currentTarget.setPointerCapture(event.pointerId); updatePointer(event); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) updatePointer(event); }} onPointerUp={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}><ChevronLeft size={18} /><ChevronRight size={18} /></button></div>
     </div>
     <p className="ld-compare-note">拖动滑块，查看同一户型的两种表达 <span>展示素材 · 非实时生成结果</span></p>
   </div>;
+}
+
+const modelBrands = [
+  ['openai', 'GPT', 'OpenAI'], ['claude', 'Claude', 'Anthropic'],
+  ['gemini', 'Gemini', 'Google'], ['deepseek', 'DeepSeek', 'DeepSeek'],
+  ['grok', 'Grok', 'xAI'], ['qwen', 'Qwen', 'Alibaba'],
+  ['kimi', 'Kimi', 'Moonshot AI'], ['chatglm', 'GLM', 'Zhipu AI'],
+  ['minimax', 'MiniMax', 'MiniMax'], ['doubao', 'Doubao', 'ByteDance'],
+  ['hunyuan', 'Hunyuan', 'Tencent'], ['mistral', 'Mistral', 'Mistral AI'],
+];
+
+function ModelEcosystem() {
+  const loopRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const setRef = useRef<HTMLUListElement>(null);
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  useEffect(() => {
+    const loop = loopRef.current;
+    const track = trackRef.current;
+    const original = setRef.current;
+    if (!loop || !track || !original) return;
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let width = 0;
+    let offset = 0;
+    let speed = 72;
+    let previous = performance.now();
+    let frame = 0;
+    let visible = typeof IntersectionObserver === 'undefined';
+    let hovering = false;
+    let focused = false;
+    let disposed = false;
+    const measure = () => {
+      width = original.getBoundingClientRect().width;
+      if (width > 0) offset %= width;
+    };
+    const animate = (time: number) => {
+      const elapsed = Math.min((time - previous) / 1000, 0.05);
+      previous = time;
+      const target = hovering || focused || pausedRef.current ? 0 : 72;
+      speed += (target - speed) * (1 - Math.exp(-8 * elapsed));
+      if (width > 0) {
+        offset = (offset + speed * elapsed) % width;
+        track.style.transform = `translate3d(${-offset}px, 0, 0)`;
+      }
+      frame = requestAnimationFrame(animate);
+    };
+    const sync = () => {
+      cancelAnimationFrame(frame);
+      loop.dataset.reducedMotion = String(motion.matches);
+      if (motion.matches) { track.style.transform = ''; return; }
+      if (disposed || document.hidden || !visible) return;
+      measure();
+      previous = performance.now();
+      frame = requestAnimationFrame(animate);
+    };
+    const enter = () => { hovering = true; };
+    const leave = () => { hovering = false; };
+    const focus = () => { focused = true; };
+    const blur = (event: FocusEvent) => { if (!loop.contains(event.relatedTarget as Node | null)) focused = false; };
+    const observer = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      sync();
+    });
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(loop);
+    resize?.observe(original);
+    loop.addEventListener('pointerenter', enter);
+    loop.addEventListener('pointerleave', leave);
+    loop.addEventListener('focusin', focus);
+    loop.addEventListener('focusout', blur);
+    window.addEventListener('resize', measure);
+    document.addEventListener('visibilitychange', sync);
+    motion.addEventListener('change', sync);
+    sync();
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      resize?.disconnect();
+      loop.removeEventListener('pointerenter', enter);
+      loop.removeEventListener('pointerleave', leave);
+      loop.removeEventListener('focusin', focus);
+      loop.removeEventListener('focusout', blur);
+      window.removeEventListener('resize', measure);
+      document.removeEventListener('visibilitychange', sync);
+      motion.removeEventListener('change', sync);
+    };
+  }, []);
+  return <section className="ld-section ld-model-ecosystem" aria-labelledby="ld-models-title">
+    <div className="ld-shell">
+      <div className="ld-heading"><p className="ld-eyebrow">MODEL ECOSYSTEM</p><h2 id="ld-models-title">海量 AI 模型</h2><p>探索主流大语言与多模态模型生态。以下为品牌展示，实际可用模型以工作台为准。</p></div>
+      <div className="ld-logo-loop" ref={loopRef} role="region" aria-label="AI 模型品牌展示" tabIndex={0}>
+        <div className="ld-logo-loop-track" ref={trackRef}>
+          {[false, true].map((duplicate) => <ul className="ld-logo-loop-list" key={String(duplicate)} ref={duplicate ? undefined : setRef} aria-hidden={duplicate || undefined}>
+            {modelBrands.map(([logo, name, company]) => <li className="ld-model-logo" key={logo}><img src={`/reference-design/models/${logo}.svg`} alt="" width={46} height={46} loading="lazy" decoding="async" /><span><strong>{name}</strong><small>{company}</small></span></li>)}
+          </ul>)}
+        </div>
+      </div>
+      <div className="ld-model-meta"><span>模型生态展示 · 不代表全部已接入</span><button type="button" aria-pressed={paused} onClick={() => { pausedRef.current = !paused; setPaused(!paused); }}>{paused ? '继续滚动' : '暂停滚动'}</button></div>
+    </div>
+  </section>;
 }
 
 export default function LandingPage() {
@@ -93,6 +246,8 @@ export default function LandingPage() {
     <nav className="ld-launchpad ld-shell" aria-label="设计快捷入口">
       {[{ icon: Sparkles, title: '户型图设计', detail: '从你的户型开始', route: '/workspace?source=floorplan' }, { icon: Ruler, title: 'CAD 工作流', detail: '衔接图纸与创作', route: '/cad-workflow' }, { icon: Layers3, title: '无限画布', detail: '自由组织设计灵感', route: '/canvas' }, { icon: FolderOpen, title: '我的项目', detail: '继续上次的设计', route: '/projects' }].map(({ icon: Icon, title, detail, route }) => <Link key={route} to={route}><Icon size={24} strokeWidth={1.5} /><div><strong>{title}</strong><span>{detail}</span></div><ArrowRight className="ld-launch-arrow" size={18} /></Link>)}
     </nav>
+
+    <ModelEcosystem />
 
     <section className="ld-section ld-muted" id="landing-workflow" aria-labelledby="ld-fields-title">
       <div className="ld-shell"><div className="ld-heading"><p className="ld-eyebrow">YOUR DESIGN WORKFLOW</p><h2 id="ld-fields-title">好设计，从一个想法开始</h2><p>把灵感、图纸与创作连接起来，找到适合你的设计起点。</p></div>
