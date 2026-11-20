@@ -1,6 +1,6 @@
 import { estimateBudget, type EstimateResult } from '../services/budgetApi';
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../stores/appStore';
 import { fallbackStyleProfiles, recommendStyles, type StyleRecommendationProfile } from '../services/styleRecommendation';
 import { loadPlatformStyleProfiles } from '../services/styleProfileSource';
@@ -31,18 +31,21 @@ function formatMoney(value: number) {
 }
 
 export default function BudgetPage() {
-  const projects = useAppStore((state) => state.projects);
   const authSession = useAppStore((state) => state.authSession);
-  const userId = authSession?.user.id || 'anonymous';
+  const isAuthenticated = Boolean(authSession);
+  const projects = useAppStore((state) => state.projects);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const userId = authSession?.user.id || '';
   const [projectId, setProjectId] = useState('');
   // 面积与地区默认来自个人中心的「装修偏好」，免得每次重复填写。
-  const savedProfile = loadUserProfile(userId);
+  const savedProfile = isAuthenticated ? loadUserProfile(userId) : null;
   const [areaInput, setAreaInput] = useState(savedProfile?.defaultArea || '');
   const [region, setRegion] = useState(savedProfile?.region || '');
   const [budgetInput, setBudgetInput] = useState('');
   const [finishLevel, setFinishLevel] = useState<FinishLevel>('standard');
   const [platformProfiles, setPlatformProfiles] = useState<StyleRecommendationProfile[] | null>(null);
-  const [savedAt, setSavedAt] = useState<string>(() => loadBudgetSnapshot(userId)?.savedAt || '');
+  const [savedAt, setSavedAt] = useState<string>(() => isAuthenticated ? loadBudgetSnapshot(userId)?.savedAt || '' : '');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null);
   useEffect(() => {
@@ -52,7 +55,11 @@ export default function BudgetPage() {
       .catch(() => { /* 回退到内置风格资料 */ });
     return () => { cancelled = true; };
   }, []);
-  const selectedProject = projects.find((project) => project.id === projectId);
+  const selectedProject = isAuthenticated ? projects.find((project) => project.id === projectId) : undefined;
+  const requireLogin = () => {
+    const next = `${location.pathname}${location.search}${location.hash}`;
+    navigate(`/login?next=${encodeURIComponent(next)}`);
+  };
   const area = Number(areaInput);
   const targetBudget = Number(budgetInput) * 10000;
   const currentLevel = finishLevels.find((item) => item.id === finishLevel)!;
@@ -96,6 +103,7 @@ export default function BudgetPage() {
   const recommendationBudget = Number.isFinite(Number(budgetInput)) && Number(budgetInput) > 0 ? Number(budgetInput) : null;
 
   const saveSnapshot = () => {
+    if (!isAuthenticated) { requireLogin(); return; }
     if (!estimate) return;
     saveBudgetSnapshot(userId, {
       area, region: region.trim(), finishLevel, finishLabel: currentLevel.label,
@@ -106,6 +114,7 @@ export default function BudgetPage() {
   };
 
   const generateSheet = async () => {
+    if (!isAuthenticated) { requireLogin(); return; }
     setEstimating(true);
     const current = await estimateBudget({ area, region: region.trim(), finishLevel: ({ basic: 'BASIC', standard: 'STANDARD', premium: 'PREMIUM' } as const)[finishLevel], pricingMode: 'LIST', targetBudget: targetBudget > 0 ? targetBudget : null });
     setResult(current);
@@ -129,7 +138,7 @@ export default function BudgetPage() {
   return <main className="budget-page">
     <header className="budget-header">
       <div><span className="budget-eyebrow">EARLY PLANNING</span><h1>装修预算试算</h1><p>按面积和装修档位生成一份前期参考范围。</p></div>
-      <Link to="/projects">我的项目</Link>
+      {isAuthenticated ? <Link to="/projects">我的项目</Link> : <button type="button" onClick={requireLogin}>登录查看项目</button>}
     </header>
 
     {sheetOpen && estimate ? <article className="budget-sheet budget-sheet-page">
@@ -145,8 +154,8 @@ export default function BudgetPage() {
         </div>
       </header>
       <div className="sheet-actions">
-        <button type="button" className="budget-snapshot-save" onClick={saveSnapshot}>保存快照</button>
-        <Link className="sheet-workspace" to="/workspace">前往工作台 →</Link>
+        <button type="button" className="budget-snapshot-save" onClick={saveSnapshot}>{isAuthenticated ? '保存快照' : '登录后保存'}</button>
+        {isAuthenticated ? <Link className="sheet-workspace" to="/workspace">前往工作台 →</Link> : <button type="button" className="sheet-workspace" onClick={requireLogin}>登录后前往工作台 →</button>}
         <button type="button" className="sheet-back" onClick={() => { setSheetOpen(false); setResult(null); }}>修改试算条件</button>
         {savedAt && <span className="budget-snapshot-saved">已保存 · 工作台将显示这份预算参考</span>}
       </div>
@@ -175,7 +184,7 @@ export default function BudgetPage() {
       <section inert={estimating} className="budget-inputs" aria-label="试算条件">
         <label className="budget-field">
           <span>关联项目</span>
-          <select value={projectId} onChange={(event) => selectProject(event.target.value)} disabled={!projects.length}>
+          <select value={projectId} onChange={(event) => selectProject(event.target.value)} disabled={!isAuthenticated || !projects.length}>
             <option value="">不关联项目</option>
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
@@ -189,13 +198,13 @@ export default function BudgetPage() {
           <div>{finishLevels.map((level) => <button type="button" key={level.id} className={finishLevel === level.id ? 'selected' : ''} aria-pressed={finishLevel === level.id} onClick={() => setFinishLevel(level.id)}>{level.label}</button>)}</div>
         </fieldset>
         <label className="budget-field"><span>计划总预算 <small>可选</small></span><div className="budget-input"><input type="number" min="0" step="0.1" value={budgetInput} onChange={(event) => setBudgetInput(event.target.value)} placeholder="填写后可对照估算范围" /><b>万元</b></div></label>
-        <button type="button" className="budget-generate" disabled={!estimate || estimating} onClick={generateSheet}>{estimating ? '正在计算…' : '生成预算单'}</button>
+        <button type="button" className="budget-generate" disabled={isAuthenticated && (!estimate || estimating)} onClick={generateSheet}>{!isAuthenticated ? '登录后生成预算单' : estimating ? '正在计算…' : '生成预算单'}</button>
         {selectedProject && <p className="project-budget-note">数据来自项目“{selectedProject.name}”，可在此临时调整，不会覆盖项目资料。</p>}
       </section>
 
       <section className="budget-result" aria-live="polite">
-        {!estimate ? <div className="budget-prompt"><strong>填写面积开始试算</strong><span>请输入 0 至 2000 ㎡之间的装修面积。</span></div>
-        : <div className="budget-prompt"><strong>条件已填写完成</strong><span>点击「生成预算单」生成这份前期预算参考。</span><button type="button" className="budget-generate" disabled={estimating} onClick={generateSheet}>{estimating ? '正在计算…' : '生成预算单'}</button></div>}
+        {!estimate ? <div className="budget-prompt"><strong>{isAuthenticated ? '填写面积开始试算' : '装修预算参考'}</strong><span>{isAuthenticated ? '请输入 0 至 2000 ㎡之间的装修面积。' : '按每平方米的主要施工类别查看参考区间，具体价格因地区、房屋情况和选材而异。'}</span>{!isAuthenticated && <div className="budget-reference-costs">{referenceCosts.map((item) => <div className="estimate-row" key={item.label}><span>{item.label}</span><strong>¥{item.low} - ¥{item.high} / ㎡</strong></div>)}</div>}</div>
+        : <div className="budget-prompt"><strong>条件已填写完成</strong><span>{isAuthenticated ? '点击「生成预算单」生成这份前期预算参考。' : '登录后可计算并保存个性化预算单。'}</span><button type="button" className="budget-generate" disabled={estimating} onClick={generateSheet}>{!isAuthenticated ? '登录后生成预算单' : estimating ? '正在计算…' : '生成预算单'}</button></div>}
       </section>
     </div>}
   </main>;

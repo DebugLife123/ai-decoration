@@ -1,5 +1,5 @@
 import { localWorkspaceDataAdapter } from './localDataAdapter';
-import { businessApiConfig, businessDataAdapter } from './businessData';
+import { businessApiConfig } from './businessData';
 import { loadCatalogMaterials } from './materialCatalog';
 import { authApiBaseUrl, currentAccessToken, isLocalDemoSession, readAuthSession } from './authSession';
 import type { Project, WorkspaceDataAdapter } from './dataContracts';
@@ -83,24 +83,12 @@ function activeWorkspaceAdapter(): WorkspaceDataAdapter {
     : localWorkspaceDataAdapter;
 }
 
-function hasPlatformSession(): boolean {
-  const session = readAuthSession();
-  return Boolean(businessApiConfig.enabled && !isLocalDemoSession(session) && (session || currentAccessToken()));
-}
-
 /**
  * 消费端（含个人账号）读的是平台材料目录：已认证企业录入、未过期的报价。
- * 未登录或接口不可用时回退到企业适配器/本地草稿，保证页面不白屏。
+ * 访客与登录用户使用同一公开目录，不回退到企业私有报价或本地草稿。
  */
 async function loadMaterialsForConsumer() {
-  if (hasPlatformSession()) {
-    try {
-      return await loadCatalogMaterials();
-    } catch {
-      // 平台目录不可用时继续走下面的回退链路。
-    }
-  }
-  return businessDataAdapter.loadMaterials();
+  return loadCatalogMaterials();
 }
 
 export const workspaceDataAdapter: WorkspaceDataAdapter = {

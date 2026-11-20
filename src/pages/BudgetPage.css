@@ -24,6 +24,7 @@
 .budget-prompt { min-height: 300px; display: grid; align-content: center; justify-items: center; gap: 8px; color: var(--color-text-muted); text-align: center; }
 .budget-prompt strong { color: var(--color-text); font-family: var(--font-display); font-size: 18px; }
 .budget-prompt span { font-size: 12px; }
+.budget-reference-costs { width: min(100%, 460px); margin-top: 8px; }
 .estimate-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding-bottom: 18px; border-bottom: 1px solid var(--color-border-light); }
 .estimate-heading > div { display: grid; gap: 7px; }
 .estimate-heading > div > span { color: var(--color-text-secondary); font-size: 11px; }

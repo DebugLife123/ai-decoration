@@ -3,7 +3,8 @@
 ## Intended behavior
 
 - `/` is the public website entry. A fresh visitor sees the homepage and login/register action.
-- Functional routes (workspace, CAD, canvas, projects, inspiration, materials, cases, budget, membership) require authentication, including localhost canvas.
+- Display routes `/inspiration`, `/materials`, `/cases`, `/companies/:id`, `/budget`, and `/subscription` are public. Search, filters, previews, template details and material comparisons are browsing operations.
+- Creating/generating, publishing, saving/favoriting, adding materials to projects, sending inquiries, budget calculations and purchases require login at the action boundary. Private workspaces, canvas, projects, notifications and profile still require an account.
 - Login is a standalone page following the supplied reference, with a home link to dismiss account access and return to browsing.
 - The original destination's path, query and fragment are retained through login. External return destinations and login loops are rejected.
 - Real authenticated sessions remain signed in. Legacy local-demo sessions are discarded and the local-demo login shortcut is removed.
@@ -18,7 +19,11 @@ The original login page's split-screen composition, dark interior backdrop, mode
 Verified against the existing local app with Chrome CDP at desktop 1440×1000 and mobile 390×844:
 
 - Fresh session `/` renders the landing page, not the login page.
-- All nine tested business destinations redirect to login: workspace, canvas, CAD, projects, materials, cases, budget, subscription and inspiration.
+- Current public-browsing regression: homepage, inspiration, materials, cases, subscription and budget remain on their requested routes with navigation, correct header spacing, and no horizontal overflow. Template details open without login.
+- Publish, purchase and budget calculation actions redirect to login with the display page as `next`. Private projects/workspace/canvas/notifications/profile routes remain gated.
+- Live anonymous inspiration/material/case/style-reference API calls return 200; no private project or credit-summary calls occurred during guest browsing. Current live material/case catalogs contain no public entries, so material detail/favorite/inquiry/add-project interactions were tested using a browser-only response fixture (no database changes). All action gates passed.
+- Backend PublicDisplayAccessTest + CORS tests: 3 passed. Actual budget endpoint returns 401 anonymously and 200 using a real demo-account session. Catalog write methods and private routes remain denied to anonymous callers.
+- Catalog image reads retain publication constraints: approved quote, not hidden, certified active non-demo company, valid quote, and image content. Public DTOs use designated public business contacts only.
 - Workspace query and fragment survive: `/workspace?source=floorplan#upload` → login → same complete destination after real demo-account authentication.
 - Personal registration exposes required name/email/password; choosing business adds company name. No new account was created in this regression.
 - Header sign-out returns to `/` with cleared session. A seeded legacy local-demo session is discarded and `/canvas` redirects to login.
@@ -26,6 +31,6 @@ Verified against the existing local app with Chrome CDP at desktop 1440×1000 an
 - Theme toggle changes the login palette; outer orbit reports a 46s animation and reduced-motion disables it.
 - Five safe-destination cases pass (internal path retained, external/login-loop paths rejected).
 - No Runtime.exceptionThrown events during the final browser run.
-- Production build passes with the existing large-chunk advisory. Targeted lint: zero warnings/errors. TypeScript and git diff whitespace checks pass.
+- Production build passes with the existing large-chunk advisory. Targeted lint: zero errors, one existing HomePage effect/declaration-order warning. TypeScript and git diff whitespace checks pass.
 
 Browser scripts remain local ignored QA artifacts. Checks establish functional behavior and DOM geometry; screenshot pixel parity was not visually reviewed.

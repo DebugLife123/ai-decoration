@@ -1,4 +1,4 @@
-import { authApiBaseUrl, currentAccessToken } from './authSession';
+import { authApiBaseUrl } from './authSession';
 
 export interface PublicCompany {
   companyId: string;
@@ -22,7 +22,7 @@ type Envelope<T> = { data: T; message?: string };
 
 export async function loadPublicCompany(companyId: string): Promise<PublicCompany> {
   const response = await fetch(`${authApiBaseUrl}/api/v1/companies/${encodeURIComponent(companyId)}`, {
-    headers: { Accept: 'application/json', Authorization: `Bearer ${currentAccessToken()}` },
+    headers: { Accept: 'application/json' },
   });
   const payload = await response.json() as Envelope<PublicCompany>;
   if (!response.ok) throw new Error(payload.message || `企业主页请求失败（${response.status}）`);
@@ -31,7 +31,7 @@ export async function loadPublicCompany(companyId: string): Promise<PublicCompan
 
 export async function loadPublicCompanyAsset(companyId: string, assetId: string): Promise<Blob> {
   const response = await fetch(`${authApiBaseUrl}/api/v1/companies/${encodeURIComponent(companyId)}/assets/${encodeURIComponent(assetId)}`, {
-    headers: { Authorization: `Bearer ${currentAccessToken()}` },
+    headers: { Accept: '*/*' },
   });
   if (!response.ok) throw new Error(`企业图片读取失败（${response.status}）`);
   return response.blob();

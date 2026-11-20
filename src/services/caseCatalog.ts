@@ -1,4 +1,4 @@
-import { authApiBaseUrl, currentAccessToken } from './authSession';
+import { authApiBaseUrl } from './authSession';
 
 export interface PublicCaseFile {
   id: string;
@@ -33,7 +33,7 @@ export async function loadPublicCases(filters: { query: string; style: string; c
     if (filters.style !== '全部') params.set('style', filters.style);
     if (filters.city !== '全部') params.set('city', filters.city);
     const response = await fetch(`${authApiBaseUrl}/api/v1/cases?${params}`, {
-      headers: { Accept: 'application/json', Authorization: `Bearer ${currentAccessToken()}` },
+      headers: { Accept: 'application/json' },
     });
     const payload = await response.json() as Envelope<Page<PublicCase>>;
     if (!response.ok) throw new Error(payload.message || `案例请求失败（${response.status}）`);
@@ -46,7 +46,7 @@ export async function loadPublicCases(filters: { query: string; style: string; c
 
 export async function loadPublicCaseFile(caseId: string, fileId: string): Promise<Blob> {
   const response = await fetch(`${authApiBaseUrl}/api/v1/cases/${encodeURIComponent(caseId)}/files/${encodeURIComponent(fileId)}`, {
-    headers: { Authorization: `Bearer ${currentAccessToken()}` },
+    headers: { Accept: '*/*' },
   });
   if (!response.ok) throw new Error(`案例资料读取失败（${response.status}）`);
   return response.blob();

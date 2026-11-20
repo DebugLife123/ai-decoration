@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../stores/appStore';
 import { workspaceDataAdapter } from '../services/workspaceData';
 import { loadCatalogMaterialImage } from '../services/materialCatalog';
@@ -25,15 +25,23 @@ function readFavorites(key: string): string[] {
 }
 
 export default function MaterialsPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const projects = useAppStore((state) => state.projects);
   const toggleProjectMaterial = useAppStore((state) => state.toggleProjectMaterial);
   const authSession = useAppStore((state) => state.authSession);
+  const isAuthenticated = Boolean(authSession);
   const preferenceKey = `decoration-material-preferences:${authSession?.user.id || 'guest'}`;
+  const requireLogin = () => {
+    if (isAuthenticated) return true;
+    navigate(`/login?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`);
+    return false;
+  };
   const [projectId, setProjectId] = useState('');
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('全部');
   const [libraryView, setLibraryView] = useState<'all' | 'saved'>('all');
-  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => readFavorites(preferenceKey));
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(() => authSession ? readFavorites(preferenceKey) : []);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [materials, setMaterials] = useState<MaterialRecord[]>([]);
@@ -49,9 +57,10 @@ export default function MaterialsPage() {
   const [inquiryForm, setInquiryForm] = useState({ contactName: '', contactInfo: '', message: '' });
   const touchStartX = useRef<number | null>(null);
   useEffect(() => {
+    if (!isAuthenticated) return;
     try { localStorage.setItem(preferenceKey, JSON.stringify({ favorites: favoriteIds })); }
     catch { /* Browser storage may be unavailable or full. */ }
-  }, [favoriteIds, preferenceKey]);
+  }, [favoriteIds, preferenceKey, isAuthenticated]);
   const detailGallery = detailMaterial?.imageIds?.length
     ? detailMaterial.imageIds
     : detailMaterial?.imageId ? [detailMaterial.imageId] : [];
@@ -127,6 +136,7 @@ export default function MaterialsPage() {
   };
 
   const openInquiryForm = () => {
+    if (!requireLogin()) return;
     setInquiryForm({
       contactName: authSession?.user.displayName || '',
       contactInfo: authSession?.user.email || '',
@@ -139,7 +149,7 @@ export default function MaterialsPage() {
 
   const submitInquiry = async (event: FormEvent) => {
     event.preventDefault();
-    if (!detailMaterial) return;
+    if (!requireLogin() || !detailMaterial) return;
     setInquirySubmitting(true);
     setInquiryError('');
     try {
@@ -159,6 +169,10 @@ export default function MaterialsPage() {
   };
 
   const toggleFavorite = (materialId: string) => {
+    if (!isAuthenticated) {
+      requireLogin();
+      return;
+    }
     setFavoriteIds((current) => current.includes(materialId)
       ? current.filter((id) => id !== materialId)
       : [...current, materialId]);
@@ -177,11 +191,11 @@ export default function MaterialsPage() {
   const availableFavoriteCount = favoriteIds.filter((id) => materials.some((item) => item.id === id)).length;
 
   return <main className="materials-page">
-    <header className="materials-header"><div><span className="materials-eyebrow">MATERIAL LIBRARY</span><h1>材料库</h1><p>浏览已认证企业录入的材料报价，并将选中的材料加入设计项目。</p></div><Link to="/projects">我的项目</Link></header>
-    <div className="materials-toolbar"><label className="materials-search"><span>搜索材料</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="名称、规格或地区" /></label><label className="materials-project-select"><span>关联到项目</span><select value={selectedProjectId} onChange={(event) => setProjectId(event.target.value)} disabled={!projects.length}><option value="">选择项目</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></div>
-    <div className="materials-library-controls"><div className="materials-view-switch" role="group" aria-label="材料视图"><button type="button" className={libraryView === 'all' ? 'active' : ''} aria-pressed={libraryView === 'all'} onClick={() => setLibraryView('all')}>全部材料</button><button type="button" className={libraryView === 'saved' ? 'active' : ''} aria-pressed={libraryView === 'saved'} onClick={() => setLibraryView('saved')}>已收藏 <span>{availableFavoriteCount}</span></button></div><div className="materials-compare-control"><span>{availableCompareIds.length}/4 项已选</span><button type="button" disabled={availableCompareIds.length < 2} onClick={() => setComparisonOpen(true)}>对比材料</button><button type="button" className="clear-compare" disabled={!availableCompareIds.length} onClick={() => setCompareIds([])}>清空</button></div></div>
+    <header className="materials-header"><div><span className="materials-eyebrow">MATERIAL LIBRARY</span><h1>材料库</h1><p>浏览已认证企业录入的材料报价，并将选中的材料加入设计项目。</p></div>{isAuthenticated && <Link to="/projects">我的项目</Link>}</header>
+    <div className="materials-toolbar"><label className="materials-search"><span>搜索材料</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="名称、规格或地区" /></label>{isAuthenticated && <label className="materials-project-select"><span>关联到项目</span><select value={selectedProjectId} onChange={(event) => setProjectId(event.target.value)} disabled={!projects.length}><option value="">选择项目</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}</div>
+    <div className="materials-library-controls"><div className="materials-view-switch" role="group" aria-label="材料视图"><button type="button" className={libraryView === 'all' ? 'active' : ''} aria-pressed={libraryView === 'all'} onClick={() => setLibraryView('all')}>全部材料</button>{isAuthenticated && <button type="button" className={libraryView === 'saved' ? 'active' : ''} aria-pressed={libraryView === 'saved'} onClick={() => setLibraryView('saved')}>已收藏 <span>{availableFavoriteCount}</span></button>}</div><div className="materials-compare-control"><span>{availableCompareIds.length}/4 项已选</span><button type="button" disabled={availableCompareIds.length < 2} onClick={() => setComparisonOpen(true)}>对比材料</button><button type="button" className="clear-compare" disabled={!availableCompareIds.length} onClick={() => setCompareIds([])}>清空</button></div></div>
     <nav className="materials-filters" aria-label="材料分类">{categories.map((item) => <button key={item} className={category === item ? 'active' : ''} onClick={() => setCategory(item)}>{item}</button>)}</nav>
-    {!projects.length && <div className="materials-notice">先创建一个项目，之后可以把材料加入项目清单。 <Link to="/workspace">创建项目</Link></div>}
+    {isAuthenticated && !projects.length && <div className="materials-notice">先创建一个项目，之后可以把材料加入项目清单。 <Link to="/workspace">创建项目</Link></div>}
     {materialsStatus === 'loading' ? <section className="materials-empty" role="status"><h2>正在加载材料</h2><p>请稍候。</p></section> : materialsStatus === 'error' ? <section className="materials-empty" role="alert"><h2>材料暂时无法加载</h2><p>请刷新页面后重试。</p></section> : materials.length === 0 ? <section className="materials-empty"><h2>当前没有已录入的材料</h2><p>材料库汇总已通过认证的企业录入、且在有效期内的报价。你可以先继续创建和编辑设计项目，不需要等待材料数据。</p><Link to="/workspace">继续设计</Link></section> : visibleMaterials.length === 0 ? <section className="materials-empty"><h2>{libraryView === 'saved' && !query ? '还没有收藏材料' : '没有匹配的材料'}</h2><p>{libraryView === 'saved' && !query ? '在材料卡片上选择“收藏”，方便之后回来看和比较。' : '试试其他名称、规格、地区或分类。'}</p></section> : <section className="materials-grid" aria-label="材料列表">{visibleMaterials.map((material) => {
       const attached = Boolean(selectedProject?.materialIds.includes(material.id));
       const favorited = favoriteIds.includes(material.id);
@@ -196,7 +210,7 @@ export default function MaterialsPage() {
         {material.companyName && <p className="material-company">报价方：{material.companyId ? <Link to={`/companies/${material.companyId}`} onClick={(event) => event.stopPropagation()}>{material.companyName}</Link> : material.companyName}</p>}
         <div className="material-price">¥{material.price || '未报价'}<small> / {material.unit || '单位未填写'}</small></div>
         <div className="material-item-actions"><button type="button" className={`material-save-button ${favorited ? 'saved' : ''}`} aria-pressed={favorited} onClick={() => toggleFavorite(material.id)}>{favorited ? '已收藏' : '收藏'}</button><button type="button" className={`material-compare-button ${compared ? 'selected' : ''}`} aria-pressed={compared} disabled={!compared && compareIds.length >= 4} onClick={() => toggleCompare(material.id)}>{compared ? '已选对比' : '加入对比'}</button></div>
-        <div className="material-item-foot"><button type="button" className="material-details-button" onClick={() => openDetails(material)}>查看详情</button><button disabled={!selectedProject} className={attached ? 'attached' : ''} onClick={() => selectedProject && toggleProjectMaterial(selectedProject.id, material.id)}>{attached ? '已加入项目' : '加入项目'}</button></div>
+        <div className="material-item-foot"><button type="button" className="material-details-button" onClick={() => openDetails(material)}>查看详情</button><button disabled={isAuthenticated && !selectedProject} className={attached ? 'attached' : ''} onClick={() => requireLogin() && selectedProject && toggleProjectMaterial(selectedProject.id, material.id)}>{attached ? '已加入项目' : '加入项目'}</button></div>
       </article>;
     })}</section>}
     {detailMaterial && <div className="material-detail-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailMaterial(null); }}>
@@ -232,7 +246,7 @@ export default function MaterialsPage() {
             {detailMaterial.companyContactName && <div><span>联系人</span><strong>{detailMaterial.companyContactName}</strong></div>}
             {detailMaterial.companyContactInfo ? <div><span>联系方式</span><strong>{contactHref(detailMaterial.companyContactInfo) ? <a href={contactHref(detailMaterial.companyContactInfo)}>{detailMaterial.companyContactInfo}</a> : detailMaterial.companyContactInfo}</strong></div> : <p className="material-contact-empty">企业暂未公开业务联系方式</p>}
           </section>
-          <div className="material-detail-actions"><button type="button" className="material-inquiry-trigger" onClick={openInquiryForm}>咨询企业</button><button type="button" className={favoriteIds.includes(detailMaterial.id) ? 'saved' : ''} aria-pressed={favoriteIds.includes(detailMaterial.id)} onClick={() => toggleFavorite(detailMaterial.id)}>{favoriteIds.includes(detailMaterial.id) ? '已收藏' : '收藏'}</button><button type="button" disabled={!selectedProject} className={selectedProject?.materialIds.includes(detailMaterial.id) ? 'attached' : ''} onClick={() => selectedProject && toggleProjectMaterial(selectedProject.id, detailMaterial.id)}>{selectedProject?.materialIds.includes(detailMaterial.id) ? '已加入项目' : '加入项目'}</button></div>
+          <div className="material-detail-actions"><button type="button" className="material-inquiry-trigger" onClick={openInquiryForm}>咨询企业</button><button type="button" className={favoriteIds.includes(detailMaterial.id) ? 'saved' : ''} aria-pressed={favoriteIds.includes(detailMaterial.id)} onClick={() => toggleFavorite(detailMaterial.id)}>{favoriteIds.includes(detailMaterial.id) ? '已收藏' : '收藏'}</button><button type="button" disabled={isAuthenticated && !selectedProject} className={selectedProject?.materialIds.includes(detailMaterial.id) ? 'attached' : ''} onClick={() => requireLogin() && selectedProject && toggleProjectMaterial(selectedProject.id, detailMaterial.id)}>{selectedProject?.materialIds.includes(detailMaterial.id) ? '已加入项目' : '加入项目'}</button></div>
           {inquirySent && <p className="material-inquiry-success" role="status">咨询已发送，企业可在企业端查看并跟进。</p>}
         </div>
       </section>

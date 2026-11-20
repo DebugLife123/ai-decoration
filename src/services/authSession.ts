@@ -76,6 +76,11 @@ export function isLocalDemoSession(session: AuthSession | null = readAuthSession
   return session?.user.role === 'LOCAL_DEMO';
 }
 
+export function sessionAuthorizationHeaders(): Record<string, string> {
+  const token = readAuthSession()?.accessToken;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
@@ -84,7 +89,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${currentAccessToken()}`,
+        ...sessionAuthorizationHeaders(),
         ...init.headers,
       },
     });
@@ -101,7 +106,7 @@ export async function apiDownload(path: string): Promise<Blob> {
   let response: Response;
   try {
     response = await fetch(`${authApiBaseUrl}${path}`, {
-      headers: { Authorization: `Bearer ${currentAccessToken()}` },
+      headers: sessionAuthorizationHeaders(),
     });
   } catch {
     throw new Error('无法连接服务，请确认后端已启动。');

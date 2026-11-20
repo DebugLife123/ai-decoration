@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useAppStore } from '../stores/appStore';
 import { Check, CircleHelp, Coins, Sparkles, X } from 'lucide-react';
 import { CREDIT_PACKS, PLANS, findPlan, formatCredits, formatPrice } from '../subscription/catalog';
 import type { Plan } from '../subscription/types';
@@ -35,21 +37,35 @@ function ActionNotice({ notice, onClose }: { notice: { tone: 'info' | 'success';
 }
 
 export default function SubscriptionPage() {
+  const authSession = useAppStore((state) => state.authSession);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isAuthenticated = Boolean(authSession);
   const [cycle, setCycle] = useState<Cycle>('year');
   const [notice, setNotice] = useState<{ tone: 'info' | 'success'; text: string } | null>(null);
   const [summary, setSummary] = useState<CreditSummary | null>(null);
   const [purchasing, setPurchasing] = useState('');
   const featuredId = cycle === 'year' ? 'pro_year' : 'pro_month';
-  const currentPlan = findPlan((summary?.planId as 'free' | 'pro_month' | 'pro_year') || 'free');
+  const currentPlan = findPlan((isAuthenticated ? summary?.planId as 'free' | 'pro_month' | 'pro_year' : undefined) || 'free');
   const monthlyPrice = useMemo(() => Math.round(findPlan('pro_year').priceCents / 12), []);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     let active = true;
     void fetchCreditSummary().then((data) => { if (active) setSummary(data); }).catch(() => undefined);
     return () => { active = false; };
-  }, []);
+  }, [isAuthenticated]);
+
+  const requireLogin = () => {
+    const next = `${location.pathname}${location.search}${location.hash}`;
+    navigate(`/login?next=${encodeURIComponent(next)}`);
+  };
 
   const purchase = async (payload: { planId?: string; packId?: string; label: string }) => {
+    if (!isAuthenticated) {
+      requireLogin();
+      return;
+    }
     setPurchasing(payload.label);
     try {
       const result = await purchaseCredits(payload);
@@ -72,11 +88,14 @@ export default function SubscriptionPage() {
           <h1>用积分，把每一次灵感变成方案</h1>
           <p>按创作量选择订阅或积分包。当前为展示版本，先把套餐、权益和积分消耗方式讲清楚。</p>
         </div>
-        <div className="subscription-balance" aria-label="当前积分概览">
+        {isAuthenticated ? <div className="subscription-balance" aria-label="当前积分概览">
           <div className="subscription-balance-icon"><Coins size={20} /></div>
           <div><span>当前积分余额</span><strong>{summary ? formatCredits(summary.balance) : '—'} <small>积分</small></strong></div>
           <em>{currentPlan.name}</em>
-        </div>
+        </div> : <button className="subscription-balance" type="button" onClick={requireLogin}>
+          <div className="subscription-balance-icon"><Coins size={20} /></div>
+          <div><span>登录后查看</span><strong>积分余额</strong></div>
+        </button>}
       </header>
 
       <section className="subscription-section" aria-labelledby="plans-heading">
@@ -104,7 +123,7 @@ export default function SubscriptionPage() {
                 <ul className="subscription-highlights">
                   {plan.highlights.map((item) => <li key={item}><Check size={15} aria-hidden="true" />{item}</li>)}
                 </ul>
-                <button className={`subscription-action ${featured ? 'primary' : ''}`} type="button" disabled={purchasing === plan.name} onClick={() => plan.id === 'free' ? setNotice({ tone: 'info', text: '免费体验方案无需购买，注册即赠 3 积分。' }) : void purchase({ planId: plan.id, label: plan.name })}>{plan.id === 'free' ? '当前体验方案' : purchasing === plan.name ? '到账中…' : '选择此方案'}</button>
+                <button className={`subscription-action ${featured ? 'primary' : ''}`} type="button" disabled={purchasing === plan.name} onClick={() => plan.id === 'free' ? (isAuthenticated ? setNotice({ tone: 'info', text: '免费体验方案无需购买，注册即赠 3 积分。' }) : requireLogin()) : void purchase({ planId: plan.id, label: plan.name })}>{plan.id === 'free' ? (isAuthenticated ? '当前体验方案' : '登录后体验') : purchasing === plan.name ? '到账中…' : '选择此方案'}</button>
               </article>
             );
           })}
@@ -121,7 +140,7 @@ export default function SubscriptionPage() {
               <span className="subscription-pack-name">{pack.name}</span>
               <div className="subscription-pack-total"><strong>{total}</strong><span>积分</span></div>
               <p>{pack.note}</p>
-              <div className="subscription-pack-footer"><div><strong>{formatPrice(pack.priceCents)}</strong><small>{formatPrice(Math.round(pack.priceCents / total))} / 积分</small></div><button type="button" disabled={purchasing === pack.name} onClick={() => void purchase({ packId: pack.id, label: pack.name })}>{purchasing === pack.name ? '到账中…' : '购买'}</button></div>
+              <div className="subscription-pack-footer"><div><strong>{formatPrice(pack.priceCents)}</strong><small>{formatPrice(Math.round(pack.priceCents / total))} / 积分</small></div><button type="button" disabled={purchasing === pack.name} onClick={() => void purchase({ packId: pack.id, label: pack.name })}>{!isAuthenticated ? '登录后购买' : purchasing === pack.name ? '到账中…' : '购买'}</button></div>
             </article>;
           })}
         </div>
@@ -137,7 +156,7 @@ export default function SubscriptionPage() {
         <div className="subscription-faq-list">{FAQS.map(([question, answer]) => <details key={question}><summary>{question}<span>+</span></summary><p>{answer}</p></details>)}</div>
       </section>
 
-      <footer className="subscription-footnote"><Sparkles size={15} /><span>积分消耗已接入实际生成任务：预扣 → 成功结算 → 失败返还。购买为演示模式，不接入真实支付。</span><span className="subscription-current-plan">当前方案：{currentPlan.name}</span></footer>
+      <footer className="subscription-footnote"><Sparkles size={15} /><span>积分消耗已接入实际生成任务：预扣 → 成功结算 → 失败返还。购买为演示模式，不接入真实支付。</span>{isAuthenticated && <span className="subscription-current-plan">当前方案：{currentPlan.name}</span>}</footer>
     </main>
   );
 }

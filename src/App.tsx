@@ -53,6 +53,11 @@ function RoleRoute({ role, children }: { role: 'consumer' | 'business' | 'resell
   return <>{children}</>;
 }
 
+function PublicDisplayRoute({ children }: { children: ReactNode }) {
+  const session = useAppStore(state => state.authSession);
+  return session ? <RoleRoute role="consumer">{children}</RoleRoute> : <>{children}</>;
+}
+
 function CanvasRoute({ children }: { children: ReactNode }) {
   const currentRole = useAppStore((state) => state.role);
   const location = useLocation();
@@ -77,15 +82,15 @@ function App() {
   const isAuthenticated = useAppStore((state) => Boolean(state.authSession));
   const loadProjects = useAppStore((state) => state.loadProjects);
   const location = useLocation();
-  const isPublicHome = !isAuthenticated && location.pathname === '/';
+  const isPublicDisplay = !isAuthenticated && (/^\/(?:inspiration|materials|cases|budget|subscription)?\/?$/.test(location.pathname) || /^\/companies\/[^/]+\/?$/.test(location.pathname));
 
   useEffect(() => {
     if (isAuthenticated && role !== 'admin' && role !== 'reseller') void loadProjects();
   }, [isAuthenticated, loadProjects, role]);
 
   return (
-    <div className={`app ${!isAuthenticated ? 'auth-app' : ''} ${role === 'admin' ? 'admin-app' : ''} ${(isAuthenticated && role === 'consumer') || isPublicHome ? 'consumer-app' : ''}`}>
-      {((isAuthenticated && role !== 'admin' && role !== 'reseller') || isPublicHome) && <Navbar />}
+    <div className={`app ${!isAuthenticated && !isPublicDisplay ? 'auth-app' : ''} ${role === 'admin' ? 'admin-app' : ''} ${(isAuthenticated && role === 'consumer') || isPublicDisplay ? 'consumer-app' : ''}`}>
+      {((isAuthenticated && role !== 'admin' && role !== 'reseller') || isPublicDisplay) && <Navbar />}
       <main className="app-main">
         <Routes>
           <Route path="/admin/credits" element={<AdminRoute><AdminCreditsPage /></AdminRoute>} />
@@ -97,19 +102,19 @@ function App() {
           <Route path="/login" element={isAuthenticated ? <Navigate to={safeLoginDestination(new URLSearchParams(location.search).get('next')) || (role === 'business' ? '/business' : role === 'admin' ? '/admin' : role === 'reseller' ? '/reseller' : '/')} replace /> : <LoginPage />} />
           <Route path="/admin/login" element={isAuthenticated ? <Navigate to={role === 'admin' ? '/admin' : role === 'business' ? '/business' : '/'} replace /> : <AdminLoginPage />} />
           <Route path="/" element={isAuthenticated ? <RoleRoute role="consumer"><LandingPage /></RoleRoute> : <LandingPage />} />
-          <Route path="/inspiration" element={<RoleRoute role="consumer"><InspirationPage /></RoleRoute>} />
+          <Route path="/inspiration" element={<PublicDisplayRoute><InspirationPage /></PublicDisplayRoute>} />
           <Route path="/workspace" element={<RoleRoute role="consumer"><WorkspacePage /></RoleRoute>} />
           <Route path="/cad-workflow" element={<RoleRoute role="consumer"><CadWorkflowPage /></RoleRoute>} />
           <Route path="/canvas" element={<CanvasRoute><CanvasPage /></CanvasRoute>} />
           <Route path="/canvas/:id" element={<CanvasRoute><CanvasPage /></CanvasRoute>} />
           <Route path="/projects" element={<RoleRoute role="consumer"><ProjectsPage /></RoleRoute>} />
-          <Route path="/materials" element={<RoleRoute role="consumer"><MaterialsPage /></RoleRoute>} />
-          <Route path="/cases" element={<RoleRoute role="consumer"><CaseCatalogPage /></RoleRoute>} />
-          <Route path="/companies/:companyId" element={<RoleRoute role="consumer"><CompanyPage /></RoleRoute>} />
+          <Route path="/materials" element={<PublicDisplayRoute><MaterialsPage /></PublicDisplayRoute>} />
+          <Route path="/cases" element={<PublicDisplayRoute><CaseCatalogPage /></PublicDisplayRoute>} />
+          <Route path="/companies/:companyId" element={<PublicDisplayRoute><CompanyPage /></PublicDisplayRoute>} />
           <Route path="/notifications" element={<RoleRoute role="consumer"><NotificationsPage /></RoleRoute>} />
           <Route path="/business/notifications" element={<RoleRoute role="business"><NotificationsPage /></RoleRoute>} />
-          <Route path="/budget" element={<RoleRoute role="consumer"><BudgetPage /></RoleRoute>} />
-          <Route path="/subscription" element={<RoleRoute role="consumer"><SubscriptionPage /></RoleRoute>} />
+          <Route path="/budget" element={<PublicDisplayRoute><BudgetPage /></PublicDisplayRoute>} />
+          <Route path="/subscription" element={<PublicDisplayRoute><SubscriptionPage /></PublicDisplayRoute>} />
           <Route path="/profile" element={<RoleRoute role="consumer"><ProfilePage /></RoleRoute>} />
           <Route path="/business" element={<RoleRoute role="business"><BusinessPage /></RoleRoute>} />
           <Route path="/business/styles" element={<RoleRoute role="business"><BusinessStylesPage /></RoleRoute>} />

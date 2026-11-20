@@ -1,6 +1,5 @@
 import type { MaterialRecord } from './dataContracts';
 import { businessApiConfig } from './businessData';
-import { currentAccessToken } from './authSession';
 import { isUnitRecognized, unitKindOf } from './budgetUnits';
 
 type ApiEnvelope<T> = { code: string; message: string; data: T; timestamp: string };
@@ -39,10 +38,7 @@ export async function loadCatalogMaterials(): Promise<MaterialRecord[]> {
   let totalPages = 1;
   do {
     const response = await fetch(`${base}/api/v1/materials?page=${page}&size=100&sort=updatedAt`, {
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${currentAccessToken()}`,
-      },
+      headers: { Accept: 'application/json' },
     });
     const payload = await response.json() as ApiEnvelope<ApiPage<ApiCatalogMaterial>>;
     if (!response.ok) throw new Error(payload.message || `材料目录请求失败（${response.status}）`);
@@ -77,7 +73,7 @@ export async function loadCatalogMaterials(): Promise<MaterialRecord[]> {
 export async function loadCatalogMaterialImage(quoteId: string, imageId: string): Promise<Blob> {
   const base = businessApiConfig.baseUrl.replace(/\/$/, '');
   const response = await fetch(`${base}/api/v1/business/assets/public/materials/${encodeURIComponent(quoteId)}/images/${encodeURIComponent(imageId)}`, {
-    headers: { Authorization: `Bearer ${currentAccessToken()}` },
+    headers: { Accept: 'image/*' },
   });
   if (!response.ok) throw new Error(`材料图片读取失败（${response.status}）`);
   return response.blob();
