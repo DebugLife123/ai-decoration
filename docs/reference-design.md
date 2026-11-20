@@ -28,6 +28,27 @@ Images are clearly presented as design examples, not live generated results or v
 
 The inspiration cards and template count use the application's existing `templates` export from `src/features/styleLibrary/inspirationTemplates.ts`; the displayed count is computed from that data, not a marketing estimate.
 
+## Optimized serving derivatives
+
+The original PNGs remain unchanged for provenance. The homepage serves matching `.webp` derivatives generated with bundled Pillow 12.3.0, WebP quality 90 and method 6. Width is capped at 1920px for the hero backdrop and 1600px for other imagery, preserving aspect ratio with LANCZOS resampling and never upscaling. Only `consultation` required resizing (1618×972 → 1600×961).
+
+Both comparison images retain their identical original 796×618 dimensions with no crop, resize or alignment change. All derivatives were decoded after encoding and checked for expected dimensions.
+
+| Asset | Original PNG bytes | Served WebP bytes |
+| --- | ---: | ---: |
+| bathroom | 2,488,944 | 210,084 |
+| bedroom | 2,660,673 | 260,156 |
+| consultation | 1,993,879 | 170,298 |
+| floorplan-ai-render-aligned | 501,739 | 49,334 |
+| floorplan-original | 204,286 | 41,558 |
+| flow-plan | 2,310,282 | 275,446 |
+| hall | 2,903,248 | 355,510 |
+| hero-interior | 1,919,380 | 126,970 |
+| material-board | 3,104,062 | 389,220 |
+| **Total** | **18,086,493** | **1,878,576** |
+
+Reference-image transfer falls from **17.25 MiB to 1.79 MiB (89.61% reduction)**. The eager hero backdrop and showcase together fall from **4,822,628 to 482,480 bytes (90.00% reduction)**, approximately 4.60 MiB to 471.17 KiB. Other reference images retain lazy loading. These numbers measure image file payloads, not total page transfer or measured loading time; the existing inspiration-template imagery is separate.
+
 ## Integration and behavior
 
 The component exports `LandingPage` as default and assumes the application supplies its own 68px header. The page does not modify routing, navigation, backend, or the existing inspiration page. All action links lead to existing routes: `/workspace?source=floorplan`, `/cad-workflow`, `/canvas`, `/projects`, `/inspiration`, `/materials`, `/cases`, and `/budget`.

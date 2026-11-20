@@ -4,7 +4,7 @@ import { ArrowDown, ArrowRight, Box, ChevronLeft, ChevronRight, FolderOpen, Laye
 import { templates } from '../features/styleLibrary/inspirationTemplates';
 import './LandingPage.css';
 
-const asset = (name: string) => `/reference-design/${name}.png`;
+const asset = (name: string) => `/reference-design/${name}.webp`;
 const fields = [
   { label: 'AI 室内设计', title: '让家的想象，清晰可见。', description: '从一张户型图开始，结合喜欢的风格、材质与光线，探索属于你的空间方案。让想法有画面，让沟通更直观。', input: '户型图、空间照片与设计想法', output: '空间效果图与风格方案', use: '新家装修、旧房焕新与方案比选', image: 'hero-interior', thumbs: ['bedroom', 'bathroom'], route: '/workspace?source=floorplan', action: '从户型图开始' },
   { label: 'CAD 工作流', title: '从图纸出发，梳理空间。', description: '将已有 CAD 图纸带入设计流程，逐步整理户型信息与空间需求，让图纸资料成为后续创作的起点。', input: '已有 CAD 图纸与户型资料', output: '可继续深化的设计任务', use: '图纸整理、户型理解与设计衔接', image: 'flow-plan', thumbs: ['floorplan-original', 'floorplan-ai-render-aligned'], route: '/cad-workflow', action: '打开 CAD 工作流' },

@@ -17,7 +17,7 @@
 .landing-design .ld-button-glass:hover { background: rgba(255,255,255,.2); }
 .landing-design .ld-eyebrow { margin: 0 0 16px; color: var(--ld-blue); font-size: 11px; font-weight: 800; letter-spacing: 2px; }
 .landing-design .ld-hero { position: relative; isolation: isolate; min-height: 700px; height: min(830px, 94vh); color: #fff; background: var(--ld-night); overflow: hidden; }
-.landing-design .ld-hero::before { position: absolute; inset: -2%; content: ''; background: url('/reference-design/hero-interior.png') center 48% / cover no-repeat; animation: ld-background-enter 1s ease-out both; }
+.landing-design .ld-hero::before { position: absolute; inset: -2%; content: ''; background: url('/reference-design/hero-interior.webp') center 48% / cover no-repeat; animation: ld-background-enter 1s ease-out both; }
 .landing-design .ld-hero-overlay { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(8,17,24,.82), rgba(8,17,24,.58) 60%, rgba(8,17,24,.42)); }
 .landing-design .ld-hero-content { position: relative; height: 100%; display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.1fr); align-items: center; gap: 64px; padding-top: 82px; padding-bottom: 55px; }
 .landing-design .ld-hero-copy-block { min-width: 0; }
