@@ -41,11 +41,16 @@ const projectApiAdapter: WorkspaceDataAdapter = {
     return Promise.all(projects.map(async (project) => {
       const materialize = async (url: string) => {
         if (!url.startsWith('/api/v1/projects/')) return url;
-        const response = await fetch(`${businessApiConfig.baseUrl}${url}`, { headers: { Authorization: `Bearer ${currentAccessToken()}` } });
-        if (!response.ok) throw new Error('项目图片无法读取，请重新登录后重试。');
-        const objectUrl = URL.createObjectURL(await response.blob());
-        canonicalAssetUrls.set(objectUrl, url);
-        return objectUrl;
+        try {
+          const response = await fetch(`${businessApiConfig.baseUrl}${url}`, { headers: { Authorization: `Bearer ${currentAccessToken()}` } });
+          if (!response.ok) return url;
+          const objectUrl = URL.createObjectURL(await response.blob());
+          canonicalAssetUrls.set(objectUrl, url);
+          return objectUrl;
+        } catch {
+          // Keep the durable reference: an unavailable image must not hide project metadata or other results.
+          return url;
+        }
       };
       if (project.floorPlanUrl) project.floorPlanUrl = await materialize(project.floorPlanUrl);
       if (project.thumbnail) project.thumbnail = await materialize(project.thumbnail);
