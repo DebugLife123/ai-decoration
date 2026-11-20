@@ -192,13 +192,14 @@ function authHeaders(): Record<string, string> {
   };
 }
 
-/** 试算是匿名的（登录前就能看预算参考），与 /api/v1/styles/recommendations 一致。 */
+/** 展示参考价格公开；执行预算试算需要真实用户会话。 */
 export async function estimateBudget(input: EstimateInput): Promise<EstimateResult | null> {
-  if (!businessApiConfig.enabled) return null;
+  const session = readAuthSession();
+  if (!businessApiConfig.enabled || !session) return null;
   try {
     const response = await fetch(`${businessApiConfig.baseUrl}/api/v1/budgets/estimate`, {
       method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessToken}` },
       body: JSON.stringify(input),
     });
     if (!response.ok) return null;

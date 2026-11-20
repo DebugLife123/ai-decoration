@@ -55,7 +55,6 @@ public class BusinessAssetController {
     }
 
     @GetMapping("/public/materials/{quoteId}/images/{imageId}")
-    @PreAuthorize("hasAnyRole('PERSONAL_USER', 'COMPANY_ADMIN', 'COMPANY_EDITOR', 'COMPANY_VIEWER')")
     public ResponseEntity<Resource> materialImage(@PathVariable UUID quoteId, @PathVariable UUID imageId) {
         var asset = service.getPublicMaterialImage(quoteId, imageId);
         return ResponseEntity.ok().contentType(MediaType.parseMediaType(asset.mediaType()))

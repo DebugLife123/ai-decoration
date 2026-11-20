@@ -149,7 +149,9 @@ public class BusinessAssetService {
                         join company_certifications cert on cert.company_id = m.company_id and cert.status = 'APPROVED'
                         join material_quote_images mi on mi.company_id = m.company_id and mi.quote_id = m.id
                         join business_assets a on a.company_id = mi.company_id and a.id = mi.image_id
-                        where m.id = ? and mi.image_id = ? and m.valid_until >= current_date
+                        join auth_companies c on c.id = m.company_id and c.is_demo = false
+                         where m.id = ? and mi.image_id = ? and m.valid_until >= current_date
+                           and m.admin_hidden = false and m.review_status = 'APPROVED'
                           and not exists (select 1 from auth_users u where u.company_id = m.company_id and u.role = 'COMPANY_ADMIN' and u.account_status <> 'ACTIVE')
                           and (a.media_type like 'image/%' or lower(a.file_name) like '%.bmp')
                         """,

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
@@ -44,7 +45,10 @@ public class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/internal/wallet/**").permitAll() // authenticated by GatewayWalletController
-                        .requestMatchers("/api/v1/health", "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/admin/login", "/api/v1/platform-contact", "/api/v1/styles/recommendations", "/api/v1/styles/generation-prompts", "/api/v1/styles/catalog", "/api/v1/budgets/estimate", "/api/v1/budgets/style-references", "/api/v1/inspiration/submissions/public", "/api/v1/inspiration/submissions/*/images/*", "/actuator/health/**", "/actuator/info").permitAll()
+                        .requestMatchers("/api/v1/health", "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/admin/login", "/api/v1/platform-contact", "/api/v1/styles/recommendations", "/api/v1/styles/generation-prompts", "/api/v1/styles/catalog", "/api/v1/budgets/style-references", "/api/v1/inspiration/submissions/public", "/api/v1/inspiration/submissions/*/images/*", "/actuator/health/**", "/actuator/info").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/cases", "/api/v1/cases/*/files/*",
+                                "/api/v1/companies/*", "/api/v1/companies/*/assets/*", "/api/v1/materials",
+                                "/api/v1/business/assets/public/materials/*/images/*").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
