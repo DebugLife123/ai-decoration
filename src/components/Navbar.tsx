@@ -1,168 +1,150 @@
-import { useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Bell, ChevronDown, Menu, X, LogOut, UserRound, Layers, WandSparkles, FolderOpen, LayoutDashboard, Ruler, Image, Calculator, Building2, Crown } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { loadUserProfile } from '../services/userProfile';
-import BrandLoading from './BrandLoading';
 import './Navbar.css';
 
-type IconName = 'home' | 'workspace' | 'projects' | 'templates' | 'materials' | 'budget' | 'subscription' | 'business' | 'cad' | 'canvas' | 'help' | 'settings' | 'logout';
+type NavItem = { path: string; label: string; detail?: string; icon?: ReactNode };
+const creationItems: NavItem[] = [
+  { path: '/workspace', label: '设计工作台', detail: '从空间灵感到设计方案', icon: <WandSparkles /> },
+  { path: '/cad-workflow', label: 'CAD 全屋渲染', detail: '上传户型，开启全屋设计', icon: <Ruler /> },
+  { path: '/canvas', label: '空间设计画布', detail: '自由编排你的空间创意', icon: <Layers /> },
+];
+const resourceItems: NavItem[] = [
+  { path: '/materials', label: '材料库', detail: '发现适合你的装修材料', icon: <Image /> },
+  { path: '/cases', label: '认证企业案例', detail: '浏览真实空间与设计案例', icon: <Building2 /> },
+  { path: '/budget', label: '预算试算', detail: '让每一份预算心中有数', icon: <Calculator /> },
+];
+const businessItems: NavItem[] = [
+  { path: '/business?tab=overview', label: '企业概览' },
+  { path: '/business?tab=cases', label: '案例资料' },
+  { path: '/business?tab=materials', label: '材料报价' },
+  { path: '/business?tab=workers', label: '人工报价' },
+  { path: '/business?tab=inquiries', label: '客户咨询' },
+  { path: '/business/notifications', label: '通知中心' },
+  { path: '/business?tab=certification', label: '认证资料' },
+  { path: '/business/styles', label: '风格资料' },
+];
 
-const iconPaths: Record<IconName, string> = {
-  home: 'M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5M9.5 21v-6h5v6',
-  workspace: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
-  projects: 'm12 3 8 4-8 4-8-4 8-4ZM4 12l8 4 8-4M4 17l8 4 8-4',
-  templates: 'M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-13ZM8 3v18M8 8h12M8 13h12',
-  materials: 'M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11ZM7 16l3-3 2 2 3-4 3 5',
-  budget: 'M4 19h16M6 16V9m4 7V5m4 11v-4m4 4V7',
-  subscription: 'M12 3v18M17 7.5c0-1.7-2.2-3-5-3s-5 1.3-5 3 2.2 3 5 3 5 1.3 5 3-2.2 3-5 3-5-1.3-5-3',
-  business: 'M4 20V8h16v12M2 20h20M7 8V5h10v3M8 12h2M14 12h2M8 16h2M14 16h2',
-  cad: 'M3.5 6.5A2.5 2.5 0 0 1 6 4h4l2 2h6A2.5 2.5 0 0 1 20.5 8.5v9A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5z',
-  canvas: 'M4 4h16v16H4zM8 8h3v3H8zM14 8h2M14 11h2M8 15h8',
-  help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM9.6 9a2.5 2.5 0 1 1 4.6 1.3c-.8 1.2-2.2 1.3-2.2 3M12 17h.01',
-  settings: 'M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.5 1.5-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-2.1v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1-1.5-1.5.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H7v-2.1h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 1.5-1.5.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V5h2.1v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.5 1.5-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2V13h-.2a1.7 1.7 0 0 0-1.6 1Z',
-  logout: 'M10 17l5-5-5-5M15 12H3M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6',
-};
-
-function NavIcon({ name }: { name: IconName }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d={iconPaths[name]} />
-    </svg>
-  );
+// Adapted from the handoff index.html pill markup; duplicate labels are decorative.
+function PillLabel({ children }: { children: ReactNode }) {
+  return <><span className="pill-hover-circle" aria-hidden="true" /><span className="pill-label-stack"><span className="pill-label">{children}</span><span className="pill-label-hover" aria-hidden="true">{children}</span></span></>;
 }
-
-const consumerNavGroups = [
-  {
-    label: '创作空间', items: [
-      { path: '/', label: '灵感首页', icon: 'home' as IconName },
-      { path: '/workspace', label: '设计工作台', icon: 'workspace' as IconName },
-      { path: '/cad-workflow', label: 'CAD 全屋渲染', icon: 'cad' as IconName },
-      { path: '/canvas', label: '空间设计画布', icon: 'canvas' as IconName },
-      { path: '/projects', label: '我的项目', icon: 'projects' as IconName },
-      { path: '/inspiration', label: '灵感广场', icon: 'templates' as IconName },
-    ],
-  },
-  {
-    label: '资源中心', items: [
-      { path: '/materials', label: '材料库', icon: 'materials' as IconName },
-      { path: '/cases', label: '认证企业案例', icon: 'projects' as IconName },
-      { path: '/budget', label: '预算试算', icon: 'budget' as IconName },
-      { path: '/subscription', label: '积分订阅', icon: 'subscription' as IconName },
-      { path: '/notifications', label: '通知中心', icon: 'help' as IconName },
-    ],
-  },
-];
-
-const businessNavGroups = [
-  {
-    label: '企业工作区', items: [
-      { path: '/business?tab=overview', label: '企业概览', icon: 'business' as IconName },
-      { path: '/business?tab=cases', label: '案例资料', icon: 'projects' as IconName },
-      { path: '/business?tab=materials', label: '材料报价', icon: 'materials' as IconName },
-      { path: '/business?tab=workers', label: '人工报价', icon: 'workspace' as IconName },
-      { path: '/business?tab=inquiries', label: '客户咨询', icon: 'help' as IconName },
-      { path: '/business/notifications', label: '通知中心', icon: 'help' as IconName },
-      { path: '/business?tab=certification', label: '认证资料', icon: 'settings' as IconName },
-      { path: '/business/styles', label: '风格资料', icon: 'templates' as IconName },
-    ],
-  },
-];
 
 export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { role, authSession, signOut } = useAppStore();
+  const headerRef = useRef<HTMLElement>(null);
+  const mobileTriggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [isEntering, setIsEntering] = useState(false);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [scrolled, setScrolled] = useState(() => window.scrollY > 40);
   const isBusiness = role === 'business';
-  const navGroups = isBusiness ? businessNavGroups : consumerNavGroups;
+  const isHome = !isBusiness && location.pathname === '/';
   const navProfile = authSession?.user ? loadUserProfile(authSession.user.id) : null;
+  const displayName = navProfile?.displayName.trim() || authSession?.user.displayName || '已登录用户';
+  const homePath = isBusiness ? '/business' : '/';
+  const notificationPath = isBusiness ? '/business/notifications' : '/notifications';
 
-  const handleSignOut = () => {
-    signOut();
+  const closeMenus = () => { setOpenMenu(null); setMobileOpen(false); };
+  const routeKey = `${location.pathname}${location.search}${location.hash}`;
+  const [menuRoute, setMenuRoute] = useState(routeKey);
+  if (menuRoute !== routeKey) {
+    setMenuRoute(routeKey);
+    setOpenMenu(null);
     setMobileOpen(false);
-    navigate('/login', { replace: true });
+  }
+  useEffect(() => {
+    if (mobileOpen) headerRef.current?.querySelector<HTMLElement>('.main-nav a, .main-nav button')?.focus();
+  }, [mobileOpen]);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (!headerRef.current?.contains(event.target as Node)) closeMenus();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (openMenu) { setOpenMenu(null); dropdownTriggerRef.current?.focus(); }
+      else if (mobileOpen) { setMobileOpen(false); mobileTriggerRef.current?.focus(); }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => { document.removeEventListener('pointerdown', onPointerDown); document.removeEventListener('keydown', onKeyDown); };
+  }, [openMenu, mobileOpen]);
+
+  // Exact circle geometry from reference app.js layoutAnimatedPills, kept responsive.
+  useEffect(() => {
+    const pills = headerRef.current?.querySelectorAll<HTMLElement>('.pill-animated');
+    const layout = () => pills?.forEach((pill) => {
+      const circle = pill.querySelector<HTMLElement>('.pill-hover-circle');
+      const { width, height } = pill.getBoundingClientRect();
+      if (!circle || !width || !height) return;
+      const radius = ((width * width) / 4 + height * height) / (2 * height);
+      const diameter = Math.ceil(2 * radius) + 2;
+      const delta = Math.ceil(radius - Math.sqrt(Math.max(0, radius * radius - (width * width) / 4))) + 1;
+      circle.style.width = `${diameter}px`;
+      circle.style.height = `${diameter}px`;
+      circle.style.bottom = `-${delta}px`;
+      pill.style.setProperty('--pill-origin-y', `${diameter - delta}px`);
+      pill.style.setProperty('--pill-travel', `${height + 8}px`);
+    });
+    const observer = new ResizeObserver(layout);
+    pills?.forEach((pill) => observer.observe(pill));
+    layout();
+    return () => observer.disconnect();
+  }, [isBusiness]);
+
+  const isActive = (path: string) => {
+    const [pathname, search] = path.split('?');
+    if (pathname === '/') return location.pathname === '/';
+    const matchesPath = location.pathname === pathname || location.pathname.startsWith(`${pathname}/`);
+    const tab = new URLSearchParams(search).get('tab');
+    if (tab) return location.pathname === pathname && (new URLSearchParams(location.search).get('tab') || 'overview') === tab;
+    return matchesPath;
   };
-
-  const startWorkspace = (event: MouseEvent<HTMLAnchorElement>, source?: string) => {
-    event.preventDefault();
-    if (isEntering) return;
-    setMobileOpen(false);
-    setIsEntering(true);
-    window.setTimeout(() => {
-      setIsEntering(false);
-      navigate(source ? `/workspace?source=${source}` : '/workspace');
-    }, 1050);
+  const toggleMenu = (id: string, trigger: HTMLButtonElement) => {
+    dropdownTriggerRef.current = trigger;
+    setOpenMenu((current) => current === id ? null : id);
   };
+  const renderLink = (item: NavItem) => <span className="pill-nav-slot" key={item.path}><Link to={item.path} onClick={closeMenus} className={`pill-nav-item pill-animated${isActive(item.path) ? ' is-active' : ''}`} aria-current={isActive(item.path) ? 'page' : undefined}><PillLabel>{item.label}</PillLabel></Link></span>;
+  const renderDropdown = (id: string, label: string, items: NavItem[]) => <div className="pill-nav-slot dropdown-slot" key={id}>
+    <button type="button" id={`jyz-trigger-${id}`} className={`pill-nav-item pill-animated${items.some((item) => isActive(item.path)) ? ' is-active' : ''}`} aria-expanded={openMenu === id} aria-controls={`jyz-panel-${id}`} onClick={(event) => toggleMenu(id, event.currentTarget)}>
+      <PillLabel>{label}<ChevronDown className="nav-chevron" /></PillLabel>
+    </button>
+    <div className="nav-dropdown" id={`jyz-panel-${id}`} aria-labelledby={`jyz-trigger-${id}`} hidden={openMenu !== id}>
+      <p className="dropdown-heading">{label}</p>
+      {items.map((item) => <Link key={item.path} to={item.path} className={`dropdown-link${isActive(item.path) ? ' is-active' : ''}`} onClick={closeMenus} aria-current={isActive(item.path) ? 'page' : undefined}><span className="dropdown-icon">{item.icon}</span><span><strong>{item.label}</strong><small>{item.detail}</small></span><span className="dropdown-arrow" aria-hidden="true">↗</span></Link>)}
+    </div>
+  </div>;
 
-  return <>
-    {isEntering && <BrandLoading />}
-    <button className="mobile-nav-toggle" onClick={() => setMobileOpen((open) => !open)} aria-label={mobileOpen ? '关闭导航' : '打开导航'}><span /><span /><span /></button>
-    <aside className={`navbar ${mobileOpen ? 'mobile-open' : ''}`}>
-      <div className="navbar-inner">
-        <Link to="/" className="navbar-logo" onClick={() => setMobileOpen(false)}>
-          <span className="logo-mark"><span /></span>
-          <span className="logo-text">
-            <strong>简易装</strong>
-            <small>JIAN YI ZHUANG</small>
-          </span>
-        </Link>
-
-        <div className={`workspace-switcher ${isBusiness ? 'business-mode' : ''}`}>
-          <span className="workspace-avatar">{isBusiness ? 'B' : 'J'}</span>
-          <span>
-            <strong>{isBusiness ? '企业工作区' : '个人工作区'}</strong>
-            <small>{isBusiness ? 'Business workspace' : 'Personal workspace'}</small>
-          </span>
-        </div>
-
-        <nav className="navbar-links" aria-label="主导航">
-          {navGroups.map((group) => (
-            <div className="nav-group" key={group.label}>
-              <div className="nav-group-label">{group.label}</div>
-              {group.items.map((item) => {
-                const routePath = item.path.split('#')[0];
-                const targetTab = new URLSearchParams(item.path.split('?')[1] || '').get('tab');
-                const currentBusinessTab = new URLSearchParams(location.search).get('tab') || 'overview';
-                const active = routePath === '/'
-                  ? location.pathname === '/' && (item.path === '/' || location.hash === item.path.split('#')[1])
-                  : location.pathname.startsWith(routePath) && (!isBusiness || !targetTab || currentBusinessTab === targetTab);
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`nav-link ${active ? 'active' : ''}`}
-                    onClick={(event) => {
-                      if (item.path === '/workspace') startWorkspace(event);
-                      else setMobileOpen(false);
-                    }}
-                  >
-                    <NavIcon name={item.icon} />
-                    <span>{item.label}</span>
-                    {item.path === '/workspace' && <span className="nav-new">P0</span>}
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
-        </nav>
-
-        <div className="navbar-bottom">
-          <Link to={isBusiness ? '/business' : '/'} className="nav-help" onClick={() => setMobileOpen(false)}>
-            <NavIcon name="help" />
-            <span>帮助与反馈</span>
-          </Link>
-          <div className="nav-user">
-            <Link to={isBusiness ? '/business' : '/profile'} className="nav-user-link" title={isBusiness ? '企业信息' : '个人中心 / 积分用量'} onClick={() => setMobileOpen(false)}>
-              <span className="user-avatar">{navProfile?.avatar ? <img src={navProfile.avatar} alt="" /> : navProfile?.displayName.trim().slice(0, 1) || authSession?.user.displayName.slice(0, 1) || '简'}</span>
-              <span><strong>{navProfile?.displayName.trim() || authSession?.user.displayName || '已登录用户'}</strong><small>{isBusiness ? '企业账号' : '个人账号'}</small></span>
-            </Link>
-            <button className="nav-signout" type="button" onClick={handleSignOut} title="退出登录" aria-label="退出登录">
-              <NavIcon name="logout" />
-            </button>
-          </div>
+  return <header ref={headerRef} className={`navbar jyz-header${!isHome || scrolled ? ' scrolled' : ''}${mobileOpen ? ' mobile-nav-open' : ''}${isBusiness ? ' business-header' : ''}`} onBlur={(event) => {
+    if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) closeMenus();
+  }}>
+    <Link to={homePath} className="brand" aria-label="简易装首页" onClick={closeMenus}>
+      <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 42 42" fill="none"><path d="M5 19 21 5l16 14v18H25V25h-8v12H5Z" fill="#168be8" /><path d="m12 19 9-8 9 8M21 11v10" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg></span><span className="brand-name">简易装</span>
+    </Link>
+    <nav className="main-nav" id="jyz-main-navigation" aria-label={isBusiness ? '企业工作区导航' : '主导航'}>
+      {isBusiness ? businessItems.map(renderLink) : <>{renderLink({ path: '/', label: '首页' })}{renderDropdown('creation', 'AI创作', creationItems)}{renderLink({ path: '/projects', label: '我的项目' })}{renderLink({ path: '/inspiration', label: '灵感广场' })}{renderDropdown('resources', '资源中心', resourceItems)}<Link to="/subscription" className="pill-nav-item mobile-nav-action" onClick={closeMenus}><Crown />积分订阅</Link></>}
+    </nav>
+    <div className="header-actions">
+      {!isBusiness && <Link to="/subscription" className="header-pill-action pill-animated subscription-action" onClick={closeMenus}><PillLabel><Crown />积分订阅</PillLabel></Link>}
+      <Link to={notificationPath} className="header-icon-action" aria-label="通知中心" title="通知中心" onClick={closeMenus}><Bell /></Link>
+      <div className={`account-menu${openMenu === 'account' ? ' is-open' : ''}`}>
+        <button type="button" className="account-trigger" aria-label="打开账户菜单" aria-expanded={openMenu === 'account'} aria-controls="jyz-account-popover" onClick={(event) => toggleMenu('account', event.currentTarget)}>{navProfile?.avatar ? <img src={navProfile.avatar} alt="" /> : <span>{displayName.slice(0, 1)}</span>}</button>
+        <div className="account-popover" id="jyz-account-popover" hidden={openMenu !== 'account'}>
+          <div className="account-summary"><span className="account-avatar">{navProfile?.avatar ? <img src={navProfile.avatar} alt="" /> : displayName.slice(0, 1)}</span><div className="account-identity"><strong>{displayName}</strong><span>{isBusiness ? '企业账号' : '个人账号'}</span></div></div>
+          <div className="account-actions-list"><Link className="account-action" to={isBusiness ? '/business?tab=overview' : '/profile'} onClick={closeMenus}><UserRound />{isBusiness ? '企业信息' : '个人中心'}<span className="account-action-arrow">›</span></Link>{!isBusiness && <Link className="account-action" to="/subscription" onClick={closeMenus}><Crown />积分与订阅<span className="account-action-arrow">›</span></Link>}<Link className="account-action" to={isBusiness ? '/business?tab=overview' : '/projects'} onClick={closeMenus}>{isBusiness ? <LayoutDashboard /> : <FolderOpen />}{isBusiness ? '企业概览' : '我的项目'}<span className="account-action-arrow">›</span></Link></div>
+          <button type="button" className="account-action account-logout" onClick={() => { signOut(); closeMenus(); navigate('/login', { replace: true }); }}><LogOut />退出登录</button>
         </div>
       </div>
-    </aside>
-  </>;
+      <button ref={mobileTriggerRef} className="mobile-nav-toggle" type="button" aria-label={mobileOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileOpen} aria-controls="jyz-main-navigation" onClick={() => { setMobileOpen((open) => !open); setOpenMenu(null); }}>{mobileOpen ? <X /> : <Menu />}</button>
+    </div>
+  </header>;
 }

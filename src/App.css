@@ -3,22 +3,31 @@
   background: var(--color-bg);
 }
 
+/* Reference desktop header is fixed at 68px; the former 244px rail is removed. */
 .app-main {
   min-height: 100vh;
-  margin-left: 244px;
+  margin-left: 0;
+  padding-top: 68px;
 }
 
-.auth-app .app-main { margin-left: 0; }
-.admin-app .app-main { margin-left: 0; }
-.app:has(.whole-home-report) .app-main { margin-left: 0; }
+/* Landing hero runs behind the transparent reference header. */
+.app:has(.landing-design) .app-main,
+.app:not(:has(.navbar)) .app-main,
+.auth-app .app-main,
+.admin-app .app-main,
+.app:has(.reseller-page) .app-main,
+.app:has(.whole-home-report) .app-main,
+.app:has(.profile-page) .app-main,
+.app:has(.canvas-project-page) .app-main {
+  padding-top: 0;
+}
+
+/* Secondary full-screen screens retain their own navigation. */
 .app:has(.whole-home-report) .navbar,
-.app:has(.whole-home-report) .mobile-nav-toggle { display: none; }
-
-/* 个人中心为二级全屏界面：隐藏主导航，页面自带侧栏 */
-.app:has(.profile-page) .app-main { margin-left: 0; }
+.app:has(.whole-home-report) .mobile-nav-toggle,
 .app:has(.profile-page) .navbar,
-.app:has(.profile-page) .mobile-nav-toggle { display: none; }
-
-@media (max-width: 760px) {
-  .app-main { margin-left: 0; }
+.app:has(.profile-page) .mobile-nav-toggle,
+.app:has(.canvas-project-page) .navbar,
+.app:has(.canvas-project-page) .mobile-nav-toggle {
+  display: none;
 }
