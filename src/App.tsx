@@ -33,6 +33,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import ProfilePage from './pages/ProfilePage';
 import { useAppStore } from './stores/appStore';
 import './App.css';
+import './ConsumerLayout.css';
 import AdminCreditsPage from './pages/AdminCreditsPage';
 import AdminSubscriptionOrdersPage from './pages/AdminSubscriptionOrdersPage';
 import { CertificationPaymentsPanel as AdminCertificationPaymentsPage } from './pages/AdminCertificationPaymentsPage';
@@ -83,7 +84,7 @@ function App() {
   }, [isAuthenticated, loadProjects, role]);
 
   return (
-    <div className={`app ${!isAuthenticated ? 'auth-app' : ''} ${role === 'admin' ? 'admin-app' : ''}`}>
+    <div className={`app ${!isAuthenticated ? 'auth-app' : ''} ${role === 'admin' ? 'admin-app' : ''} ${isAuthenticated && role === 'consumer' ? 'consumer-app' : ''}`}>
       {isAuthenticated && role !== 'admin' && role !== 'reseller' && <Navbar />}
       <main className="app-main">
         <Routes>

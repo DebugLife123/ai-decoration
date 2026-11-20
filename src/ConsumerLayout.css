@@ -1,0 +1,41 @@
+/* Shared personal-page surfaces matching the reference's ink / mist / blue palette.
+   Scoped away from administrative and full-screen canvas interfaces. */
+.app.consumer-app {
+  --color-primary: #168be8;
+  --color-primary-light: #50a7ed;
+  --color-primary-dark: #0d6fbf;
+  --color-bg: #fff;
+  --color-bg-warm: #f3f6f8;
+  --color-text: #17212b;
+  --color-text-secondary: #52606d;
+  --color-text-muted: #72818e;
+  --color-border: #dce3e8;
+  --color-border-light: #e8edf1;
+}
+/* Full-screen overlays must cover the fixed reference header (z-index 200). */
+.consumer-app .project-drawer-backdrop,
+.consumer-app .submission-modal-backdrop { z-index: 1000; }
+.consumer-app .subscription-notice { z-index: 1100; top: 84px; }
+.consumer-app .projects-page,
+.consumer-app .materials-page { width: min(1280px, calc(100% - 64px)); }
+.consumer-app .projects-live { background: #f0f7fd; border-color: #d4e8f9; }
+.consumer-app .projects-live-row { border-color: #dce9f4; }
+.consumer-app .projects-live-track { background: #dce9f4; }
+.consumer-app .projects-live-track span { background: #168be8; }
+.consumer-app .projects-filters,
+.consumer-app .materials-filters button { background: #eef2f5; }
+.consumer-app .projects-filters button.active,
+.consumer-app .materials-filters button.active { color: #fff; background: #17212b; }
+.consumer-app .project-tile { border-radius: 8px; }
+.consumer-app .project-tile:hover { border-color: #bed4e4; box-shadow: 0 16px 34px -20px rgb(24 38 49 / 32%); }
+.consumer-app .home-page.inspiration-page { background: #fff; color: #17212b; }
+.consumer-app .inspiration-page .home-topbar { background: #f3f6f8; border-bottom: 1px solid #dce3e8; }
+.consumer-app .inspiration-page .home-content { max-width: 1408px; margin-inline: auto; }
+@media (max-width: 640px) {
+  .consumer-app .projects-page,
+  .consumer-app .materials-page { width: calc(100% - 32px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .consumer-app .project-tile,
+  .consumer-app .projects-live-dot { animation: none; transition: none; }
+}
