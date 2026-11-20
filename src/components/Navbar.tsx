@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Bell, ChevronDown, Menu, X, LogOut, UserRound, Layers, WandSparkles, FolderOpen, LayoutDashboard, Ruler, Image, Calculator, Building2, Crown } from 'lucide-react';
+import { Bell, ChevronDown, Menu, X, LogOut, UserRound, Layers, WandSparkles, FolderOpen, LayoutDashboard, Image, Calculator, Building2, Crown } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { loadUserProfile } from '../services/userProfile';
 import { toggleReferenceTheme, useReferenceTheme } from '../services/referenceTheme';
@@ -10,7 +10,6 @@ import './ReferenceTheme.css';
 type NavItem = { path: string; label: string; detail?: string; icon?: ReactNode };
 const creationItems: NavItem[] = [
   { path: '/workspace', label: '设计工作台', detail: '从空间灵感到设计方案', icon: <WandSparkles /> },
-  { path: '/cad-workflow', label: 'CAD 全屋渲染', detail: '上传户型，开启全屋设计', icon: <Ruler /> },
   { path: '/canvas', label: '空间设计画布', detail: '自由编排你的空间创意', icon: <Layers /> },
 ];
 const resourceItems: NavItem[] = [

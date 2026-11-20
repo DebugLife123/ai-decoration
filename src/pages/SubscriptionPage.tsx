@@ -15,7 +15,6 @@ const COMPARE_ROWS: { label: string; value: (plan: Plan) => string }[] = [
   { label: '方案记录保留', value: (plan) => (plan.limits.historyDays >= 3650 ? '长期保留' : `${plan.limits.historyDays} 天`) },
   { label: '去水印导出', value: (plan) => (plan.entitlements.nowatermark ? '支持' : '不支持') },
   { label: '2K / 4K 高清原图', value: (plan) => (plan.entitlements.hires ? '支持' : '不支持') },
-  { label: 'CAD 全屋渲染', value: (plan) => (plan.entitlements.cad ? '支持' : '不支持') },
   { label: '优先生成队列', value: (plan) => (plan.entitlements.priority ? '支持' : '不支持') },
 ];
 

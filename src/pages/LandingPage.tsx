@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowDown, ArrowRight, Box, ChevronLeft, ChevronRight, FolderOpen, Layers3, Ruler, Sparkles } from 'lucide-react';
+import { ArrowDown, ArrowRight, Box, ChevronLeft, ChevronRight, FolderOpen, Layers3, Sparkles } from 'lucide-react';
 import { templates } from '../features/styleLibrary/inspirationTemplates';
 import './LandingPage.css';
 
 const asset = (name: string) => `/reference-design/${name}.webp`;
 const fields = [
   { label: 'AI 室内设计', title: '让家的想象，清晰可见。', description: '从一张户型图开始，结合喜欢的风格、材质与光线，探索属于你的空间方案。让想法有画面，让沟通更直观。', input: '户型图、空间照片与设计想法', output: '空间效果图与风格方案', use: '新家装修、旧房焕新与方案比选', image: 'hero-interior', thumbs: ['bedroom', 'bathroom'], route: '/workspace?source=floorplan', action: '从户型图开始' },
-  { label: 'CAD 工作流', title: '从图纸出发，梳理空间。', description: '将已有 CAD 图纸带入设计流程，逐步整理户型信息与空间需求，让图纸资料成为后续创作的起点。', input: '已有 CAD 图纸与户型资料', output: '可继续深化的设计任务', use: '图纸整理、户型理解与设计衔接', image: 'flow-plan', thumbs: ['floorplan-original', 'floorplan-ai-render-aligned'], route: '/cad-workflow', action: '打开 CAD 工作流' },
   { label: '无限画布', title: '把灵感铺开，让方案生长。', description: '在一张自由画布里组织参考图片、空间方案与创作内容。并排查看不同方向，让每一次调整都有清晰的上下文。', input: '参考图片、设计素材与创作内容', output: '可编辑的画布与方案组织', use: '灵感整理、视觉探索与设计推敲', image: 'material-board', thumbs: ['hall', 'bedroom'], route: '/canvas', action: '进入无限画布' },
   { label: '风格灵感', title: '找到心动的生活底色。', description: '浏览风格模板，了解配色、材质与空间表达。将喜欢的设计作为参考，再回到自己的户型中继续创作。', input: '喜欢的风格与生活偏好', output: '风格参考、配色与材质灵感', use: '装修前期、风格探索与参考收集', image: 'bedroom', thumbs: ['bathroom', 'hero-interior'], route: '/inspiration', action: '探索风格灵感' },
 ];
@@ -231,7 +230,7 @@ export default function LandingPage() {
           </h1>
           <p className="ld-hero-description">让每一个家的想象，都有答案。</p>
           <p className="ld-hero-copy">从户型图到空间方案，从风格灵感到材质预算。<br />让 AI 陪你把理想的家，一步步变成看得见的设计。</p>
-          <div className="ld-hero-actions"><Link className="ld-button ld-button-primary" to="/workspace?source=floorplan">开始 AI 设计 <ArrowRight size={18} /></Link><Link className="ld-button ld-button-glass" to="/cad-workflow">导入 CAD 图纸</Link></div>
+          <div className="ld-hero-actions"><Link className="ld-button ld-button-primary" to="/workspace?source=floorplan">开始 AI 设计 <ArrowRight size={18} /></Link><Link className="ld-button ld-button-glass" to="/inspiration">浏览设计灵感</Link></div>
           <div className="ld-hero-links"><Link to="/canvas">无限画布 <ArrowRight size={14} /></Link><span /><Link to="/projects">我的项目 <ArrowRight size={14} /></Link></div>
         </div>
         <div className="ld-hero-demo">
@@ -244,7 +243,7 @@ export default function LandingPage() {
     </section>
 
     <nav className="ld-launchpad ld-shell" aria-label="设计快捷入口">
-      {[{ icon: Sparkles, title: '户型图设计', detail: '从你的户型开始', route: '/workspace?source=floorplan' }, { icon: Ruler, title: 'CAD 工作流', detail: '衔接图纸与创作', route: '/cad-workflow' }, { icon: Layers3, title: '无限画布', detail: '自由组织设计灵感', route: '/canvas' }, { icon: FolderOpen, title: '我的项目', detail: '继续上次的设计', route: '/projects' }].map(({ icon: Icon, title, detail, route }) => <Link key={route} to={route}><Icon size={24} strokeWidth={1.5} /><div><strong>{title}</strong><span>{detail}</span></div><ArrowRight className="ld-launch-arrow" size={18} /></Link>)}
+      {[{ icon: Sparkles, title: '户型图设计', detail: '从你的户型开始', route: '/workspace?source=floorplan' }, { icon: Box, title: '材料库', detail: '探索空间材质', route: '/materials' }, { icon: Layers3, title: '无限画布', detail: '自由组织设计灵感', route: '/canvas' }, { icon: FolderOpen, title: '我的项目', detail: '继续上次的设计', route: '/projects' }].map(({ icon: Icon, title, detail, route }) => <Link key={route} to={route}><Icon size={24} strokeWidth={1.5} /><div><strong>{title}</strong><span>{detail}</span></div><ArrowRight className="ld-launch-arrow" size={18} /></Link>)}
     </nav>
 
     <ModelEcosystem />

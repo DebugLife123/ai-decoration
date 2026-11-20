@@ -27,7 +27,7 @@ import AdminMarketplacePage from './pages/AdminMarketplacePage';
 import AdminCompanyDetailPage from './pages/AdminCompanyDetailPage';
 import CompanyPage from './pages/CompanyPage';
 import BusinessStylesPage from './pages/BusinessStylesPage';
-import CadWorkflowPage from './pages/CadWorkflowPage';
+
 import CanvasPage from './pages/CanvasPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProfilePage from './pages/ProfilePage';
@@ -104,7 +104,7 @@ function App() {
           <Route path="/" element={isAuthenticated ? <RoleRoute role="consumer"><LandingPage /></RoleRoute> : <LandingPage />} />
           <Route path="/inspiration" element={<PublicDisplayRoute><InspirationPage /></PublicDisplayRoute>} />
           <Route path="/workspace" element={<RoleRoute role="consumer"><WorkspacePage /></RoleRoute>} />
-          <Route path="/cad-workflow" element={<RoleRoute role="consumer"><CadWorkflowPage /></RoleRoute>} />
+          <Route path="/cad-workflow" element={<Navigate to="/workspace?source=cad" replace />} />
           <Route path="/canvas" element={<CanvasRoute><CanvasPage /></CanvasRoute>} />
           <Route path="/canvas/:id" element={<CanvasRoute><CanvasPage /></CanvasRoute>} />
           <Route path="/projects" element={<RoleRoute role="consumer"><ProjectsPage /></RoleRoute>} />
