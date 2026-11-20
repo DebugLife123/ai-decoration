@@ -6,6 +6,7 @@
   "scripts": {
     "predev": "npm run build:canvas-types",
     "dev": "vite",
+    "dev:backend": "node devtools/start-backend.mjs",
     "prebuild": "npm run build:canvas-types",
     "build": "tsc -b && vite build",
     "build:canvas-types": "npm run build:types --prefix packages/canvas",
