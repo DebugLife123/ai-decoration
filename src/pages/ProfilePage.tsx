@@ -120,7 +120,7 @@ export default function ProfilePage() {
 
   const handleSignOut = () => {
     signOut();
-    navigate('/login', { replace: true });
+    navigate('/', { replace: true });
   };
 
   const pickAvatar = async (file?: File) => {

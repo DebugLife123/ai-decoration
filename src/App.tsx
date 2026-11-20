@@ -31,6 +31,7 @@ import CadWorkflowPage from './pages/CadWorkflowPage';
 import CanvasPage from './pages/CanvasPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProfilePage from './pages/ProfilePage';
+import { safeLoginDestination } from './utils/loginDestination';
 import { useAppStore } from './stores/appStore';
 import './App.css';
 import './ConsumerLayout.css';
@@ -47,7 +48,7 @@ function RoleRoute({ role, children }: { role: 'consumer' | 'business' | 'resell
   const isAuthenticated = useAppStore((state) => Boolean(state.authSession));
   const target = currentRole === 'reseller' ? '/reseller' : currentRole === 'business' ? '/business' : currentRole === 'admin' ? '/admin' : '/';
 
-  if (!isAuthenticated) return <Navigate to={`${role === 'reseller' ? '/reseller/login' : '/login'}?next=${encodeURIComponent(location.pathname)}`} replace />;
+  if (!isAuthenticated) return <Navigate to={`${role === 'reseller' ? '/reseller/login' : '/login'}?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`} replace />;
   if (currentRole !== role) return <Navigate to={target} replace />;
   return <>{children}</>;
 }
@@ -56,10 +57,7 @@ function CanvasRoute({ children }: { children: ReactNode }) {
   const currentRole = useAppStore((state) => state.role);
   const location = useLocation();
   const isAuthenticated = useAppStore((state) => Boolean(state.authSession));
-  const isLocalCanvasDevelopment = import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
-  if (!isAuthenticated && isLocalCanvasDevelopment) return <>{children}</>;
-  if (!isAuthenticated) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+  if (!isAuthenticated) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`} replace />;
   if (currentRole !== 'consumer') return <Navigate to={currentRole === 'business' ? '/business' : currentRole === 'admin' ? '/admin' : '/'} replace />;
   return <>{children}</>;
 }
@@ -69,7 +67,7 @@ function AdminRoute({ children }: { children: ReactNode }) {
   const location = useLocation();
   const isAuthenticated = useAppStore((state) => Boolean(state.authSession));
 
-  if (!isAuthenticated) return <Navigate to={`/admin/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+  if (!isAuthenticated) return <Navigate to={`/admin/login?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`} replace />;
   if (currentRole !== 'admin') return <Navigate to={currentRole === 'business' ? '/business' : '/'} replace />;
   return <>{children}</>;
 }
@@ -96,7 +94,7 @@ function App() {
           <Route path="/admin/resellers" element={<AdminRoute><AdminResellersPage /></AdminRoute>} />
           <Route path="/reseller/login" element={isAuthenticated ? <Navigate to={role === 'reseller' ? '/reseller' : '/'} replace /> : <ResellerLoginPage />} />
           <Route path="/reseller" element={<RoleRoute role="reseller"><ResellerPage /></RoleRoute>} />
-          <Route path="/login" element={isAuthenticated ? <Navigate to={role === 'business' ? '/business' : role === 'admin' ? '/admin' : '/'} replace /> : <LoginPage />} />
+          <Route path="/login" element={isAuthenticated ? <Navigate to={safeLoginDestination(new URLSearchParams(location.search).get('next')) || (role === 'business' ? '/business' : role === 'admin' ? '/admin' : role === 'reseller' ? '/reseller' : '/')} replace /> : <LoginPage />} />
           <Route path="/admin/login" element={isAuthenticated ? <Navigate to={role === 'admin' ? '/admin' : role === 'business' ? '/business' : '/'} replace /> : <AdminLoginPage />} />
           <Route path="/" element={isAuthenticated ? <RoleRoute role="consumer"><LandingPage /></RoleRoute> : <LandingPage />} />
           <Route path="/inspiration" element={<RoleRoute role="consumer"><InspirationPage /></RoleRoute>} />
