@@ -9,7 +9,7 @@ import AdminAccountsPage from './pages/AdminAccountsPage';
 import { useEffect, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
-import HomePage from './pages/HomePage';
+import LandingPage from './pages/LandingPage';
 import InspirationPage from './pages/InspirationPage';
 import WorkspacePage from './pages/WorkspacePage';
 import ProjectsPage from './pages/ProjectsPage';
@@ -95,7 +95,7 @@ function App() {
           <Route path="/reseller" element={<RoleRoute role="reseller"><ResellerPage /></RoleRoute>} />
           <Route path="/login" element={isAuthenticated ? <Navigate to={role === 'business' ? '/business' : role === 'admin' ? '/admin' : '/'} replace /> : <LoginPage />} />
           <Route path="/admin/login" element={isAuthenticated ? <Navigate to={role === 'admin' ? '/admin' : role === 'business' ? '/business' : '/'} replace /> : <AdminLoginPage />} />
-          <Route path="/" element={<RoleRoute role="consumer"><HomePage /></RoleRoute>} />
+          <Route path="/" element={<RoleRoute role="consumer"><LandingPage /></RoleRoute>} />
           <Route path="/inspiration" element={<RoleRoute role="consumer"><InspirationPage /></RoleRoute>} />
           <Route path="/workspace" element={<RoleRoute role="consumer"><WorkspacePage /></RoleRoute>} />
           <Route path="/cad-workflow" element={<RoleRoute role="consumer"><CadWorkflowPage /></RoleRoute>} />
