@@ -78,14 +78,16 @@ function App() {
   const role = useAppStore((state) => state.role);
   const isAuthenticated = useAppStore((state) => Boolean(state.authSession));
   const loadProjects = useAppStore((state) => state.loadProjects);
+  const location = useLocation();
+  const isPublicHome = !isAuthenticated && location.pathname === '/';
 
   useEffect(() => {
     if (isAuthenticated && role !== 'admin' && role !== 'reseller') void loadProjects();
   }, [isAuthenticated, loadProjects, role]);
 
   return (
-    <div className={`app ${!isAuthenticated ? 'auth-app' : ''} ${role === 'admin' ? 'admin-app' : ''} ${isAuthenticated && role === 'consumer' ? 'consumer-app' : ''}`}>
-      {isAuthenticated && role !== 'admin' && role !== 'reseller' && <Navbar />}
+    <div className={`app ${!isAuthenticated ? 'auth-app' : ''} ${role === 'admin' ? 'admin-app' : ''} ${(isAuthenticated && role === 'consumer') || isPublicHome ? 'consumer-app' : ''}`}>
+      {((isAuthenticated && role !== 'admin' && role !== 'reseller') || isPublicHome) && <Navbar />}
       <main className="app-main">
         <Routes>
           <Route path="/admin/credits" element={<AdminRoute><AdminCreditsPage /></AdminRoute>} />
@@ -96,7 +98,7 @@ function App() {
           <Route path="/reseller" element={<RoleRoute role="reseller"><ResellerPage /></RoleRoute>} />
           <Route path="/login" element={isAuthenticated ? <Navigate to={role === 'business' ? '/business' : role === 'admin' ? '/admin' : '/'} replace /> : <LoginPage />} />
           <Route path="/admin/login" element={isAuthenticated ? <Navigate to={role === 'admin' ? '/admin' : role === 'business' ? '/business' : '/'} replace /> : <AdminLoginPage />} />
-          <Route path="/" element={<RoleRoute role="consumer"><LandingPage /></RoleRoute>} />
+          <Route path="/" element={isAuthenticated ? <RoleRoute role="consumer"><LandingPage /></RoleRoute> : <LandingPage />} />
           <Route path="/inspiration" element={<RoleRoute role="consumer"><InspirationPage /></RoleRoute>} />
           <Route path="/workspace" element={<RoleRoute role="consumer"><WorkspacePage /></RoleRoute>} />
           <Route path="/cad-workflow" element={<RoleRoute role="consumer"><CadWorkflowPage /></RoleRoute>} />

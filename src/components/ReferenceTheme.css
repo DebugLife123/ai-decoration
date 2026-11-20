@@ -1,0 +1,48 @@
+/* Local reference palette. Never set root color-scheme, .dark, or unscoped tokens:
+   admin, business tools and canvas keep their own color systems. */
+.landing-design { --ld-paper: #fff; }
+html[data-reference-theme-transition]::view-transition-old(root),
+html[data-reference-theme-transition]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html[data-reference-theme-transition]::view-transition-old(root) { z-index: 1; }
+html[data-reference-theme-transition]::view-transition-new(root) { z-index: 9999; }
+html[data-reference-theme='dark'] .jyz-header .theme-icon-sun { opacity: 0; transform: rotate(90deg) scale(.55); }
+html[data-reference-theme='dark'] .jyz-header .theme-icon-moon { opacity: 1; transform: rotate(0) scale(1); }
+html[data-reference-theme='dark'] .jyz-header .theme-icon { filter: brightness(0) invert(1); }
+html[data-reference-theme='dark'] .jyz-header .theme-toggle { color: #edf5f8; background: #17252e; border-color: #3d5360; box-shadow: 0 5px 16px rgba(0,0,0,.24); }
+html[data-reference-theme='dark'] .jyz-header .theme-toggle:hover { background: #203542; border-color: #83c8f7; box-shadow: 0 8px 20px rgba(0,0,0,.32); }
+html[data-reference-theme='dark'] .jyz-header.scrolled { color: #edf3f7; background: #0f171d; border-color: rgba(255,255,255,.1); box-shadow: 0 8px 30px rgba(0,0,0,.24); }
+html[data-reference-theme='dark'] .jyz-header.scrolled .main-nav { --nav-surface: #18252e; --nav-border: #32424d; --nav-text: #dfe8ed; --nav-hover-bg: #f4f7f9; --nav-hover-text: #17212b; background: var(--nav-surface); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
+html[data-reference-theme='dark'] .jyz-header .subscription-action { color: #17212b; background: #fff; }
+html[data-reference-theme='dark'] .jyz-header .membership-icon { filter: drop-shadow(0 0 3px rgba(244,234,42,.28)); }
+html[data-reference-theme='dark'] .jyz-header :is(.account-popover,.nav-dropdown) { color: #edf3f7; background: #131f27; border-color: #34434e; box-shadow: 0 20px 52px rgba(0,0,0,.38); }
+html[data-reference-theme='dark'] .jyz-header .account-summary { background: #1b2a34; border-color: #34434e; }
+html[data-reference-theme='dark'] .jyz-header :is(.account-action,.dropdown-link) { color: #c0cbd2; }
+html[data-reference-theme='dark'] .jyz-header :is(.account-action,.dropdown-link):hover { color: #fff; background: #24333d; }
+html[data-reference-theme='dark'] .jyz-header .dropdown-link.is-active { background: #24333d; }
+html[data-reference-theme='dark'] .jyz-header :is(.account-identity span,.dropdown-link small) { color: #aab7c0; }
+html[data-reference-theme='dark'] .jyz-header .account-actions-list { border-color: #34434e; }
+
+html[data-reference-theme='dark'] .landing-design { color-scheme: dark; --ld-ink: #edf3f7; --ld-soft: #aab7c0; --ld-paper: #0f171d; --ld-mist: #16232c; --ld-line: #34434e; --ld-night: #0a1116; color: var(--ld-ink); background: var(--ld-paper); }
+html[data-reference-theme='dark'] .landing-design .ld-hero-overlay { background: rgba(4,10,14,.74); }
+html[data-reference-theme='dark'] .landing-design :is(.ld-tabs button,.ld-resource-filters button) { color: #b4c0c8; background: #24333d; }
+html[data-reference-theme='dark'] .landing-design :is(.ld-tabs button[aria-selected='true'],.ld-resource-filters button[aria-pressed='true']) { color: #fff; background: #168be8; }
+html[data-reference-theme='dark'] .landing-design .ld-resource-card { background: #131f27; }
+html[data-reference-theme='dark'] .landing-design .ld-resource-card:hover { box-shadow: 0 18px 44px rgba(0,0,0,.32); }
+html[data-reference-theme='dark'] .landing-design .ld-launchpad > a:hover { background: #1c2a33; }
+html[data-reference-theme='dark'] .landing-design :is(.ld-text-link,.ld-index) { color: #83c8f7; }
+html[data-reference-theme='dark'] .landing-design .ld-dark { background: #080e13; }
+html[data-reference-theme='dark'] .landing-design .ld-footer { background: #0a1218; }
+html[data-reference-theme='dark'] .landing-design .ld-closing { background: #16232c; border-color: #34434e; }
+html[data-reference-theme='dark'] .landing-design :is(.ld-resource-copy p,.ld-footer nav,.ld-back-top,.ld-launchpad span) { color: #aab7c0; }
+html[data-reference-theme='dark'] .landing-design .ld-resource-copy > span { color: #83c8f7; }
+html[data-reference-theme='dark'] .landing-design .ld-model-logo img { padding: 7px; background: #f4f7f9; border-radius: 6px; }
+
+/* Personal center only; selector boundaries prevent admin/canvas inheritance. */
+html[data-reference-theme='dark'] .profile-page { color-scheme: dark; color: #edf3f7; background: #0f171d; }
+html[data-reference-theme='dark'] .profile-page :is(.profile-side,.profile-side-card,.profile-quick-card,.profile-recent,.profile-block,.profile-form,.profile-account,.profile-showcase-card,.profile-balance,.profile-ledger,.profile-overview,.profile-stat,.profile-table,.profile-avatar-row) { background: #131f27; border-color: #34434e; }
+html[data-reference-theme='dark'] .profile-page :is(.profile-home-link,.profile-search,.profile-completeness,.profile-table-head,.profile-balance-breakdown span,.profile-tabs,.profile-quiet-button) { color: #c0cbd2; background: #1b2a34; border-color: #34434e; }
+html[data-reference-theme='dark'] .profile-page :is(h2,h3,h4,.profile-side-meta strong,.profile-quick-card strong,.profile-recent-copy strong,.profile-recent-item b,.profile-field span,.profile-security-row > span,.profile-account-grid b,.profile-stat strong,.profile-showcase-copy strong,.profile-table-request strong,.profile-table-balance,.profile-balance-breakdown strong,.profile-task-label) { color: #edf3f7; }
+html[data-reference-theme='dark'] .profile-page :is(.profile-back,.profile-menu-item span,.profile-security-row > b,.profile-table-time,.profile-showcase-copy p,.profile-stat span,.profile-table-delta.out) { color: #b4c0c8; }
+html[data-reference-theme='dark'] .profile-page :is(.profile-field input,.profile-field textarea,.profile-field select,.profile-search input) { color: #edf3f7; background: #111d24; border-color: #34434e; }
+html[data-reference-theme='dark'] .profile-page :is(.profile-menu-item:not(.active):hover,.profile-back:hover,.profile-side-edit:hover,.profile-home-link:hover,.profile-recent-more:hover) { color: #fff; background: #24333d; }
+html[data-reference-theme='dark'] .profile-page :is(.profile-security-row,.profile-recent-item,.profile-table-row,.profile-save-bar) { border-color: #34434e; }

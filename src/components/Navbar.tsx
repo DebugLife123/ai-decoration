@@ -3,7 +3,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Bell, ChevronDown, Menu, X, LogOut, UserRound, Layers, WandSparkles, FolderOpen, LayoutDashboard, Ruler, Image, Calculator, Building2, Crown } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { loadUserProfile } from '../services/userProfile';
+import { toggleReferenceTheme, useReferenceTheme } from '../services/referenceTheme';
 import './Navbar.css';
+import './ReferenceTheme.css';
 
 type NavItem = { path: string; label: string; detail?: string; icon?: ReactNode };
 const creationItems: NavItem[] = [
@@ -42,7 +44,9 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(() => window.scrollY > 40);
-  const isBusiness = role === 'business';
+  const theme = useReferenceTheme();
+  const isAuthenticated = !!authSession;
+  const isBusiness = isAuthenticated && role === 'business';
   const isHome = !isBusiness && location.pathname === '/';
   const navProfile = authSession?.user ? loadUserProfile(authSession.user.id) : null;
   const displayName = navProfile?.displayName.trim() || authSession?.user.displayName || '已登录用户';
@@ -99,7 +103,7 @@ export default function Navbar() {
     pills?.forEach((pill) => observer.observe(pill));
     layout();
     return () => observer.disconnect();
-  }, [isBusiness]);
+  }, [isBusiness, isAuthenticated]);
 
   const isActive = (path: string) => {
     const [pathname, search] = path.split('?');
@@ -131,19 +135,19 @@ export default function Navbar() {
       <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 42 42" fill="none"><path d="M5 19 21 5l16 14v18H25V25h-8v12H5Z" fill="#168be8" /><path d="m12 19 9-8 9 8M21 11v10" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg></span><span className="brand-name">简易装</span>
     </Link>
     <nav className="main-nav" id="jyz-main-navigation" aria-label={isBusiness ? '企业工作区导航' : '主导航'}>
-      {isBusiness ? businessItems.map(renderLink) : <>{renderLink({ path: '/', label: '首页' })}{renderDropdown('creation', 'AI创作', creationItems)}{renderLink({ path: '/projects', label: '我的项目' })}{renderLink({ path: '/inspiration', label: '灵感广场' })}{renderDropdown('resources', '资源中心', resourceItems)}<Link to="/subscription" className="pill-nav-item mobile-nav-action" onClick={closeMenus}><Crown />积分订阅</Link></>}
+      {isBusiness ? businessItems.map(renderLink) : <>{renderLink({ path: '/', label: '首页' })}{renderDropdown('creation', 'AI创作', creationItems)}{renderLink({ path: '/projects', label: '我的项目' })}{renderLink({ path: '/inspiration', label: '灵感广场' })}{renderDropdown('resources', '资源中心', resourceItems)}<Link to="/subscription" className="pill-nav-item mobile-nav-action" onClick={closeMenus}><img className="membership-icon" src="/reference-design/header/membership.svg" alt="" />开通会员</Link></>}
     </nav>
     <div className="header-actions">
-      {!isBusiness && <Link to="/subscription" className="header-pill-action pill-animated subscription-action" onClick={closeMenus}><PillLabel><Crown />积分订阅</PillLabel></Link>}
-      <Link to={notificationPath} className="header-icon-action" aria-label="通知中心" title="通知中心" onClick={closeMenus}><Bell /></Link>
-      <div className={`account-menu${openMenu === 'account' ? ' is-open' : ''}`}>
-        <button type="button" className="account-trigger" aria-label="打开账户菜单" aria-expanded={openMenu === 'account'} aria-controls="jyz-account-popover" onClick={(event) => toggleMenu('account', event.currentTarget)}>{navProfile?.avatar ? <img src={navProfile.avatar} alt="" /> : <span>{displayName.slice(0, 1)}</span>}</button>
+      <button className="theme-toggle" type="button" aria-label={theme === 'dark' ? '切换至太阳亮色主题' : '切换至月亮深色主题'} aria-pressed={theme === 'dark'} title="切换黑白主题" onClick={(event) => { void toggleReferenceTheme(event.currentTarget); }}><span className="theme-icon-frame" aria-hidden="true"><img className="theme-icon theme-icon-sun" src="/reference-design/header/sun.svg" alt="" /><img className="theme-icon theme-icon-moon" src="/reference-design/header/moon.svg" alt="" /></span></button>
+      {!isBusiness && <Link to="/subscription" className="header-pill-action pill-animated subscription-action" onClick={closeMenus}><PillLabel><img className="membership-icon" src="/reference-design/header/membership.svg" alt="" />开通会员</PillLabel></Link>}
+      {authSession ? <div className={`account-menu${openMenu === 'account' ? ' is-open' : ''}`}>
+        <button type="button" className="header-pill-action pill-animated auth-action" aria-label={`${displayName}，打开账户菜单`} aria-expanded={openMenu === 'account'} aria-controls="jyz-account-popover" onClick={(event) => toggleMenu('account', event.currentTarget)}><PillLabel><span className="account-button-name">{displayName}</span></PillLabel></button>
         <div className="account-popover" id="jyz-account-popover" hidden={openMenu !== 'account'}>
           <div className="account-summary"><span className="account-avatar">{navProfile?.avatar ? <img src={navProfile.avatar} alt="" /> : displayName.slice(0, 1)}</span><div className="account-identity"><strong>{displayName}</strong><span>{isBusiness ? '企业账号' : '个人账号'}</span></div></div>
-          <div className="account-actions-list"><Link className="account-action" to={isBusiness ? '/business?tab=overview' : '/profile'} onClick={closeMenus}><UserRound />{isBusiness ? '企业信息' : '个人中心'}<span className="account-action-arrow">›</span></Link>{!isBusiness && <Link className="account-action" to="/subscription" onClick={closeMenus}><Crown />积分与订阅<span className="account-action-arrow">›</span></Link>}<Link className="account-action" to={isBusiness ? '/business?tab=overview' : '/projects'} onClick={closeMenus}>{isBusiness ? <LayoutDashboard /> : <FolderOpen />}{isBusiness ? '企业概览' : '我的项目'}<span className="account-action-arrow">›</span></Link></div>
+          <div className="account-actions-list"><Link className="account-action" to={notificationPath} onClick={closeMenus}><Bell />通知中心<span className="account-action-arrow">›</span></Link><Link className="account-action" to={isBusiness ? '/business?tab=overview' : '/profile'} onClick={closeMenus}><UserRound />{isBusiness ? '企业信息' : '个人中心'}<span className="account-action-arrow">›</span></Link>{!isBusiness && <Link className="account-action" to="/subscription" onClick={closeMenus}><Crown />积分与订阅<span className="account-action-arrow">›</span></Link>}<Link className="account-action" to={isBusiness ? '/business?tab=overview' : '/projects'} onClick={closeMenus}>{isBusiness ? <LayoutDashboard /> : <FolderOpen />}{isBusiness ? '企业概览' : '我的项目'}<span className="account-action-arrow">›</span></Link></div>
           <button type="button" className="account-action account-logout" onClick={() => { signOut(); closeMenus(); navigate('/login', { replace: true }); }}><LogOut />退出登录</button>
         </div>
-      </div>
+      </div> : <Link to={`/login?next=${encodeURIComponent(routeKey)}`} className="header-pill-action pill-animated auth-action" onClick={closeMenus}><PillLabel>登录 / 注册</PillLabel></Link>}
       <button ref={mobileTriggerRef} className="mobile-nav-toggle" type="button" aria-label={mobileOpen ? '关闭导航' : '打开导航'} aria-expanded={mobileOpen} aria-controls="jyz-main-navigation" onClick={() => { setMobileOpen((open) => !open); setOpenMenu(null); }}>{mobileOpen ? <X /> : <Menu />}</button>
     </div>
   </header>;

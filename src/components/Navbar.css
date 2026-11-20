@@ -59,7 +59,7 @@
 .jyz-header .pill-animated:hover .pill-label, .jyz-header .pill-animated:focus-visible .pill-label { transform: translateY(calc(var(--pill-travel) * -1)); }
 .jyz-header .pill-animated:hover .pill-label-hover, .jyz-header .pill-animated:focus-visible .pill-label-hover { opacity: 1; transform: translateY(0); }
 .jyz-header .header-actions { position: relative; display: flex; align-items: center; gap: 8px; }
-.jyz-header .header-pill-action { --nav-hover-bg: #17212b; --nav-hover-text: #fff; display: inline-flex; align-items: center; justify-content: center; height: 42px; padding: 0 17px; color: #17212b; background: #f7fafc; border-radius: 999px; font-size: 14px; font-weight: 700; animation: jyz-pill-nav-reveal .55s cubic-bezier(.22,1,.36,1) both; }
+.jyz-header .header-pill-action { --nav-hover-bg: #17212b; --nav-hover-text: #fff; display: inline-flex; align-items: center; justify-content: center; height: 42px; padding: 0 20px; color: #17212b; background: rgba(255,255,255,.9); border-radius: 999px; font-size: 14px; font-weight: 650; white-space: nowrap; transition: transform .2s,background .2s,color .2s; animation: jyz-pill-nav-reveal .55s cubic-bezier(.22,1,.36,1) both; }
 .jyz-header .header-pill-action svg { width: 18px; height: 18px; }
 .jyz-header .header-icon-action, .jyz-header .mobile-nav-toggle { flex: none; width: 42px; height: 42px; display: grid; place-items: center; padding: 0; color: #17212b; background: rgba(255,255,255,.94); border: 1px solid rgba(220,227,232,.92); border-radius: 6px; box-shadow: 0 5px 16px rgba(23,33,43,.08); }
 .jyz-header .header-icon-action svg, .jyz-header .mobile-nav-toggle svg { width: 20px; height: 20px; }
@@ -114,8 +114,34 @@
   .jyz-header .brand-name { font-size: 21px; }
   .jyz-header .brand-mark, .jyz-header .brand-mark svg { width: 36px; height: 36px; }
   .jyz-header .header-actions { gap: 6px; }
-  .jyz-header .subscription-action { display: none; }
+  .jyz-header .header-pill-action { padding-inline: 10px; font-size: 12px; }
+  .jyz-header .brand-name { font-size: 18px; }
+  .jyz-header .brand-mark, .jyz-header .brand-mark svg { width: 28px; height: 28px; }
+  .jyz-header .theme-toggle, .jyz-header .mobile-nav-toggle { width: 34px; }
+  .jyz-header .account-button-name { max-width: 72px; }
   .jyz-header .account-popover { position: fixed; top: 76px; right: 12px; width: min(292px, calc(100vw - 24px)); }
+}
+.jyz-header .header-pill-action:hover { transform: translateY(-2px); }
+.jyz-header.scrolled .subscription-action { background: #fff; box-shadow: inset 0 0 0 1px #dce3e8; }
+.jyz-header .auth-action { --nav-hover-bg: #168be8; --nav-hover-text: #fff; color: #fff; background: rgba(23,33,43,.92); }
+.jyz-header .subscription-action { animation-delay: .05s; }
+.jyz-header .auth-action { animation-delay: .1s; }
+.jyz-header .membership-icon { flex: none; width: 18px; height: 18px; object-fit: contain; }
+.jyz-header .account-button-name { display: inline-block; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jyz-header .theme-toggle { flex: none; width: 42px; height: 42px; display: grid; place-items: center; padding: 0; overflow: hidden; color: #17212b; background: rgba(255,255,255,.92); border: 1px solid rgba(220,227,232,.92); border-radius: 6px; box-shadow: 0 5px 16px rgba(23,33,43,.08); transition: transform .2s ease,background .2s ease,border-color .2s ease,box-shadow .2s ease; }
+.jyz-header .theme-toggle:hover { transform: translateY(-2px); background: #fff; border-color: #cbd6de; box-shadow: 0 8px 20px rgba(23,33,43,.13); }
+.jyz-header .theme-icon-frame { position: relative; width: 20px; height: 20px; }
+.jyz-header .theme-icon { position: absolute; inset: 0; width: 20px; height: 20px; object-fit: contain; transition: opacity .28s ease,transform .48s cubic-bezier(.22,1,.36,1); }
+.jyz-header .theme-icon-sun { opacity: 1; transform: rotate(0) scale(1); }
+.jyz-header .theme-icon-moon { opacity: 0; transform: rotate(-90deg) scale(.55); }
+@media (max-width: 600px) {
+  .jyz-header .theme-toggle { width: 34px; }
+  .jyz-header .account-button-name { max-width: 72px; }
+}
+@media (max-width: 370px) {
+  .jyz-header .brand-mark { display: none; }
+  .jyz-header .header-actions { gap: 4px; }
+  .jyz-header .header-pill-action { padding-inline: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .jyz-header, .jyz-header *, .jyz-header *::before, .jyz-header *::after { animation: none !important; transition: none !important; }
